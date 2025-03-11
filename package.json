@@ -4,7 +4,7 @@
     "version": "0.0.0",
     "scripts": {},
     "devDependencies": {
-        "@types/node": "^22.13.1",
-        "typescript": "^5.7.3"
+        "@types/node": "^22.13.10",
+        "typescript": "^5.8.2"
     }
 }
