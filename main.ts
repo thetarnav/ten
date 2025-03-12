@@ -151,6 +151,31 @@ const next_token = (t: Tokenizer): Token => {
 	case 124/* '|' */: return make_token(t, Token_Kind.Or)
 	case 63 /* '?' */: return make_token(t, Token_Kind.Question)
 	case 64 /* '@' */: return make_token(t, Token_Kind.At)
+	// String
+	case 34 /* '"' */: {
+
+		let escaping = false
+
+		// String
+		for (;;) {
+			switch (next_char_code(t)) {
+			case 0:
+			case 10 /* '\n' */:
+				return make_token_go_back(t, Token_Kind.Invalid)
+			case 92 /* '\\' */:
+				escaping = !escaping
+				break
+			case 34 /* '"' */:
+				if (!escaping) {
+					return make_token(t, Token_Kind.String)
+				}
+				escaping = false
+				break
+			default:
+				escaping = false
+			}
+		}
+	}
 	}
 
 	// Number
