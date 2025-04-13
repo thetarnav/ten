@@ -222,6 +222,17 @@ const next_token = (t: Tokenizer): Token => {
 
 */
 
+const PRECEDENCE: Record<Token_Kind, number> = {
+    [Token_Kind.Add]: 1,
+    [Token_Kind.Sub]: 1,
+    [Token_Kind.Mul]: 2, 
+    [Token_Kind.Div]: 2,
+    [Token_Kind.Pow]: 3,
+} as const;
+
+const UNARY_OPS = new Set([Token_Kind.Add, Token_Kind.Sub]);
+const BINARY_OPS = new Set([Token_Kind.Add, Token_Kind.Sub, Token_Kind.Mul, Token_Kind.Div, Token_Kind.Pow]);
+
 export type Expr =
 	| Expr_Ident
 	| Expr_Number
@@ -272,33 +283,89 @@ export const parser_next_token = (p: Parser): Token => {
 }
 
 export const parse_src = (src: string): Expr[] => {
-
-	let p: Parser = {
-		src:   src,
-		t:     make_tokenizer(src),
-		token: {kind: Token_Kind.Invalid, pos: 0},
-	}
-	parser_next_token(p)
-
-	let exprs: Expr[] = []
-	
-	loop: for (;;) {
-		switch (p.token.kind) {
-		case Token_Kind.EOL:
-			parser_next_token(p)
-			continue
-		case Token_Kind.EOF:
-			break loop
-		default:
-			
-		}
-	}
-
-	return exprs
+    let p: Parser = {
+        src: src,
+        t: make_tokenizer(src),
+        token: next_token(make_tokenizer(src)),
+    };
+    
+    let exprs: Expr[] = [];
+    
+    while (p.token.kind !== Token_Kind.EOF) {
+        if (p.token.kind === Token_Kind.EOL) {
+            parser_next_token(p);
+            continue;
+        }
+        exprs.push(parse_expr(p));
+    }
+    
+    return exprs;
 }
 
-export const parse_expr = (p: Parser): Expr | null {
-	
+export const parse_expr = (p: Parser): Expr => {
+    return parse_expr_bp(p, 0);
+}
+
+const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
+    let lhs = parse_expr_atom(p);
+    
+    while (true) {
+        const op = p.token;
+        if (op.kind === Token_Kind.EOF || !BINARY_OPS.has(op.kind)) break;
+        
+        const [lbp, rbp] = get_binding_powers(op.kind);
+        if (lbp < min_bp) break;
+
+        parser_next_token(p);
+        const rhs = parse_expr_bp(p, rbp);
+        
+        lhs = {
+            kind: 'Expr_Binary',
+            op: op,
+            lhs: lhs,
+            rhs: rhs
+        } as Expr_Binary;
+    }
+    
+    return lhs;
+}
+
+const get_binding_powers = (kind: Token_Kind): [number, number] => {
+    const bp = PRECEDENCE[kind] || 0;
+    // Right-associative for Pow
+    return [bp, kind === Token_Kind.Pow ? bp - 1 : bp];
+}
+
+const parse_expr_atom = (p: Parser): Expr => {
+    let expr: Expr;
+    
+    if (UNARY_OPS.has(p.token.kind)) {
+        const op = p.token;
+        parser_next_token(p);
+        const rhs = parse_expr_atom(p);
+        expr = { kind: 'Expr_Unary', op, rhs } as Expr_Unary;
+    }
+    else if (p.token.kind === Token_Kind.Paren_L) {
+        parser_next_token(p);
+        expr = parse_expr(p);
+        if (p.token.kind !== Token_Kind.Paren_R) {
+            throw new Error("Expected closing parenthesis");
+        }
+        parser_next_token(p);
+    }
+    else if (p.token.kind === Token_Kind.Ident) {
+        expr = { kind: 'Expr_Ident', tok: p.token } as Expr_Ident;
+        parser_next_token(p);
+    }
+    else if (p.token.kind === Token_Kind.Int || p.token.kind === Token_Kind.Float) {
+        expr = { kind: 'Expr_Number', tok: p.token } as Expr_Number;
+        parser_next_token(p);
+    }
+    else {
+        throw new Error(`Unexpected token: ${Token_Kind[p.token.kind]}`);
+    }
+
+    return expr;
 }
 
 let input = `
