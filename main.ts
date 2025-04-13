@@ -18,7 +18,7 @@ enum Token_Kind {
         Symbol Tokens
     */
     /** ?           */ Question,
-    /** !           */ Negative,
+    /** !           */ Neg,
     /** |           */ Or,
     /** &           */ And,
     /** =           */ Eq,
@@ -222,17 +222,6 @@ const next_token = (t: Tokenizer): Token => {
 
 */
 
-const PRECEDENCE: Record<Token_Kind, number> = {
-    [Token_Kind.Add]: 1,
-    [Token_Kind.Sub]: 1,
-    [Token_Kind.Mul]: 2, 
-    [Token_Kind.Div]: 2,
-    [Token_Kind.Pow]: 3,
-} as const;
-
-const UNARY_OPS = new Set([Token_Kind.Add, Token_Kind.Sub]);
-const BINARY_OPS = new Set([Token_Kind.Add, Token_Kind.Sub, Token_Kind.Mul, Token_Kind.Div, Token_Kind.Pow]);
-
 export type Expr =
     | Expr_Ident
     | Expr_Number
@@ -242,25 +231,30 @@ export type Expr =
     | Expr_Comma
 
 export type Expr_Ident = {
+    kind: 'Expr_Ident',
     tok: Token
 }
 
 export type Expr_Number = {
+    kind: 'Expr_Number',
     tok: Token
 }
 
 export type Expr_Unary = {
+    kind: 'Expr_Unary',
     op:  Token
     rhs: Expr
 }
 
 export type Expr_Binary = {
+    kind: 'Expr_Binary',
     op:  Token
     lhs: Expr
     rhs: Expr
 }
 
 export type Expr_Paren = {
+    kind: 'Expr_Paren',
     type: Expr | null
     body: Expr[]
     lhs:  Token
@@ -268,6 +262,7 @@ export type Expr_Paren = {
 }
 
 export type Expr_Comma = {
+    kind: 'Expr_Comma',
     tok: Token
 }
 
@@ -275,6 +270,43 @@ export type Parser = {
     src:   string,
     t:     Tokenizer,
     token: Token,
+}
+
+function get_precedence(kind: Token_Kind): number {
+    switch (kind) {
+    case Token_Kind.Add:
+    case Token_Kind.Sub:
+        return 1;
+    case Token_Kind.Mul:
+    case Token_Kind.Div:
+        return 2;
+    case Token_Kind.Pow:
+        return 3;
+    default:
+        return 0;
+    }
+}
+
+function is_unary_op(kind: Token_Kind): boolean {
+    switch (kind) {
+    case Token_Kind.Add:
+    case Token_Kind.Sub:
+    case Token_Kind.Neg:
+        return true         
+    }
+    return false
+}
+
+function is_binary_op(kind: Token_Kind): boolean {
+    switch (kind) {
+    case Token_Kind.Add:
+    case Token_Kind.Sub:
+    case Token_Kind.Mul:
+    case Token_Kind.Div:
+    case Token_Kind.Pow:
+        return true
+    }
+    return false
 }
 
 export const parser_next_token = (p: Parser): Token => {
@@ -287,85 +319,91 @@ export const parse_src = (src: string): Expr[] => {
         src: src,
         t: make_tokenizer(src),
         token: next_token(make_tokenizer(src)),
-    };
+    }
     
-    let exprs: Expr[] = [];
+    let exprs: Expr[] = []
     
     while (p.token.kind !== Token_Kind.EOF) {
         if (p.token.kind === Token_Kind.EOL) {
-            parser_next_token(p);
-            continue;
+            parser_next_token(p)
+            continue
         }
-        exprs.push(parse_expr(p));
+        exprs.push(parse_expr(p))
     }
     
-    return exprs;
+    return exprs
 }
 
 export const parse_expr = (p: Parser): Expr => {
-    return parse_expr_bp(p, 0);
+    return parse_expr_bp(p, 0)
 }
 
 const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
-    let lhs = parse_expr_atom(p);
+    let lhs = parse_expr_atom(p)
     
-    while (true) {
-        const op = p.token;
-        if (op.kind === Token_Kind.EOF || !BINARY_OPS.has(op.kind)) break;
+    for (;;) {
+        let op = p.token
+        if (op.kind === Token_Kind.EOF || !is_binary_op(op.kind)) break
         
-        const [lbp, rbp] = get_binding_powers(op.kind);
-        if (lbp < min_bp) break;
+        let [lbp, rbp] = get_binding_powers(op.kind)
+        if (lbp < min_bp) break
 
-        parser_next_token(p);
-        const rhs = parse_expr_bp(p, rbp);
+        parser_next_token(p)
+        let rhs = parse_expr_bp(p, rbp)
         
         lhs = {
             kind: 'Expr_Binary',
             op: op,
             lhs: lhs,
             rhs: rhs
-        } as Expr_Binary;
+        } as Expr_Binary
     }
     
-    return lhs;
+    return lhs
 }
 
 const get_binding_powers = (kind: Token_Kind): [number, number] => {
-    const bp = PRECEDENCE[kind] || 0;
+    let bp = get_precedence(kind)
     // Right-associative for Pow
-    return [bp, kind === Token_Kind.Pow ? bp - 1 : bp];
+    return [bp, kind === Token_Kind.Pow ? bp - 1 : bp]
 }
 
 const parse_expr_atom = (p: Parser): Expr => {
-    let expr: Expr;
-    
-    if (UNARY_OPS.has(p.token.kind)) {
-        const op = p.token;
-        parser_next_token(p);
-        const rhs = parse_expr_atom(p);
-        expr = { kind: 'Expr_Unary', op, rhs } as Expr_Unary;
-    }
-    else if (p.token.kind === Token_Kind.Paren_L) {
-        parser_next_token(p);
-        expr = parse_expr(p);
-        if (p.token.kind !== Token_Kind.Paren_R) {
-            throw new Error("Expected closing parenthesis");
-        }
-        parser_next_token(p);
-    }
-    else if (p.token.kind === Token_Kind.Ident) {
-        expr = { kind: 'Expr_Ident', tok: p.token } as Expr_Ident;
-        parser_next_token(p);
-    }
-    else if (p.token.kind === Token_Kind.Int || p.token.kind === Token_Kind.Float) {
-        expr = { kind: 'Expr_Number', tok: p.token } as Expr_Number;
-        parser_next_token(p);
-    }
-    else {
-        throw new Error(`Unexpected token: ${Token_Kind[p.token.kind]}`);
-    }
+    let expr: Expr
 
-    return expr;
+    switch (p.token.kind) {
+    /* Unary */
+    case Token_Kind.Add:
+    case Token_Kind.Sub:
+    case Token_Kind.Neg: {
+        let op = p.token
+        parser_next_token(p)
+        let rhs = parse_expr_atom(p)
+        return {kind: 'Expr_Unary', op, rhs}
+    }
+    case Token_Kind.Paren_L: {
+        let tok = parser_next_token(p)
+        expr = parse_expr(p)
+        if (tok.kind !== Token_Kind.Paren_R) {
+            throw new Error("Expected closing parenthesis")
+        }
+        parser_next_token(p)
+        return expr
+    }
+    case Token_Kind.Ident: {
+        expr = {kind: 'Expr_Ident', tok: p.token}
+        parser_next_token(p)
+        return expr
+    }
+    case Token_Kind.Float:
+    case Token_Kind.Int: {
+        expr = {kind: 'Expr_Number', tok: p.token}
+        parser_next_token(p)
+        return expr
+    }
+    }
+    
+    throw new Error(`Unexpected token: ${Token_Kind[p.token.kind]}`)
 }
 
 let input = `
