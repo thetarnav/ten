@@ -1,5 +1,11 @@
 const len = (a: ArrayLike<any>): number => a.length
 
+/*
+
+ TOKENIZER
+
+*/
+
 export
 enum Token_Kind {
 	/*
@@ -210,6 +216,90 @@ const next_token = (t: Tokenizer): Token => {
 	return make_token(t, Token_Kind.Invalid)
 }
 
+/*
+
+ PARSER
+
+*/
+
+export type Expr =
+	| Expr_Ident
+	| Expr_Number
+	| Expr_Unary
+	| Expr_Binary
+	| Expr_Paren
+	| Expr_Comma
+
+export type Expr_Ident = {
+	tok: Token
+}
+
+export type Expr_Number = {
+	tok: Token
+}
+
+export type Expr_Unary = {
+	op:  Token
+	rhs: Expr
+}
+
+export type Expr_Binary = {
+	op:  Token
+	lhs: Expr
+	rhs: Expr
+}
+
+export type Expr_Paren = {
+	type: Expr | null
+	body: Expr[]
+	lhs:  Token
+	rhs:  Token
+}
+
+export type Expr_Comma = {
+	tok: Token
+}
+
+export type Parser = {
+	src:   string,
+	t:     Tokenizer,
+	token: Token,
+}
+
+export const parser_next_token = (p: Parser): Token => {
+	p.token = next_token(p.t)
+	return p.token
+}
+
+export const parse_src = (src: string): Expr[] => {
+
+	let p: Parser = {
+		src:   src,
+		t:     make_tokenizer(src),
+		token: {kind: Token_Kind.Invalid, pos: 0},
+	}
+	parser_next_token(p)
+
+	let exprs: Expr[] = []
+	
+	loop: for (;;) {
+		switch (p.token.kind) {
+		case Token_Kind.EOL:
+			parser_next_token(p)
+			continue
+		case Token_Kind.EOF:
+			break loop
+		default:
+			
+		}
+	}
+
+	return exprs
+}
+
+export const parse_expr = (p: Parser): Expr | null {
+	
+}
 
 let input = `
 
