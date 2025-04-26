@@ -109,7 +109,7 @@ const make_token = (t: Tokenizer, kind: Token_Kind): Token => {
         pos:  t.pos_write,
         kind: kind,
     }
-    t.pos_write = t.pos_read
+    t.pos_write = t.pos_read+1
     next_char(t)
     return token
 }
@@ -119,7 +119,7 @@ const make_token_go_back = (t: Tokenizer, kind: Token_Kind): Token => {
         pos:  t.pos_write,
         kind: kind,
     }
-    t.pos_write = t.pos_read-1
+    t.pos_write = t.pos_read
     return token
 }
 
@@ -135,13 +135,12 @@ const next_token = (t: Tokenizer): Token => {
     switch (ch) {
     // Whitespace
     case 10 /* '\n' */:
-        t.pos_write = t.pos_read - 1
         return make_token(t, Token_Kind.EOL)
     case 32 /* ' '  */:
     case 9  /* '\t' */: 
     case 13 /* '\r' */:
-        t.pos_write = t.pos_read
         next_char(t)
+        t.pos_write = t.pos_read
         return next_token(t)
     // Punctuators
     case 40 /* '(' */: return make_token(t, Token_Kind.Paren_L)
@@ -231,30 +230,30 @@ export type Expr =
     | Expr_Comma
 
 export type Expr_Ident = {
-    kind: 'Expr_Ident',
+    kind: 'Expr_Ident'
     tok: Token
 }
 
 export type Expr_Number = {
-    kind: 'Expr_Number',
+    kind: 'Expr_Number'
     tok: Token
 }
 
 export type Expr_Unary = {
-    kind: 'Expr_Unary',
+    kind: 'Expr_Unary'
     op:  Token
     rhs: Expr
 }
 
 export type Expr_Binary = {
-    kind: 'Expr_Binary',
+    kind: 'Expr_Binary'
     op:  Token
     lhs: Expr
     rhs: Expr
 }
 
 export type Expr_Paren = {
-    kind: 'Expr_Paren',
+    kind: 'Expr_Paren'
     type: Expr | null
     body: Expr[]
     lhs:  Token
@@ -262,28 +261,24 @@ export type Expr_Paren = {
 }
 
 export type Expr_Comma = {
-    kind: 'Expr_Comma',
+    kind: 'Expr_Comma'
     tok: Token
 }
 
 export type Parser = {
-    src:   string,
-    t:     Tokenizer,
-    token: Token,
+    src:   string
+    t:     Tokenizer
+    token: Token
 }
 
 function get_precedence(kind: Token_Kind): number {
     switch (kind) {
     case Token_Kind.Add:
-    case Token_Kind.Sub:
-        return 1;
+    case Token_Kind.Sub: return 1
     case Token_Kind.Mul:
-    case Token_Kind.Div:
-        return 2;
-    case Token_Kind.Pow:
-        return 3;
-    default:
-        return 0;
+    case Token_Kind.Div: return 2
+    case Token_Kind.Pow: return 3
+    default:             return 0
     }
 }
 
@@ -353,10 +348,10 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
         
         lhs = {
             kind: 'Expr_Binary',
-            op: op,
-            lhs: lhs,
-            rhs: rhs
-        } as Expr_Binary
+            op:   op,
+            lhs:  lhs,
+            rhs:  rhs
+        }
     }
     
     return lhs
@@ -405,34 +400,3 @@ const parse_expr_atom = (p: Parser): Expr => {
     
     throw new Error(`Unexpected token: ${Token_Kind[p.token.kind]}`)
 }
-
-let input = `
-
-Counter = (
-    count ?= 1
-    double = count * 2
-    increment = @(count += 1)
-    render = Button(
-        text = "Count: " + count + ", Double: " + double
-        onclick = increment
-    )
-)
-
-`
-
-
-let t = tokenizer_make(input)
-
-let lines = ''
-for (;;) {
-    let tok = next_token(t)
-
-    lines += `${Token_Kind[tok.kind]} `
-
-    if (tok.kind === Token_Kind.EOL) lines += '\n'
-    
-    if (tok.kind === Token_Kind.EOF) break
-}
-
-console.log(lines)
-
