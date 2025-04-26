@@ -2,7 +2,10 @@
     "name": "lilang",
     "type": "module",
     "version": "0.0.0",
-    "scripts": {},
+    "scripts": {
+        "test": "node --experimental-transform-types --test",
+        "test:watch": "node --watch --experimental-transform-types --test"
+    },
     "devDependencies": {
         "@types/node": "^22.13.10",
         "typescript": "^5.8.2"
