@@ -254,22 +254,37 @@ export const token_to_string = (src: string, tok: Token): string => {
         let start = tok.pos
         let end   = start + 1
         
-        while (end < src.length) {
-            let ch = src.charCodeAt(end)
-            
-            // For strings, include everything between quotes
-            if (tok.kind === Token_Kind.String) {
-                if (src[start] === '"' && src[end] === '"' && src[end - 1] !== '\\') {
+        switch (tok.kind) {
+        case Token_Kind.String:
+            for (;end < src.length; end++) {
+                if (src[end] === '"' && src[end-1] !== '\\') {
                     end++
                     break
                 }
-            } 
-            // For other tokens, stop at whitespace or special characters
-            else if (is_white_code(ch) || !is_ident_code(ch) && !is_digit_code(ch)) {
-                break
             }
-            
-            end++
+            break
+        case Token_Kind.Ident:
+            for (;end < src.length && is_ident_code(src.charCodeAt(end)); end++) {}
+            break
+        case Token_Kind.Int:
+            for (;end < src.length && is_digit_code(src.charCodeAt(end)); end++) {}
+            break
+        case Token_Kind.Float:
+            for (;end < src.length; end++) {
+                let ch = src.charCodeAt(end)
+                if (!is_digit_code(ch) && ch !== 46 /* '.' */) {
+                    break
+                }
+            }
+            break
+        default:
+            for (;end < src.length; end++) {
+                let ch = src.charCodeAt(end)
+                if (is_white_code(ch) || (!is_ident_code(ch) && !is_digit_code(ch))) {
+                    break
+                }
+            }
+            break
         }
         
         return src.substring(start, end)
