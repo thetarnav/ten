@@ -3,88 +3,45 @@ import * as assert from 'node:assert/strict'
 import * as lang   from './main.ts'
 
 test.test('tokenizer', () => {
-    let input: [line: string, tokens: [kind: lang.Token_Kind, pos: number][]][] = [
-        [`Counter = (\n`, [
-            [lang.Token_Kind.Ident,    0],
-            [lang.Token_Kind.Eq,       8],
-            [lang.Token_Kind.Paren_L, 10],
-            [lang.Token_Kind.EOL,     11],
-        ]],
-        [`\tcount ?= 12\n`, [
-            [lang.Token_Kind.Ident,    1],
-            [lang.Token_Kind.Question, 7],
-            [lang.Token_Kind.Eq,       8],
-            [lang.Token_Kind.Int,     10],
-            [lang.Token_Kind.EOL,     12],
-        ]],
-        [`\tdouble = count * 2`, [
-            [lang.Token_Kind.Ident,    1],
-            [lang.Token_Kind.Eq,       8],
-            [lang.Token_Kind.Ident,   10],
-            [lang.Token_Kind.Mul,     16],
-            [lang.Token_Kind.Int,     18],
-        ]],
-        [`increment = @(count += 12)`, [
-            [lang.Token_Kind.Ident,    0],
-            [lang.Token_Kind.Eq,      10],
-            [lang.Token_Kind.At,      12],
-            [lang.Token_Kind.Paren_L, 13],
-            [lang.Token_Kind.Ident,   14],
-            [lang.Token_Kind.Add,     20],
-            [lang.Token_Kind.Eq,      21],
-            [lang.Token_Kind.Int,     23],
-            [lang.Token_Kind.Paren_R, 25],
-        ]],
-        [`render = Button("Hello")`, [
-            [lang.Token_Kind.Ident,    0],
-            [lang.Token_Kind.Eq,       7],
-            [lang.Token_Kind.Ident,    9],
-            [lang.Token_Kind.Paren_L, 15],
-            [lang.Token_Kind.String,  16],
-            [lang.Token_Kind.Paren_R, 23],
-        ]],
-        [`0.123 = x = y`, [
-            [lang.Token_Kind.Float,    0],
-            [lang.Token_Kind.Eq,       6],
-            [lang.Token_Kind.Ident,    8],
-            [lang.Token_Kind.Eq,      10],
-            [lang.Token_Kind.Ident,   12],
-        ]],
-        [`\t\ttext = "Count: " + count + ", Double: " + double`, [
-            [lang.Token_Kind.Ident,    1],
-            [lang.Token_Kind.Eq,       7],
-            [lang.Token_Kind.String,   9],
-            [lang.Token_Kind.Add,     20],
-            [lang.Token_Kind.Ident,   22],
-            [lang.Token_Kind.Add,     27],
-            [lang.Token_Kind.String,  29],
-            [lang.Token_Kind.Add,     40],
-            [lang.Token_Kind.Ident,   42],
-            [lang.Token_Kind.Add,     48],
-            [lang.Token_Kind.String,  50],
-            [lang.Token_Kind.Add,     61],
-            [lang.Token_Kind.Ident,   63],
-        ]],
-        [`\t\tonclick = increment`, [
-            [lang.Token_Kind.Ident,    1],
-            [lang.Token_Kind.Eq,       8],
-            [lang.Token_Kind.Ident,   10],
-        ]],
-        [`\t)`, [
-            [lang.Token_Kind.Paren_R, 1],
-        ]],
+    let input: [line: string, expected: string][] = [
+        [
+            `Counter = (\ncount`,
+            `Ident(Counter) Eq(=) Paren_L(()\nIdent(count)`,
+        ], [
+            `\tcount ?= 12\n`,
+            `Ident(count) Question(?) Eq(=) Int(12)\n`,
+        ], [
+            `\tdouble = count * 2`,
+            `Ident(double) Eq(=) Ident(count) Mul(*) Int(2)`,
+        ], [
+            `inc = @(num += 12)`,
+            `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add(+) Eq(=) Int(12) Paren_R())`,
+        ], [
+            `render = Button("Hello")`,
+            `Ident(render) Eq(=) Ident(Button) Paren_L(() String("Hello") Paren_R())`,
+        ], [
+            `0.123 = x = y`,
+            `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`,
+        ], [
+            `\t\ttext = "Count: " + count + "!"`,
+            `String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
+        ], [
+            `\t\tonclick = inc`,
+            `Ident(onclick) Eq(=) Ident(inc)`,
+        ],
     ]
 
-    for (let [line, tokens_tuples] of input) {
-        let tokens = tokens_tuples.map(([kind, pos]): lang.Token => ({kind, pos}))
+    for (let [line, expected] of input) {
         let t = lang.tokenizer_make(line)
-        let result: lang.Token[] = []
+        let tokens: lang.Token[] = []
         for (;;) {
             let tok = lang.next_token(t)
             if (tok.kind === lang.Token_Kind.EOF) break
-            result.push(tok)
+            tokens.push(tok)
         }
-        assert.deepEqual(result, tokens, `\nExpected\n"${line}"\nto produce\n${JSON.stringify(tokens)}\nbut got\n${JSON.stringify(result)}`)
+        let result = lang.tokens_to_string(line, tokens)
+        assert.equal(result, expected,
+            `\nExpected\n"${line}"\nto produce\n${expected}\nbut got\n${result}`)
     }
 })
 

@@ -97,11 +97,16 @@ export const is_alnum_code = (code: number): boolean => is_digit_code(code) ||
                                                         is_alpha_code(code)
 export const is_ident_code = (code: number): boolean => is_alnum_code(code) ||
                                                         code === 95 // '_'
+export const is_white_code = (code: number): boolean => code === 32 || // ' '
+                                                        code === 9  || // '\t'
+                                                        code === 10 || // '\n'
+                                                        code === 13    // '\r'
 
 export const is_digit = (ch: string): boolean => is_digit_code(ch.charCodeAt(0))
 export const is_alpha = (ch: string): boolean => is_alpha_code(ch.charCodeAt(0))
 export const is_alnum = (ch: string): boolean => is_alnum_code(ch.charCodeAt(0))
 export const is_ident = (ch: string): boolean => is_ident_code(ch.charCodeAt(0))
+export const is_white = (ch: string): boolean => is_white_code(ch.charCodeAt(0))
 
 export
 const make_token = (t: Tokenizer, kind: Token_Kind): Token => {
@@ -213,6 +218,92 @@ const next_token = (t: Tokenizer): Token => {
     }
     
     return make_token(t, Token_Kind.Invalid)
+}
+
+export const token_to_string = (src: string, tok: Token): string => {
+    switch (tok.kind) {
+    case Token_Kind.EOF:
+        return "EOF"
+    
+    case Token_Kind.EOL:
+        return "\n"
+    
+    // Single-character tokens
+    case Token_Kind.Question:
+    case Token_Kind.Neg:
+    case Token_Kind.Or:
+    case Token_Kind.And:
+    case Token_Kind.Eq:
+    case Token_Kind.Add:
+    case Token_Kind.Sub:
+    case Token_Kind.Mul:
+    case Token_Kind.Div:
+    case Token_Kind.Pow:
+    case Token_Kind.At:
+    case Token_Kind.Quote:
+    case Token_Kind.Paren_L:
+    case Token_Kind.Paren_R:
+        return src[tok.pos]
+    
+    // Multi-character tokens
+    case Token_Kind.String:
+    case Token_Kind.Ident:
+    case Token_Kind.Int:
+    case Token_Kind.Float:
+    case Token_Kind.Invalid: {
+        let start = tok.pos
+        let end   = start + 1
+        
+        while (end < src.length) {
+            let ch = src.charCodeAt(end)
+            
+            // For strings, include everything between quotes
+            if (tok.kind === Token_Kind.String) {
+                if (src[start] === '"' && src[end] === '"' && src[end - 1] !== '\\') {
+                    end++
+                    break
+                }
+            } 
+            // For other tokens, stop at whitespace or special characters
+            else if (is_white_code(ch) || !is_ident_code(ch) && !is_digit_code(ch)) {
+                break
+            }
+            
+            end++
+        }
+        
+        return src.substring(start, end)
+    }
+    }
+}
+
+export const token_display = (src: string, tok: Token): string => {
+    switch (tok.kind) {
+    case Token_Kind.EOF:
+    case Token_Kind.EOL:
+        return Token_Kind[tok.kind]
+    default:
+        return `${Token_Kind[tok.kind]}(${token_to_string(src, tok)})`
+    }
+}
+
+export const tokens_to_string = (src: string, tokens: Token[]): string => {
+    let result = ''
+    let first = true
+    for (let i = 0; i < tokens.length; i++) {
+        let tok = tokens[i]
+        if (tok.kind === Token_Kind.EOL) {
+            result += '\n'
+            first = true
+        } else {
+            if (!first) {
+                result += ' '
+            }
+            first = false
+            result += token_display(src, tok)
+        }
+    }
+    return result
 }
 
 /*
