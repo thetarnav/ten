@@ -11,24 +11,27 @@ test.test('tokenizer', () => {
             `\tcount ?= 12\n`,
             `Ident(count) Question(?) Eq(=) Int(12)\n`,
         ], [
-            `\tdouble = count * 2`,
-            `Ident(double) Eq(=) Ident(count) Mul(*) Int(2)`,
+            `\tx2 = count * 2`,
+            `Ident(x2) Eq(=) Ident(count) Mul(*) Int(2)`,
         ], [
-            `inc = @(num += 12)`,
+            `inc = @(num+=12)`,
             `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add(+) Eq(=) Int(12) Paren_R())`,
         ], [
-            `render = Button("Hello")`,
-            `Ident(render) Eq(=) Ident(Button) Paren_L(() String("Hello") Paren_R())`,
+            `_render = Btn("Hello")`,
+            `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`,
         ], [
             `0.123 = x = y`,
             `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`,
         ], [
-            `\t\ttext = "Count: " + count + "!"`,
+            `\t  text = "Count: " + count + "!"`,
             `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
         ], [
             `\t\tonclick = inc`,
             `Ident(onclick) Eq(=) Ident(inc)`,
-        ],
+        ], [
+            `0.0.0`,
+            `Float(0.0) Float(.0)`,
+        ]
     ]
 
     for (let [line, expected] of input) {

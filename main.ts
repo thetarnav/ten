@@ -215,6 +215,17 @@ const next_token = (t: Tokenizer): Token => {
         }
     }
 
+    if (ch === 46 /* '.' */) {
+        ch = next_char_code(t)
+
+        if (is_digit_code(ch)) {
+            while (is_digit_code(next_char_code(t))) {}
+            return make_token_go_back(t, Token_Kind.Float)
+        }
+
+        return make_token_go_back(t, Token_Kind.Invalid)
+    }
+
     // Identifiers
     if (is_ident_code(ch)) {
         while (is_ident_code(next_char_code(t))) {}
@@ -273,14 +284,23 @@ export const token_to_string = (src: string, tok: Token): string => {
         case Token_Kind.Int:
             for (;end < src.length && is_digit_code(src.charCodeAt(end)); end++) {}
             break
-        case Token_Kind.Float:
+        case Token_Kind.Float: {
+            let dot = false
             for (;end < src.length; end++) {
                 let ch = src.charCodeAt(end)
-                if (!is_digit_code(ch) && ch !== 46 /* '.' */) {
-                    break
+                if (is_digit_code(ch)) {
+                    continue
                 }
+                if (ch === 46 /* '.' */) {
+                    if (dot) break
+                    dot = true
+                    continue
+                }
+                if (is_white_code(ch)) break
+                if (!is_ident_code(ch)) break
             }
             break
+        }
         default:
             for (;end < src.length; end++) {
                 let ch = src.charCodeAt(end)
