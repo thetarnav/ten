@@ -192,8 +192,12 @@ const next_token = (t: Tokenizer): Token => {
     // 123
     // 123.456
     if (is_digit_code(ch)) {
+        for (;;) {
+            ch = next_char_code(t)
 
-        while (ch = next_char_code(t), is_digit_code(ch)) {
+            if (is_digit_code(ch)) {
+                continue
+            }
 
             // fraction (123.456)
             if (ch === 46 /* '.' */) {
@@ -206,9 +210,9 @@ const next_token = (t: Tokenizer): Token => {
 
                 return make_token_go_back(t, Token_Kind.Float)
             }
-        }
 
-        return make_token_go_back(t, Token_Kind.Int)
+            return make_token_go_back(t, Token_Kind.Int)
+        }
     }
 
     // Identifiers

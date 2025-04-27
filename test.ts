@@ -24,7 +24,7 @@ test.test('tokenizer', () => {
             `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`,
         ], [
             `\t\ttext = "Count: " + count + "!"`,
-            `String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
+            `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
         ], [
             `\t\tonclick = inc`,
             `Ident(onclick) Eq(=) Ident(inc)`,
