@@ -475,9 +475,8 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
         let op = p.token
         if (op.kind === Token_Kind.EOF || !is_binary_op(op.kind)) break
 
-        let bp = get_precedence(op.kind)
-        let lbp = bp
-        let rbp = bp
+        let lbp = get_precedence(op.kind)
+        let rbp = lbp
         if (op.kind === Token_Kind.Pow) {
             rbp -= 1 // Right-associative for Pow
         }
