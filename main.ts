@@ -108,59 +108,56 @@ export const is_alnum = (ch: string): boolean => is_alnum_code(ch.charCodeAt(0))
 export const is_ident = (ch: string): boolean => is_ident_code(ch.charCodeAt(0))
 export const is_white = (ch: string): boolean => is_white_code(ch.charCodeAt(0))
 
-export
-const make_token = (t: Tokenizer, kind: Token_Kind): Token => {
-    let token: Token = {
+export const token_make = (t: Tokenizer, kind: Token_Kind): Token => {
+    return {
         pos:  t.pos_write,
         kind: kind,
     }
-    t.pos_write = t.pos_read+1
+}
+export const token_make_move = (t: Tokenizer, kind: Token_Kind): Token => {
+    let token = token_make(t, kind)
+    t.pos_write = t.pos_read + 1
     next_char(t)
     return token
 }
-export
-const make_token_go_back = (t: Tokenizer, kind: Token_Kind): Token => {
-    let token: Token = {
-        pos:  t.pos_write,
-        kind: kind,
-    }
+export const token_make_move_back = (t: Tokenizer, kind: Token_Kind): Token => {
+    let token = token_make(t, kind)
     t.pos_write = t.pos_read
     return token
 }
 
-export
-const next_token = (t: Tokenizer): Token => {
-    
+export const token_next = (t: Tokenizer): Token => {
+
     if (t.pos_read >= t.src.length) {
-        return make_token(t, Token_Kind.EOF)
+        return token_make_move(t, Token_Kind.EOF)
     }
 
     let ch = char_code(t)
-    
+
     switch (ch) {
     // Whitespace
     case 10 /* '\n' */:
-        return make_token(t, Token_Kind.EOL)
+        return token_make_move(t, Token_Kind.EOL)
     case 32 /* ' '  */:
-    case 9  /* '\t' */: 
+    case 9  /* '\t' */:
     case 13 /* '\r' */:
         next_char(t)
         t.pos_write = t.pos_read
-        return next_token(t)
+        return token_next(t)
     // Punctuators
-    case 40 /* '(' */: return make_token(t, Token_Kind.Paren_L)
-    case 41 /* ')' */: return make_token(t, Token_Kind.Paren_R)
+    case 40 /* '(' */: return token_make_move(t, Token_Kind.Paren_L)
+    case 41 /* ')' */: return token_make_move(t, Token_Kind.Paren_R)
     // Operators
-    case 61 /* '=' */: return make_token(t, Token_Kind.Eq)
-    case 43 /* '+' */: return make_token(t, Token_Kind.Add)
-    case 45 /* '-' */: return make_token(t, Token_Kind.Sub)
-    case 42 /* '*' */: return make_token(t, Token_Kind.Mul)
-    case 47 /* '/' */: return make_token(t, Token_Kind.Div)
-    case 94 /* '^' */: return make_token(t, Token_Kind.Pow)
-    case 38 /* '&' */: return make_token(t, Token_Kind.And)
-    case 124/* '|' */: return make_token(t, Token_Kind.Or)
-    case 63 /* '?' */: return make_token(t, Token_Kind.Question)
-    case 64 /* '@' */: return make_token(t, Token_Kind.At)
+    case 61 /* '=' */: return token_make_move(t, Token_Kind.Eq)
+    case 43 /* '+' */: return token_make_move(t, Token_Kind.Add)
+    case 45 /* '-' */: return token_make_move(t, Token_Kind.Sub)
+    case 42 /* '*' */: return token_make_move(t, Token_Kind.Mul)
+    case 47 /* '/' */: return token_make_move(t, Token_Kind.Div)
+    case 94 /* '^' */: return token_make_move(t, Token_Kind.Pow)
+    case 38 /* '&' */: return token_make_move(t, Token_Kind.And)
+    case 124/* '|' */: return token_make_move(t, Token_Kind.Or)
+    case 63 /* '?' */: return token_make_move(t, Token_Kind.Question)
+    case 64 /* '@' */: return token_make_move(t, Token_Kind.At)
     // String
     case 34 /* '"' */: {
 
@@ -171,13 +168,13 @@ const next_token = (t: Tokenizer): Token => {
             switch (next_char_code(t)) {
             case 0:
             case 10 /* '\n' */:
-                return make_token_go_back(t, Token_Kind.Invalid)
+                return token_make_move_back(t, Token_Kind.Invalid)
             case 92 /* '\\' */:
                 escaping = !escaping
                 break
             case 34 /* '"' */:
                 if (!escaping) {
-                    return make_token(t, Token_Kind.String)
+                    return token_make_move(t, Token_Kind.String)
                 }
                 escaping = false
                 break
@@ -203,15 +200,15 @@ const next_token = (t: Tokenizer): Token => {
             if (ch === 46 /* '.' */) {
 
                 if (!is_digit_code(next_char_code(t))) {
-                    return make_token_go_back(t, Token_Kind.Invalid)
+                    return token_make_move_back(t, Token_Kind.Invalid)
                 }
 
                 while (is_digit_code(next_char_code(t))) {}
 
-                return make_token_go_back(t, Token_Kind.Float)
+                return token_make_move_back(t, Token_Kind.Float)
             }
 
-            return make_token_go_back(t, Token_Kind.Int)
+            return token_make_move_back(t, Token_Kind.Int)
         }
     }
 
@@ -220,29 +217,30 @@ const next_token = (t: Tokenizer): Token => {
 
         if (is_digit_code(ch)) {
             while (is_digit_code(next_char_code(t))) {}
-            return make_token_go_back(t, Token_Kind.Float)
+            return token_make_move_back(t, Token_Kind.Float)
         }
 
-        return make_token_go_back(t, Token_Kind.Invalid)
+        return token_make_move_back(t, Token_Kind.Invalid)
     }
 
     // Identifiers
     if (is_ident_code(ch)) {
         while (is_ident_code(next_char_code(t))) {}
-        return make_token_go_back(t, Token_Kind.Ident)
+        return token_make_move_back(t, Token_Kind.Ident)
     }
-    
-    return make_token(t, Token_Kind.Invalid)
+
+    return token_make_move(t, Token_Kind.Invalid)
 }
+export const next_token = token_next
 
 export const token_to_string = (src: string, tok: Token): string => {
     switch (tok.kind) {
     case Token_Kind.EOF:
         return "EOF"
-    
+
     case Token_Kind.EOL:
         return "\n"
-    
+
     // Single-character tokens
     case Token_Kind.Question:
     case Token_Kind.Neg:
@@ -259,7 +257,7 @@ export const token_to_string = (src: string, tok: Token): string => {
     case Token_Kind.Paren_L:
     case Token_Kind.Paren_R:
         return src[tok.pos]
-    
+
     // Multi-character tokens
     case Token_Kind.String:
     case Token_Kind.Ident:
@@ -268,7 +266,7 @@ export const token_to_string = (src: string, tok: Token): string => {
     case Token_Kind.Invalid: {
         let start = tok.pos
         let end   = start + 1
-        
+
         switch (tok.kind) {
         case Token_Kind.String:
             for (;end < src.length; end++) {
@@ -310,7 +308,7 @@ export const token_to_string = (src: string, tok: Token): string => {
             }
             break
         }
-        
+
         return src.substring(start, end)
     }
     }
@@ -417,7 +415,7 @@ function is_unary_op(kind: Token_Kind): boolean {
     case Token_Kind.Add:
     case Token_Kind.Sub:
     case Token_Kind.Neg:
-        return true         
+        return true
     }
     return false
 }
@@ -435,19 +433,26 @@ function is_binary_op(kind: Token_Kind): boolean {
 }
 
 export const parser_next_token = (p: Parser): Token => {
-    p.token = next_token(p.t)
+    p.token = token_next(p.t)
     return p.token
 }
 
-export const parse_src = (src: string): Expr[] => {
+export const parser_make = (src: string): Parser => {
+    let t = tokenizer_make(src)
     let p: Parser = {
-        src: src,
-        t: make_tokenizer(src),
-        token: next_token(make_tokenizer(src)),
+        src:   src,
+        t:     t,
+        token: token_next(t),
     }
-    
+    return p
+}
+
+export const parse_src = (src: string): Expr[] => {
+
+    let p = parser_make(src)
+
     let exprs: Expr[] = []
-    
+
     while (p.token.kind !== Token_Kind.EOF) {
         if (p.token.kind === Token_Kind.EOL) {
             parser_next_token(p)
@@ -455,7 +460,7 @@ export const parse_src = (src: string): Expr[] => {
         }
         exprs.push(parse_expr(p))
     }
-    
+
     return exprs
 }
 
@@ -465,17 +470,22 @@ export const parse_expr = (p: Parser): Expr => {
 
 const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
     let lhs = parse_expr_atom(p)
-    
+
     for (;;) {
         let op = p.token
         if (op.kind === Token_Kind.EOF || !is_binary_op(op.kind)) break
-        
-        let [lbp, rbp] = get_binding_powers(op.kind)
+
+        let bp = get_precedence(op.kind)
+        let lbp = bp
+        let rbp = bp
+        if (op.kind === Token_Kind.Pow) {
+            rbp = bp - 1 // Right-associative for Pow
+        }
         if (lbp < min_bp) break
 
         parser_next_token(p)
         let rhs = parse_expr_bp(p, rbp)
-        
+
         lhs = {
             kind: 'Expr_Binary',
             op:   op,
@@ -483,14 +493,8 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
             rhs:  rhs
         }
     }
-    
-    return lhs
-}
 
-const get_binding_powers = (kind: Token_Kind): [number, number] => {
-    let bp = get_precedence(kind)
-    // Right-associative for Pow
-    return [bp, kind === Token_Kind.Pow ? bp - 1 : bp]
+    return lhs
 }
 
 const parse_expr_atom = (p: Parser): Expr => {
@@ -527,6 +531,6 @@ const parse_expr_atom = (p: Parser): Expr => {
         return expr
     }
     }
-    
+
     throw new Error(`Unexpected token: ${Token_Kind[p.token.kind]}`)
 }

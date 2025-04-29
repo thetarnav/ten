@@ -38,7 +38,7 @@ test.test('tokenizer', () => {
         let t = lang.tokenizer_make(line)
         let tokens: lang.Token[] = []
         for (;;) {
-            let tok = lang.next_token(t)
+            let tok = lang.token_next(t)
             if (tok.kind === lang.Token_Kind.EOF) break
             tokens.push(tok)
         }
@@ -48,30 +48,30 @@ test.test('tokenizer', () => {
     }
 })
 
-// test.test('parser', () => {
-//     let src = 'a + b'
-//     let exprs = lang.parse_src(src)
-//     assert.deepEqual(exprs, [
-//         {
-//             kind: 'Expr_Binary',
-//             lhs: {
-//                 kind: 'Expr_Ident',
-//                 tok: {
-//                     kind: lang.Token_Kind.Ident,
-//                     pos: 0,
-//                 },
-//             },
-//             op: {
-//                 kind: lang.Token_Kind.Add,
-//                 pos: 2,
-//             },
-//             rhs: {
-//                 kind: 'Expr_Ident',
-//                 tok: {
-//                     kind: lang.Token_Kind.Ident,
-//                     pos: 4,
-//                 },
-//             },
-//         },
-//     ] satisfies lang.Expr[])
-// })
+test.test('parser', () => {
+    let src = 'a + b'
+    let exprs = lang.parse_src(src)
+    assert.deepEqual(exprs, [
+        {
+            kind: 'Expr_Binary',
+            lhs: {
+                kind: 'Expr_Ident',
+                tok: {
+                    kind: lang.Token_Kind.Ident,
+                    pos: 0,
+                },
+            },
+            op: {
+                kind: lang.Token_Kind.Add,
+                pos: 2,
+            },
+            rhs: {
+                kind: 'Expr_Ident',
+                tok: {
+                    kind: lang.Token_Kind.Ident,
+                    pos: 4,
+                },
+            },
+        },
+    ] satisfies lang.Expr[])
+})
