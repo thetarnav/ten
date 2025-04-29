@@ -393,13 +393,20 @@ export type Expr_Comma = {
     tok: Token
 }
 
-export type Parser = {
-    src:   string
-    t:     Tokenizer
-    token: Token
+export const expr_binary_make = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
+    return {kind: 'Expr_Binary', op, lhs, rhs}
+}
+export const expr_unary_make = (op: Token, rhs: Expr): Expr_Unary => {
+    return {kind: 'Expr_Unary', op, rhs}
+}
+export const expr_ident_make = (tok: Token): Expr_Ident => {
+    return {kind: 'Expr_Ident', tok}
+}
+export const expr_number_make = (tok: Token): Expr_Number => {
+    return {kind: 'Expr_Number', tok}
 }
 
-function get_precedence(kind: Token_Kind): number {
+export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
     case Token_Kind.Add:
     case Token_Kind.Sub: return 1
@@ -409,8 +416,11 @@ function get_precedence(kind: Token_Kind): number {
     default:             return 0
     }
 }
+export const token_precedence = (tok: Token): number => {
+    return token_kind_precedence(tok.kind)
+}
 
-function is_unary_op(kind: Token_Kind): boolean {
+export const token_kind_is_unary = (kind: Token_Kind): boolean => {
     switch (kind) {
     case Token_Kind.Add:
     case Token_Kind.Sub:
@@ -419,8 +429,11 @@ function is_unary_op(kind: Token_Kind): boolean {
     }
     return false
 }
+export const token_is_unary = (tok: Token): boolean => {
+    return token_kind_is_unary(tok.kind)
+}
 
-function is_binary_op(kind: Token_Kind): boolean {
+export const token_kind_is_binary = (kind: Token_Kind): boolean => {
     switch (kind) {
     case Token_Kind.Add:
     case Token_Kind.Sub:
@@ -430,6 +443,15 @@ function is_binary_op(kind: Token_Kind): boolean {
         return true
     }
     return false
+}
+export const token_is_binary = (tok: Token): boolean => {
+    return token_kind_is_binary(tok.kind)
+}
+
+export type Parser = {
+    src:   string
+    t:     Tokenizer
+    token: Token
 }
 
 export const parser_next_token = (p: Parser): Token => {
@@ -473,9 +495,9 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 
     for (;;) {
         let op = p.token
-        if (op.kind === Token_Kind.EOF || !is_binary_op(op.kind)) break
+        if (op.kind === Token_Kind.EOF || !token_is_binary(op)) break
 
-        let lbp = get_precedence(op.kind)
+        let lbp = token_precedence(op)
         let rbp = lbp
         if (op.kind === Token_Kind.Pow) {
             rbp -= 1 // Right-associative for Pow
@@ -485,12 +507,7 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
         parser_next_token(p)
         let rhs = parse_expr_bp(p, rbp)
 
-        lhs = {
-            kind: 'Expr_Binary',
-            op:   op,
-            lhs:  lhs,
-            rhs:  rhs
-        }
+        lhs = expr_binary_make(op, lhs, rhs)
     }
 
     return lhs
@@ -507,7 +524,7 @@ const parse_expr_atom = (p: Parser): Expr => {
         let op = p.token
         parser_next_token(p)
         let rhs = parse_expr_atom(p)
-        return {kind: 'Expr_Unary', op, rhs}
+        return expr_unary_make(op, rhs)
     }
     case Token_Kind.Paren_L: {
         let tok = parser_next_token(p)
@@ -519,13 +536,13 @@ const parse_expr_atom = (p: Parser): Expr => {
         return expr
     }
     case Token_Kind.Ident: {
-        expr = {kind: 'Expr_Ident', tok: p.token}
+        expr = expr_ident_make(p.token)
         parser_next_token(p)
         return expr
     }
     case Token_Kind.Float:
     case Token_Kind.Int: {
-        expr = {kind: 'Expr_Number', tok: p.token}
+        expr = expr_number_make(p.token)
         parser_next_token(p)
         return expr
     }
