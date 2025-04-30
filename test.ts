@@ -49,29 +49,121 @@ test.test('tokenizer', () => {
 })
 
 test.test('parser', () => {
-    let src = 'a + b'
-    let exprs = lang.parse_src(src)
-    assert.deepEqual(exprs, [
-        {
-            kind: 'Expr_Binary',
-            lhs: {
-                kind: 'Expr_Ident',
-                tok: {
-                    kind: lang.Token_Kind.Ident,
-                    pos: 0,
-                },
-            },
-            op: {
-                kind: lang.Token_Kind.Add,
-                pos: 2,
-            },
-            rhs: {
-                kind: 'Expr_Ident',
-                tok: {
-                    kind: lang.Token_Kind.Ident,
-                    pos: 4,
-                },
-            },
-        },
-    ] satisfies lang.Expr[])
+    let parser_tests: [string, lang.Expr][] = [
+        // Simple identifiers and numbers
+        ['x', lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0})],
+        ['123', lang.expr_number({kind: lang.Token_Kind.Int, pos: 0})],
+        ['3.14', lang.expr_number({kind: lang.Token_Kind.Float, pos: 0})],
+
+        // Unary operations
+        ['+x', lang.expr_unary(
+            {kind: lang.Token_Kind.Add, pos: 0},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+        )],
+        ['-y', lang.expr_unary(
+            {kind: lang.Token_Kind.Sub, pos: 0},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+        )],
+
+        // Simple binary operations
+        ['a + b', lang.expr_binary(
+            {kind: lang.Token_Kind.Add, pos: 2},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 4}),
+        )],
+        ['a - b', lang.expr_binary(
+            {kind: lang.Token_Kind.Sub, pos: 2},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 4}),
+        )],
+
+        // Operator precedence tests
+        ['a + b * c', lang.expr_binary(
+            {kind: lang.Token_Kind.Add, pos: 2},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Mul, pos: 6},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 4}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+            )
+        )],
+        ['a * b + c', lang.expr_binary(
+            {kind: lang.Token_Kind.Add, pos: 6},
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Mul, pos: 2},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 4}),
+            ),
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+        )],
+
+        // Right associativity for power operator
+        ['a ^ b ^ c', lang.expr_binary(
+            {kind: lang.Token_Kind.Pow, pos: 2},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Pow, pos: 6},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 4}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+            ),
+        )],
+
+        // Parenthesized expressions
+        ['(a + b)', lang.expr_binary(
+            {kind: lang.Token_Kind.Add, pos: 3},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+        )],
+        ['a * (b + c)', lang.expr_binary(
+            {kind: lang.Token_Kind.Mul, pos: 2},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 7},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 9}),
+            ),
+        )],
+
+        // Complex expressions
+        ['a + b * c ^ d - e / f', lang.expr_binary(
+            {kind: lang.Token_Kind.Add, pos: 2},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Sub, pos: 14},
+                lang.expr_binary(
+                    {kind: lang.Token_Kind.Mul, pos: 6},
+                    lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 4}),
+                    lang.expr_binary(
+                        {kind: lang.Token_Kind.Pow, pos: 10},
+                        lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+                        lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 12}),
+                    ),
+                ),
+                lang.expr_binary(
+                    {kind: lang.Token_Kind.Div, pos: 18},
+                    lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 16}),
+                    lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 20}),
+                ),
+            ),
+        )],
+
+        // Unary with binary
+        ['-a + b', lang.expr_binary(
+            {kind: lang.Token_Kind.Add, pos: 3},
+            lang.expr_unary(
+                {kind: lang.Token_Kind.Sub, pos: 0},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+            ),
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+        )],
+    ]
+
+    // Run all parser tests
+    for (let [input, expected] of parser_tests) {
+        let [results, errors] = lang.parse_src(input)
+        assert.deepEqual(results[0], expected,
+            `Parser test failed for input: "${input}"\nExpected: ${JSON.stringify(expected)}\nGot: ${JSON.stringify(results[0])}`)
+        assert.equal(errors.length, 0,
+            `Parser test failed for input: "${input}"\nExpected no errors but got: ${JSON.stringify(errors)}`)
+    }
 })

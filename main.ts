@@ -356,6 +356,7 @@ export type Expr =
     | Expr_Binary
     | Expr_Paren
     | Expr_Comma
+    | Expr_Invalid
 
 export type Expr_Ident = {
     kind: 'Expr_Ident'
@@ -393,17 +394,31 @@ export type Expr_Comma = {
     tok: Token
 }
 
-export const expr_binary_make = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
+export type Expr_Invalid = {
+    kind:   'Expr_Invalid'
+    tok:    Token
+    reason: string
+}
+
+export const expr_binary = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
     return {kind: 'Expr_Binary', op, lhs, rhs}
 }
-export const expr_unary_make = (op: Token, rhs: Expr): Expr_Unary => {
+export const expr_unary = (op: Token, rhs: Expr): Expr_Unary => {
     return {kind: 'Expr_Unary', op, rhs}
 }
-export const expr_ident_make = (tok: Token): Expr_Ident => {
+export const expr_ident = (tok: Token): Expr_Ident => {
     return {kind: 'Expr_Ident', tok}
 }
-export const expr_number_make = (tok: Token): Expr_Number => {
+export const expr_number = (tok: Token): Expr_Number => {
     return {kind: 'Expr_Number', tok}
+}
+export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
+    return {kind: 'Expr_Invalid', tok, reason}
+}
+export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
+    let expr = expr_invalid(tok, reason)
+    p.errors.push(expr)
+    return expr
 }
 
 export const token_kind_precedence = (kind: Token_Kind): number => {
@@ -449,9 +464,10 @@ export const token_is_binary = (tok: Token): boolean => {
 }
 
 export type Parser = {
-    src:   string
-    t:     Tokenizer
-    token: Token
+    src:    string
+    t:      Tokenizer
+    token:  Token
+    errors: Expr_Invalid[]
 }
 
 export const parser_next_token = (p: Parser): Token => {
@@ -462,14 +478,15 @@ export const parser_next_token = (p: Parser): Token => {
 export const parser_make = (src: string): Parser => {
     let t = tokenizer_make(src)
     let p: Parser = {
-        src:   src,
-        t:     t,
-        token: token_next(t),
+        src:    src,
+        t:      t,
+        token:  token_next(t),
+        errors: [],
     }
     return p
 }
 
-export const parse_src = (src: string): Expr[] => {
+export const parse_src = (src: string): [exprs: Expr[], errors: Expr_Invalid[]] => {
 
     let p = parser_make(src)
 
@@ -483,7 +500,7 @@ export const parse_src = (src: string): Expr[] => {
         exprs.push(parse_expr(p))
     }
 
-    return exprs
+    return [exprs, p.errors]
 }
 
 export const parse_expr = (p: Parser): Expr => {
@@ -507,7 +524,7 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
         parser_next_token(p)
         let rhs = parse_expr_bp(p, rbp)
 
-        lhs = expr_binary_make(op, lhs, rhs)
+        lhs = expr_binary(op, lhs, rhs)
     }
 
     return lhs
@@ -524,29 +541,30 @@ const parse_expr_atom = (p: Parser): Expr => {
         let op = p.token
         parser_next_token(p)
         let rhs = parse_expr_atom(p)
-        return expr_unary_make(op, rhs)
+        return expr_unary(op, rhs)
     }
     case Token_Kind.Paren_L: {
-        let tok = parser_next_token(p)
+        parser_next_token(p)
         expr = parse_expr(p)
+        let tok = p.token
         if (tok.kind !== Token_Kind.Paren_R) {
-            throw new Error("Expected closing parenthesis")
+            return expr_invalid_push(p, tok, "Expected closing parenthesis")
         }
         parser_next_token(p)
         return expr
     }
     case Token_Kind.Ident: {
-        expr = expr_ident_make(p.token)
+        expr = expr_ident(p.token)
         parser_next_token(p)
         return expr
     }
     case Token_Kind.Float:
     case Token_Kind.Int: {
-        expr = expr_number_make(p.token)
+        expr = expr_number(p.token)
         parser_next_token(p)
         return expr
     }
     }
 
-    throw new Error(`Unexpected token: ${Token_Kind[p.token.kind]}`)
+    return expr_invalid_push(p, p.token)
 }
