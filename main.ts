@@ -415,6 +415,12 @@ export const expr_number = (tok: Token): Expr_Number => {
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     return {kind: 'Expr_Invalid', tok, reason}
 }
+export const expr_paren = (body: Expr[], lhs: Token, rhs: Token): Expr_Paren => {
+    return {kind: 'Expr_Paren', type: null, body, lhs, rhs}
+}
+export const expr_paren_typed = (type: Expr, body: Expr[], lhs: Token, rhs: Token): Expr_Paren => {
+    return {kind: 'Expr_Paren', type, body, lhs, rhs}
+}
 export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     let expr = expr_invalid(tok, reason)
     p.errors.push(expr)
@@ -468,6 +474,10 @@ export type Parser = {
     t:      Tokenizer
     token:  Token
     errors: Expr_Invalid[]
+}
+
+export const parser_token = (p: Parser): Token => {
+    return p.token
 }
 
 export const parser_next_token = (p: Parser): Token => {
@@ -533,38 +543,58 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 const parse_expr_atom = (p: Parser): Expr => {
     let expr: Expr
 
-    switch (p.token.kind) {
+    switch (parser_token(p).kind) {
     /* Unary */
     case Token_Kind.Add:
     case Token_Kind.Sub:
     case Token_Kind.Neg: {
-        let op = p.token
+        let op = parser_token(p)
         parser_next_token(p)
         let rhs = parse_expr_atom(p)
         return expr_unary(op, rhs)
     }
     case Token_Kind.Paren_L: {
+        let paren_l = p.token
         parser_next_token(p)
-        expr = parse_expr(p)
-        let tok = p.token
-        if (tok.kind !== Token_Kind.Paren_R) {
-            return expr_invalid_push(p, tok, "Expected closing parenthesis")
+        let body: Expr[] = []
+        while (
+            parser_token(p).kind !== Token_Kind.EOF &&
+            parser_token(p).kind !== Token_Kind.Paren_R
+        ) {
+            body.push(parse_expr(p))
+            // if (parser_token(p).kind === Token_Kind.Comma) {
+            //     parser_next_token(p)
+            // }
+        }
+        let paren_r = parser_token(p)
+        if (paren_r.kind !== Token_Kind.Paren_R) {
+            return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
         }
         parser_next_token(p)
-        return expr
+        return expr_paren(body, paren_l, paren_r)
     }
     case Token_Kind.Ident: {
-        expr = expr_ident(p.token)
+        expr = expr_ident(parser_token(p))
         parser_next_token(p)
+        let paren_l = parser_token(p)
+        if (paren_l.kind === Token_Kind.Paren_L) {
+            let paren = parse_expr_atom(p)
+            if (paren.kind === 'Expr_Paren') {
+                paren.type = expr
+                expr = paren
+            } else {
+                return expr_invalid_push(p, parser_token(p), "Expected closing parenthesis")
+            }
+        }
         return expr
     }
     case Token_Kind.Float:
     case Token_Kind.Int: {
-        expr = expr_number(p.token)
+        expr = expr_number(parser_token(p))
         parser_next_token(p)
         return expr
     }
     }
 
-    return expr_invalid_push(p, p.token)
+    return expr_invalid_push(p, parser_token(p))
 }

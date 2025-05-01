@@ -108,22 +108,6 @@ test.test('parser', () => {
             ),
         )],
 
-        // Parenthesized expressions
-        ['(a + b)', lang.expr_binary(
-            {kind: lang.Token_Kind.Add, pos: 3},
-            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
-            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
-        )],
-        ['a * (b + c)', lang.expr_binary(
-            {kind: lang.Token_Kind.Mul, pos: 2},
-            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
-            lang.expr_binary(
-                {kind: lang.Token_Kind.Add, pos: 7},
-                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
-                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 9}),
-            ),
-        )],
-
         // Complex expressions
         ['a + b * c ^ d - e / f', lang.expr_binary(
             {kind: lang.Token_Kind.Add, pos: 2},
@@ -156,6 +140,42 @@ test.test('parser', () => {
             ),
             lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
         )],
+
+        // Parenthesized expressions
+        ['(a + b)', lang.expr_paren(
+            [lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 3},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+            )],
+            {kind: lang.Token_Kind.Paren_L, pos: 0},
+            {kind: lang.Token_Kind.Paren_R, pos: 6},
+        )],
+        ['a * (b + c)', lang.expr_binary(
+            {kind: lang.Token_Kind.Mul, pos: 2},
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            lang.expr_paren(
+                [lang.expr_binary(
+                    {kind: lang.Token_Kind.Add, pos: 7},
+                    lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+                    lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 9}),
+                )],
+                {kind: lang.Token_Kind.Paren_L, pos: 4},
+                {kind: lang.Token_Kind.Paren_R, pos: 10},
+            ),
+        )],
+        ['foo(a + b)', lang.expr_paren_typed(
+            lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
+            [
+                lang.expr_binary(
+                    {kind: lang.Token_Kind.Add, pos: 6},
+                    lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 4}),
+                    lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+                ),
+            ],
+            {kind: lang.Token_Kind.Paren_L, pos: 3},
+            {kind: lang.Token_Kind.Paren_R, pos: 9},
+        )], 
     ]
 
     // Run all parser tests
