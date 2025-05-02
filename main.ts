@@ -561,7 +561,8 @@ const parse_expr_atom = (p: Parser): Expr => {
             parser_token(p).kind !== Token_Kind.Paren_R
         ) {
             body.push(parse_expr(p))
-            if (parser_token(p).kind === Token_Kind.Comma) {
+            if (parser_token(p).kind === Token_Kind.Comma ||
+                parser_token(p).kind === Token_Kind.EOL) {
                 parser_next_token(p)
             }
         }
@@ -592,6 +593,9 @@ const parse_expr_atom = (p: Parser): Expr => {
         parser_next_token(p)
         return expr
     }
+    case Token_Kind.EOL:
+        parser_next_token(p)
+        return parse_expr_atom(p)
     }
 
     return expr_invalid_push(p, parser_token(p))

@@ -194,6 +194,30 @@ test.test('parser', () => {
                 lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 12}),
             ),
         ])],
+        ['(a + b\n\tc + d)', lang.expr_paren([
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 3},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+            ),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 10},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 12}),
+            ),
+        ])],
+        ['(\n\ta + b\n\tc + d\n)', lang.expr_paren([
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 5},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 3}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 7}),
+            ),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 12},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 10}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 14}),
+            ),
+        ])],
     ]
 
     // Run all parser tests
