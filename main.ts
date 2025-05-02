@@ -258,6 +258,7 @@ export const token_to_string = (src: string, tok: Token): string => {
     case Token_Kind.Quote:
     case Token_Kind.Paren_L:
     case Token_Kind.Paren_R:
+    case Token_Kind.Comma:
         return src[tok.pos]
 
     // Multi-character tokens
