@@ -170,6 +170,30 @@ test.test('parser', () => {
                 ),
             ],
         )],
+        ['(a + b, c + d)', lang.expr_paren([
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 3},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+            ),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 10},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 12}),
+            ),
+        ])],
+        ['(a + b, c + d,)', lang.expr_paren([
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 3},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 1}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
+            ),
+            lang.expr_binary(
+                {kind: lang.Token_Kind.Add, pos: 10},
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 8}),
+                lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 12}),
+            ),
+        ])],
     ]
 
     // Run all parser tests

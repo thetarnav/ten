@@ -31,6 +31,7 @@ enum Token_Kind {
     /** "           */ Quote,
     /** (           */ Paren_L,
     /** )           */ Paren_R,
+    /** ,           */ Comma,
     /*
         Long Tokens
     */
@@ -150,6 +151,7 @@ export const token_next = (t: Tokenizer): Token => {
     // Operators
     case 61 /* '=' */: return token_make_move(t, Token_Kind.Eq)
     case 43 /* '+' */: return token_make_move(t, Token_Kind.Add)
+    case 44 /* ',' */: return token_make_move(t, Token_Kind.Comma)
     case 45 /* '-' */: return token_make_move(t, Token_Kind.Sub)
     case 42 /* '*' */: return token_make_move(t, Token_Kind.Mul)
     case 47 /* '/' */: return token_make_move(t, Token_Kind.Div)
@@ -559,9 +561,9 @@ const parse_expr_atom = (p: Parser): Expr => {
             parser_token(p).kind !== Token_Kind.Paren_R
         ) {
             body.push(parse_expr(p))
-            // if (parser_token(p).kind === Token_Kind.Comma) {
-            //     parser_next_token(p)
-            // }
+            if (parser_token(p).kind === Token_Kind.Comma) {
+                parser_next_token(p)
+            }
         }
         let paren_r = parser_token(p)
         if (paren_r.kind !== Token_Kind.Paren_R) {
@@ -575,7 +577,7 @@ const parse_expr_atom = (p: Parser): Expr => {
         parser_next_token(p)
         if (parser_token(p).kind === Token_Kind.Paren_L) {
             let paren = parse_expr_atom(p)
-            if (paren.kind === 'Expr_Paren') {
+            if (paren.kind === "Expr_Paren") {
                 paren.type = expr
                 expr = paren
             } else {
