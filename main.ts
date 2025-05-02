@@ -385,8 +385,6 @@ export type Expr_Paren = {
     kind: 'Expr_Paren'
     type: Expr | null
     body: Expr[]
-    lhs:  Token
-    rhs:  Token
 }
 
 export type Expr_Comma = {
@@ -415,11 +413,11 @@ export const expr_number = (tok: Token): Expr_Number => {
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     return {kind: 'Expr_Invalid', tok, reason}
 }
-export const expr_paren = (body: Expr[], lhs: Token, rhs: Token): Expr_Paren => {
-    return {kind: 'Expr_Paren', type: null, body, lhs, rhs}
+export const expr_paren = (body: Expr[]): Expr_Paren => {
+    return {kind: 'Expr_Paren', type: null, body}
 }
-export const expr_paren_typed = (type: Expr, body: Expr[], lhs: Token, rhs: Token): Expr_Paren => {
-    return {kind: 'Expr_Paren', type, body, lhs, rhs}
+export const expr_paren_typed = (type: Expr, body: Expr[]): Expr_Paren => {
+    return {kind: 'Expr_Paren', type, body}
 }
 export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     let expr = expr_invalid(tok, reason)
@@ -554,7 +552,6 @@ const parse_expr_atom = (p: Parser): Expr => {
         return expr_unary(op, rhs)
     }
     case Token_Kind.Paren_L: {
-        let paren_l = p.token
         parser_next_token(p)
         let body: Expr[] = []
         while (
@@ -571,13 +568,12 @@ const parse_expr_atom = (p: Parser): Expr => {
             return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
         }
         parser_next_token(p)
-        return expr_paren(body, paren_l, paren_r)
+        return expr_paren(body)
     }
     case Token_Kind.Ident: {
         expr = expr_ident(parser_token(p))
         parser_next_token(p)
-        let paren_l = parser_token(p)
-        if (paren_l.kind === Token_Kind.Paren_L) {
+        if (parser_token(p).kind === Token_Kind.Paren_L) {
             let paren = parse_expr_atom(p)
             if (paren.kind === 'Expr_Paren') {
                 paren.type = expr
