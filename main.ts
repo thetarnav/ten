@@ -430,11 +430,14 @@ export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected to
 
 export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
+    case Token_Kind.Eq:  return 1
     case Token_Kind.Add:
-    case Token_Kind.Sub: return 1
+    case Token_Kind.Sub: return 2
     case Token_Kind.Mul:
-    case Token_Kind.Div: return 2
-    case Token_Kind.Pow: return 3
+    case Token_Kind.Div: return 3
+    case Token_Kind.Pow: return 4
+    case Token_Kind.And:
+    case Token_Kind.Or:  return 5
     default:             return 0
     }
 }
@@ -462,6 +465,9 @@ export const token_kind_is_binary = (kind: Token_Kind): boolean => {
     case Token_Kind.Mul:
     case Token_Kind.Div:
     case Token_Kind.Pow:
+    case Token_Kind.And:
+    case Token_Kind.Or:
+    case Token_Kind.Eq:
         return true
     }
     return false
@@ -501,18 +507,28 @@ export const parse_src = (src: string): [exprs: Expr[], errors: Expr_Invalid[]] 
 
     let p = parser_make(src)
 
-    let exprs: Expr[] = []
-
-    while (p.token.kind !== Token_Kind.EOF) {
-        if (p.token.kind === Token_Kind.EOL) {
-            parser_next_token(p)
-            continue
-        }
-        exprs.push(parse_expr(p))
-    }
+    let exprs = parse_body(p)
 
     return [exprs, p.errors]
 }
+
+export const parse_body = (p: Parser): Expr[] => {
+
+    let body: Expr[] = []
+    while (
+        parser_token(p).kind !== Token_Kind.EOF &&
+        parser_token(p).kind !== Token_Kind.Paren_R
+    ) {
+        body.push(parse_expr(p))
+        if (parser_token(p).kind === Token_Kind.Comma ||
+            parser_token(p).kind === Token_Kind.EOL) {
+            parser_next_token(p)
+        }
+    }
+
+    return body
+}
+
 
 export const parse_expr = (p: Parser): Expr => {
     return parse_expr_bp(p, 0)
@@ -556,17 +572,7 @@ const parse_expr_atom = (p: Parser): Expr => {
     }
     case Token_Kind.Paren_L: {
         parser_next_token(p)
-        let body: Expr[] = []
-        while (
-            parser_token(p).kind !== Token_Kind.EOF &&
-            parser_token(p).kind !== Token_Kind.Paren_R
-        ) {
-            body.push(parse_expr(p))
-            if (parser_token(p).kind === Token_Kind.Comma ||
-                parser_token(p).kind === Token_Kind.EOL) {
-                parser_next_token(p)
-            }
-        }
+        let body = parse_body(p)
         let paren_r = parser_token(p)
         if (paren_r.kind !== Token_Kind.Paren_R) {
             return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
