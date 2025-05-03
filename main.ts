@@ -584,13 +584,13 @@ const parse_expr_atom = (p: Parser): Expr => {
         expr = expr_ident(parser_token(p))
         parser_next_token(p)
         if (parser_token(p).kind === Token_Kind.Paren_L) {
-            let paren = parse_expr_atom(p)
-            if (paren.kind === "Expr_Paren") {
-                paren.type = expr
-                expr = paren
-            } else {
-                return expr_invalid_push(p, parser_token(p), "Expected closing parenthesis")
+            parser_next_token(p)
+            let body = parse_body(p)
+            let paren_r = parser_token(p)
+            if (paren_r.kind !== Token_Kind.Paren_R) {
+                return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
             }
+            return expr_paren_typed(expr, body)
         }
         return expr
     }
