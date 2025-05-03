@@ -387,7 +387,7 @@ export type Expr_Binary = {
 export type Expr_Paren = {
     kind: 'Expr_Paren'
     type: Expr | null
-    body: Expr[]
+    body: Expr
 }
 
 export type Expr_Comma = {
@@ -416,10 +416,10 @@ export const expr_number = (tok: Token): Expr_Number => {
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     return {kind: 'Expr_Invalid', tok, reason}
 }
-export const expr_paren = (body: Expr[]): Expr_Paren => {
+export const expr_paren = (body: Expr): Expr_Paren => {
     return {kind: 'Expr_Paren', type: null, body}
 }
-export const expr_paren_typed = (type: Expr, body: Expr[]): Expr_Paren => {
+export const expr_paren_typed = (type: Expr, body: Expr): Expr_Paren => {
     return {kind: 'Expr_Paren', type, body}
 }
 export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
@@ -430,15 +430,17 @@ export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected to
 
 export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
-    case Token_Kind.Eq:  return 1
-    case Token_Kind.Add:
-    case Token_Kind.Sub: return 2
-    case Token_Kind.Mul:
-    case Token_Kind.Div: return 3
-    case Token_Kind.Pow: return 4
-    case Token_Kind.And:
-    case Token_Kind.Or:  return 5
-    default:             return 0
+    case Token_Kind.EOL:   return 1
+    case Token_Kind.Comma: return 1
+    case Token_Kind.Eq:    return 2
+    case Token_Kind.Add:   return 3
+    case Token_Kind.Sub:   return 3
+    case Token_Kind.Mul:   return 4
+    case Token_Kind.Div:   return 4
+    case Token_Kind.Pow:   return 5
+    case Token_Kind.And:   return 6
+    case Token_Kind.Or:    return 6
+    default:               return 0
     }
 }
 export const token_precedence = (tok: Token): number => {
@@ -459,18 +461,7 @@ export const token_is_unary = (tok: Token): boolean => {
 }
 
 export const token_kind_is_binary = (kind: Token_Kind): boolean => {
-    switch (kind) {
-    case Token_Kind.Add:
-    case Token_Kind.Sub:
-    case Token_Kind.Mul:
-    case Token_Kind.Div:
-    case Token_Kind.Pow:
-    case Token_Kind.And:
-    case Token_Kind.Or:
-    case Token_Kind.Eq:
-        return true
-    }
-    return false
+    return token_kind_precedence(kind) > 0
 }
 export const token_is_binary = (tok: Token): boolean => {
     return token_kind_is_binary(tok.kind)
@@ -503,35 +494,17 @@ export const parser_make = (src: string): Parser => {
     return p
 }
 
-export const parse_src = (src: string): [exprs: Expr[], errors: Expr_Invalid[]] => {
+export const parse_src = (src: string): [body: Expr, errors: Expr_Invalid[]] => {
 
     let p = parser_make(src)
 
-    let exprs = parse_body(p)
+    let body = parse_expr(p)
 
-    return [exprs, p.errors]
+    return [body, p.errors]
 }
-
-export const parse_body = (p: Parser): Expr[] => {
-
-    let body: Expr[] = []
-    while (
-        parser_token(p).kind !== Token_Kind.EOF &&
-        parser_token(p).kind !== Token_Kind.Paren_R
-    ) {
-        body.push(parse_expr(p))
-        if (parser_token(p).kind === Token_Kind.Comma ||
-            parser_token(p).kind === Token_Kind.EOL) {
-            parser_next_token(p)
-        }
-    }
-
-    return body
-}
-
 
 export const parse_expr = (p: Parser): Expr => {
-    return parse_expr_bp(p, 0)
+    return parse_expr_bp(p, 1)
 }
 
 const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
@@ -539,16 +512,20 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 
     for (;;) {
         let op = p.token
-        if (op.kind === Token_Kind.EOF || !token_is_binary(op)) break
+        if (op.kind === Token_Kind.EOF) break
 
         let lbp = token_precedence(op)
+        if (lbp < min_bp) break
+
         let rbp = lbp
         if (op.kind === Token_Kind.Pow) {
             rbp -= 1 // Right-associative for Pow
         }
-        if (lbp < min_bp) break
 
         parser_next_token(p)
+
+        if (p.token.kind === Token_Kind.Paren_R) break
+
         let rhs = parse_expr_bp(p, rbp)
 
         lhs = expr_binary(op, lhs, rhs)
@@ -559,6 +536,11 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 
 const parse_expr_atom = (p: Parser): Expr => {
     let expr: Expr
+
+    // ignore EOL
+    while (parser_token(p).kind === Token_Kind.EOL) {
+        parser_next_token(p)
+    }
 
     switch (parser_token(p).kind) {
     /* Unary */
@@ -572,7 +554,7 @@ const parse_expr_atom = (p: Parser): Expr => {
     }
     case Token_Kind.Paren_L: {
         parser_next_token(p)
-        let body = parse_body(p)
+        let body = parse_expr(p)
         let paren_r = parser_token(p)
         if (paren_r.kind !== Token_Kind.Paren_R) {
             return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
@@ -585,7 +567,7 @@ const parse_expr_atom = (p: Parser): Expr => {
         parser_next_token(p)
         if (parser_token(p).kind === Token_Kind.Paren_L) {
             parser_next_token(p)
-            let body = parse_body(p)
+            let body = parse_expr(p)
             let paren_r = parser_token(p)
             if (paren_r.kind !== Token_Kind.Paren_R) {
                 return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
