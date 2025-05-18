@@ -518,8 +518,8 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
         if (lbp < min_bp) break
 
         let rbp = lbp
-        if (op.kind === Token_Kind.Pow) {
-            rbp -= 1 // Right-associative for Pow
+        if (op.kind !== Token_Kind.Pow) {
+            rbp += 1 // Right-associative for Pow
         }
 
         parser_next_token(p)
