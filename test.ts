@@ -61,6 +61,12 @@ test.describe('tokenizer', () => {
         `Paren_L(() Paren_R())`)
     test_tokenizer(`a >b >= c = d < e<= f`,
         `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Ident(f)`)
+    test_tokenizer(`true false`,
+        `True(true) False(false)`)
+    test_tokenizer(`x = true, y = false`,
+        `Ident(x) Eq(=) True(true) Comma(,) Ident(y) Eq(=) False(false)`)
+    test_tokenizer(`trueish falsey`,
+        `Ident(trueish) Ident(falsey)`)
 })
 
 test.describe('parser', () => {
@@ -72,6 +78,12 @@ test.describe('parser', () => {
     test_parser('3.14',
         `Token: Float(3.14)`)
 
+    // Booleans
+    test_parser('true',
+        `Token: True(true)`)
+    test_parser('false',
+        `Token: False(false)`)
+
     // Unary operations
     test_parser('+x',
         `Unary: Add(+)\n`+
@@ -81,21 +93,21 @@ test.describe('parser', () => {
         `  Token: Ident(y)`)
 
     // Simple binary operations
-    test_parser('a + b',
+    test_parser('a + true',
         `Binary: Add(+)\n`+
         `  Token: Ident(a)\n`+
-        `  Token: Ident(b)`)
+        `  Token: True(true)`)
     test_parser('a - b',
         `Binary: Sub(-)\n`+
         `  Token: Ident(a)\n`+
         `  Token: Ident(b)`)
 
     // Operator precedence tests
-    test_parser('a + b * c',
+    test_parser('a + false * c',
         `Binary: Add(+)\n`+
         `  Token: Ident(a)\n`+
         `  Binary: Mul(*)\n`+
-        `    Token: Ident(b)\n`+
+        `    Token: False(false)\n`+
         `    Token: Ident(c)`)
     test_parser('a * b + c',
         `Binary: Add(+)\n`+
@@ -104,11 +116,11 @@ test.describe('parser', () => {
         `    Token: Ident(b)\n`+
         `  Token: Ident(c)`)
 
-    test_parser('a / b / c',
+    test_parser('a / 2 / c',
         `Binary: Div(/)\n`+
         `  Binary: Div(/)\n`+
         `    Token: Ident(a)\n`+
-        `    Token: Ident(b)\n`+
+        `    Token: Int(2)\n`+
         `  Token: Ident(c)`)
 
     test_parser('a ^ b ^ c',

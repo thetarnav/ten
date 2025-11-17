@@ -35,6 +35,11 @@ export enum Token_Kind {
     /** )           */ Paren_R,
     /** ,           */ Comma,
     /*
+        Keyword Tokens
+    */
+    /** true        */ True,
+    /** false       */ False,
+    /*
         Long Tokens
     */
     /** "<string>"  */ String,
@@ -243,9 +248,16 @@ export const token_next = (t: Tokenizer): Token => {
         return token_make_move_back(t, Token_Kind.Invalid)
     }
 
-    // Identifiers
+    // Identifiers and Keywords
     if (is_ident_code(ch)) {
         while (is_ident_code(next_char_code(t))) {}
+
+        // Check for keywords
+        switch (t.src.substring(t.pos_write, t.pos_read)) {
+        case 'true':  return token_make_move_back(t, Token_Kind.True)
+        case 'false': return token_make_move_back(t, Token_Kind.False)
+        }
+
         return token_make_move_back(t, Token_Kind.Ident)
     }
 
@@ -287,6 +299,12 @@ export const token_len = (src: string, tok: Token): number => {
     case Token_Kind.Add_Eq:
     case Token_Kind.Sub_Eq:
         return 2
+
+    case Token_Kind.True:
+        return 4
+
+    case Token_Kind.False:
+        return 5
 
     // Multi-character tokens
     case Token_Kind.String:
@@ -642,8 +660,10 @@ const parse_expr_atom = (p: Parser): Expr => {
         return expr
     }
     case Token_Kind.Float:
-    case Token_Kind.Int: {
-        expr = expr_number(parser_token(p))
+    case Token_Kind.Int:
+    case Token_Kind.True:
+    case Token_Kind.False: {
+        expr = expr_token(parser_token(p))
         parser_next_token(p)
         return expr
     }
