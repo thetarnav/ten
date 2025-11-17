@@ -115,18 +115,12 @@ export const token_make = (t: Tokenizer, kind: Token_Kind): Token => {
 export const token_make_move = (t: Tokenizer, kind: Token_Kind): Token => {
     let token = token_make(t, kind)
     t.pos_write = t.pos_read + 1
-    next_char(t)
+    t.pos_read  = Math.min(t.pos_read + 1, t.src.length)
     return token
 }
 export const token_make_move_back = (t: Tokenizer, kind: Token_Kind): Token => {
     let token = token_make(t, kind)
     t.pos_write = t.pos_read
-    return token
-}
-export const token_make_move_len = (t: Tokenizer, kind: Token_Kind, len: number): Token => {
-    let token = token_make(t, kind)
-    t.pos_write = t.pos_read + len
-    t.pos_read += len
     return token
 }
 
@@ -164,14 +158,14 @@ export const token_next = (t: Tokenizer): Token => {
     case 63 /* '?' */: return token_make_move(t, Token_Kind.Question)
     case 64 /* '@' */: return token_make_move(t, Token_Kind.At)
     case 62 /* '>' */: {
-        if (t.src.charCodeAt(t.pos_read + 1) === 61 /* '=' */) {
-            return token_make_move_len(t, Token_Kind.Greater_Eq, 2)
+        if (next_char_code(t) === 61 /* '=' */) {
+            return token_make_move(t, Token_Kind.Greater_Eq)
         }
         return token_make_move(t, Token_Kind.Greater)
     }
     case 60 /* '<' */: {
-        if (t.src.charCodeAt(t.pos_read + 1) === 61 /* '=' */) {
-            return token_make_move_len(t, Token_Kind.Less_Eq, 2)
+        if (next_char_code(t) === 61 /* '=' */) {
+            return token_make_move(t, Token_Kind.Less_Eq)
         }
         return token_make_move(t, Token_Kind.Less)
     }
@@ -250,15 +244,16 @@ export const token_next = (t: Tokenizer): Token => {
 }
 export const next_token = token_next
 
-export const token_string = (src: string, tok: Token): string => {
+/**
+ * Get the length of a token in characters in the source string.
+ */
+export const token_len = (src: string, tok: Token): number => {
     switch (tok.kind) {
+    default:
     case Token_Kind.EOF:
-        return "EOF"
+        return 0
 
     case Token_Kind.EOL:
-        return "\n"
-
-    // Single-character tokens
     case Token_Kind.Question:
     case Token_Kind.Neg:
     case Token_Kind.Or:
@@ -276,11 +271,11 @@ export const token_string = (src: string, tok: Token): string => {
     case Token_Kind.Comma:
     case Token_Kind.Greater:
     case Token_Kind.Less:
-        return src[tok.pos]
+        return 1
 
     case Token_Kind.Greater_Eq:
     case Token_Kind.Less_Eq:
-        return src.substring(tok.pos, tok.pos + 2)
+        return 2
 
     // Multi-character tokens
     case Token_Kind.String:
@@ -333,9 +328,13 @@ export const token_string = (src: string, tok: Token): string => {
             break
         }
 
-        return src.substring(start, end)
+        return end - start
     }
     }
+}
+
+export const token_string = (src: string, tok: Token): string => {
+    return src.substring(tok.pos, tok.pos + token_len(src, tok))
 }
 
 export const token_display = (src: string, tok: Token): string => {
