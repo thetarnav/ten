@@ -18,6 +18,10 @@ enum Token_Kind {
         Symbol Tokens
     */
     /** ?           */ Question,
+    /** >           */ Greater,
+    /** <           */ Less,
+    /** >=          */ Greater_Eq,
+    /** <=          */ Less_Eq,
     /** !           */ Neg,
     /** |           */ Or,
     /** &           */ And,
@@ -126,6 +130,12 @@ export const token_make_move_back = (t: Tokenizer, kind: Token_Kind): Token => {
     t.pos_write = t.pos_read
     return token
 }
+export const token_make_move_len = (t: Tokenizer, kind: Token_Kind, len: number): Token => {
+    let token = token_make(t, kind)
+    t.pos_write = t.pos_read + len
+    t.pos_read += len
+    return token
+}
 
 export const token_next = (t: Tokenizer): Token => {
 
@@ -160,6 +170,18 @@ export const token_next = (t: Tokenizer): Token => {
     case 124/* '|' */: return token_make_move(t, Token_Kind.Or)
     case 63 /* '?' */: return token_make_move(t, Token_Kind.Question)
     case 64 /* '@' */: return token_make_move(t, Token_Kind.At)
+    case 62 /* '>' */: {
+        if (t.src.charCodeAt(t.pos_read + 1) === 61 /* '=' */) {
+            return token_make_move_len(t, Token_Kind.Greater_Eq, 2)
+        }
+        return token_make_move(t, Token_Kind.Greater)
+    }
+    case 60 /* '<' */: {
+        if (t.src.charCodeAt(t.pos_read + 1) === 61 /* '=' */) {
+            return token_make_move_len(t, Token_Kind.Less_Eq, 2)
+        }
+        return token_make_move(t, Token_Kind.Less)
+    }
     // String
     case 34 /* '"' */: {
 
@@ -259,7 +281,13 @@ export const token_to_string = (src: string, tok: Token): string => {
     case Token_Kind.Paren_L:
     case Token_Kind.Paren_R:
     case Token_Kind.Comma:
+    case Token_Kind.Greater:
+    case Token_Kind.Less:
         return src[tok.pos]
+
+    case Token_Kind.Greater_Eq:
+    case Token_Kind.Less_Eq:
+        return src.substring(tok.pos, tok.pos + 2)
 
     // Multi-character tokens
     case Token_Kind.String:
@@ -430,17 +458,21 @@ export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected to
 
 export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
-    case Token_Kind.EOL:   return 1
-    case Token_Kind.Comma: return 1
-    case Token_Kind.Eq:    return 2
-    case Token_Kind.Add:   return 3
-    case Token_Kind.Sub:   return 3
-    case Token_Kind.Mul:   return 4
-    case Token_Kind.Div:   return 4
-    case Token_Kind.Pow:   return 5
-    case Token_Kind.And:   return 6
-    case Token_Kind.Or:    return 6
-    default:               return 0
+    case Token_Kind.EOL:        return 1
+    case Token_Kind.Comma:      return 1
+    case Token_Kind.Eq:         return 2
+    case Token_Kind.Greater:    return 3
+    case Token_Kind.Greater_Eq: return 3
+    case Token_Kind.Less:       return 3
+    case Token_Kind.Less_Eq:    return 3
+    case Token_Kind.Add:        return 4
+    case Token_Kind.Sub:        return 4
+    case Token_Kind.Mul:        return 5
+    case Token_Kind.Div:        return 5
+    case Token_Kind.Pow:        return 6
+    case Token_Kind.And:        return 7
+    case Token_Kind.Or:         return 7
+    default:                    return 0
     }
 }
 export const token_precedence = (tok: Token): number => {

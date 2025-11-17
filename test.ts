@@ -3,39 +3,40 @@ import * as assert from 'node:assert/strict'
 import * as lang   from './main.ts'
 
 test.test('tokenizer', () => {
-    let input: [line: string, expected: string][] = [
-        [
-            `Counter = (\ncount`,
-            `Ident(Counter) Eq(=) Paren_L(()\nIdent(count)`,
-        ], [
-            `\tcount ?= 12\n`,
-            `Ident(count) Question(?) Eq(=) Int(12)\n`,
-        ], [
-            `\tx2 = count * 2`,
-            `Ident(x2) Eq(=) Ident(count) Mul(*) Int(2)`,
-        ], [
-            `inc = @(num+=12)`,
-            `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add(+) Eq(=) Int(12) Paren_R())`,
-        ], [
-            `_render = Btn("Hello")`,
-            `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`,
-        ], [
-            `0.123 = x = y`,
-            `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`,
-        ], [
-            `\t  text = "Count: " + count + "!"`,
-            `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
-        ], [
-            `\t\tonclick = inc`,
-            `Ident(onclick) Eq(=) Ident(inc)`,
-        ], [
-            `0.0.0`,
-            `Float(0.0) Float(.0)`,
-        ], [
-            `()`,
-            `Paren_L(() Paren_R())`,
-        ]
-    ]
+    let input: [line: string, expected: string][] = [[
+        `Counter = (\ncount`,
+        `Ident(Counter) Eq(=) Paren_L(()\nIdent(count)`,
+    ], [
+        `\tcount ?= 12\n`,
+        `Ident(count) Question(?) Eq(=) Int(12)\n`,
+    ], [
+        `\tx2 = count * 2`,
+        `Ident(x2) Eq(=) Ident(count) Mul(*) Int(2)`,
+    ], [
+        `inc = @(num+=12)`,
+        `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add(+) Eq(=) Int(12) Paren_R())`,
+    ], [
+        `_render = Btn("Hello")`,
+        `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`,
+    ], [
+        `0.123 = x = y`,
+        `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`,
+    ], [
+        `\t  text = "Count: " + count + "!"`,
+        `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
+    ], [
+        `\t\tonclick = inc`,
+        `Ident(onclick) Eq(=) Ident(inc)`,
+    ], [
+        `0.0.0`,
+        `Float(0.0) Float(.0)`,
+    ], [
+        `()`,
+        `Paren_L(() Paren_R())`,
+    ], [
+        `a > b >= c = d < e <= f`,
+        `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Ident(f)`,
+    ]]
 
     for (let [line, expected] of input) {
         let t = lang.tokenizer_make(line)
