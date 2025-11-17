@@ -46,7 +46,7 @@ test.test('tokenizer', () => {
             if (tok.kind === lang.Token_Kind.EOF) break
             tokens.push(tok)
         }
-        let result = lang.tokens_to_string(line, tokens)
+        let result = lang.tokens_display(line, tokens)
         assert.equal(result, expected,
             `\nExpected\n"${line}"\nto produce\n${expected}\nbut got\n${result}`)
     }

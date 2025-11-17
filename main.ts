@@ -250,7 +250,7 @@ export const token_next = (t: Tokenizer): Token => {
 }
 export const next_token = token_next
 
-export const token_to_string = (src: string, tok: Token): string => {
+export const token_string = (src: string, tok: Token): string => {
     switch (tok.kind) {
     case Token_Kind.EOF:
         return "EOF"
@@ -344,11 +344,11 @@ export const token_display = (src: string, tok: Token): string => {
     case Token_Kind.EOL:
         return Token_Kind[tok.kind]
     default:
-        return `${Token_Kind[tok.kind]}(${token_to_string(src, tok)})`
+        return `${Token_Kind[tok.kind]}(${token_string(src, tok)})`
     }
 }
 
-export const tokens_to_string = (src: string, tokens: Token[]): string => {
+export const tokens_display = (src: string, tokens: Token[]): string => {
     let result = ''
     let first = true
     for (let i = 0; i < tokens.length; i++) {
