@@ -383,21 +383,14 @@ export const tokens_display = (src: string, tokens: Token[]): string => {
 */
 
 export type Expr =
-    | Expr_Ident
-    | Expr_Number
+    | Expr_Token
     | Expr_Unary
     | Expr_Binary
     | Expr_Paren
-    | Expr_Comma
     | Expr_Invalid
 
-export type Expr_Ident = {
-    kind: 'Expr_Ident'
-    tok:  Token
- }
-
-export type Expr_Number = {
-    kind: 'Expr_Number'
+export type Expr_Token = {
+    kind: 'Expr_Token'
     tok:  Token
  }
 
@@ -437,11 +430,14 @@ export const expr_binary = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
 export const expr_unary = (op: Token, rhs: Expr): Expr_Unary => {
     return {kind: 'Expr_Unary', op, rhs}
 }
-export const expr_ident = (tok: Token): Expr_Ident => {
-    return {kind: 'Expr_Ident', tok}
+export const expr_token = (tok: Token): Expr_Token => {
+    return {kind: 'Expr_Token', tok}
 }
-export const expr_number = (tok: Token): Expr_Number => {
-    return {kind: 'Expr_Number', tok}
+export const expr_ident = (tok: Token): Expr_Token => {
+    return {kind: 'Expr_Token', tok}
+}
+export const expr_number = (tok: Token): Expr_Token => {
+    return {kind: 'Expr_Token', tok}
 }
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     return {kind: 'Expr_Invalid', tok, reason}
@@ -462,11 +458,8 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
     let ind = indent.repeat(depth)
 
     switch (expr.kind) {
-    case 'Expr_Ident':
-        return `${ind}Ident: ${token_display(src, expr.tok)}`
-
-    case 'Expr_Number':
-        return `${ind}Number: ${token_display(src, expr.tok)}`
+    case 'Expr_Token':
+        return `${ind}Token: ${token_display(src, expr.tok)}`
 
     case 'Expr_Unary':
         return `${ind}Unary: ${token_display(src, expr.op)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
@@ -485,9 +478,6 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
             let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
             return `${ind}Paren:\n${body_str}`
         }
-
-    case 'Expr_Comma':
-        return `${ind}Comma: ${token_display(src, expr.tok)}`
 
     case 'Expr_Invalid':
         return `${ind}Invalid: ${token_display(src, expr.tok)} (${expr.reason})`
