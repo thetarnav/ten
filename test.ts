@@ -31,6 +31,9 @@ test.test('tokenizer', () => {
         ], [
             `0.0.0`,
             `Float(0.0) Float(.0)`,
+        ], [
+            `()`,
+            `Paren_L(() Paren_R())`,
         ]
     ]
 
@@ -179,6 +182,7 @@ test.describe('parser', () => {
             lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 5}),
         ),
     ))
+    test_parser('()', lang.expr_paren(null))
     test_parser('a * (b + c)', lang.expr_binary(
         {kind: lang.Token_Kind.Mul, pos: 2},
         lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),

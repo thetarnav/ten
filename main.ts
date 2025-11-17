@@ -363,36 +363,36 @@ export type Expr =
 
 export type Expr_Ident = {
     kind: 'Expr_Ident'
-    tok: Token
-}
+    tok:  Token
+ }
 
 export type Expr_Number = {
     kind: 'Expr_Number'
-    tok: Token
-}
+    tok:  Token
+ }
 
 export type Expr_Unary = {
     kind: 'Expr_Unary'
-    op:  Token
-    rhs: Expr
+    op:   Token
+    rhs:  Expr
 }
 
 export type Expr_Binary = {
     kind: 'Expr_Binary'
-    op:  Token
-    lhs: Expr
-    rhs: Expr
+    op:   Token
+    lhs:  Expr
+    rhs:  Expr
 }
 
 export type Expr_Paren = {
     kind: 'Expr_Paren'
     type: Expr | null
-    body: Expr
+    body: Expr | null
 }
 
 export type Expr_Comma = {
     kind: 'Expr_Comma'
-    tok: Token
+    tok:  Token
 }
 
 export type Expr_Invalid = {
@@ -416,8 +416,8 @@ export const expr_number = (tok: Token): Expr_Number => {
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     return {kind: 'Expr_Invalid', tok, reason}
 }
-export const expr_paren = (body: Expr): Expr_Paren => {
-    return {kind: 'Expr_Paren', type: null, body}
+export const expr_paren = (body: Expr | null): Expr_Paren => {
+    return {kind: 'Expr_Paren', type: null, body: body}
 }
 export const expr_paren_typed = (type: Expr, body: Expr): Expr_Paren => {
     return {kind: 'Expr_Paren', type, body}
@@ -554,6 +554,9 @@ const parse_expr_atom = (p: Parser): Expr => {
     }
     case Token_Kind.Paren_L: {
         parser_next_token(p)
+        if (parser_token(p).kind === Token_Kind.Paren_R) {
+            return expr_paren(null)
+        }
         let body = parse_expr(p)
         let paren_r = parser_token(p)
         if (paren_r.kind !== Token_Kind.Paren_R) {
