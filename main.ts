@@ -6,8 +6,7 @@ const len = (a: ArrayLike<any>): number => a.length
 
 */
 
-export
-enum Token_Kind {
+export enum Token_Kind {
     /*
         Special Tokens
     */
@@ -45,21 +44,18 @@ enum Token_Kind {
     /** 123.123     */ Float,
 }
 
-export
-type Token = {
+export type Token = {
     pos:  number
     kind: Token_Kind
 }
 
-export
-type Tokenizer = {
+export type Tokenizer = {
     src      : string
     pos_read : number
     pos_write: number
 }
 
-export
-const tokenizer_make = (src: string): Tokenizer => {
+export const tokenizer_make = (src: string): Tokenizer => {
     let t: Tokenizer = {
         src:       src,
         pos_read:  0,
@@ -67,11 +63,9 @@ const tokenizer_make = (src: string): Tokenizer => {
     }
     return t
 }
-export
-const make_tokenizer = tokenizer_make
+export const make_tokenizer = tokenizer_make
 
-export
-const next_char_code = (t: Tokenizer): number => {
+export const next_char_code = (t: Tokenizer): number => {
 
     if (t.pos_read >= t.src.length) {
         return 0
@@ -80,8 +74,7 @@ const next_char_code = (t: Tokenizer): number => {
     t.pos_read += 1
     return char_code(t)
 }
-export
-const next_char = (t: Tokenizer): string => {
+export const next_char = (t: Tokenizer): string => {
 
     if (t.pos_read >= t.src.length) {
         return ''
