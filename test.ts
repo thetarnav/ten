@@ -24,7 +24,7 @@ function test_tokenizer(input: string, stringified: string) {
 function test_parser(input: string, expected: string) {
     test.test(input, () => {
         let [result, errors] = lang.parse_src(input)
-        let result_str = lang.expr_display(input, result)
+        let result_str = lang.expr_display(input, result, '  ')
         assert.equal(result_str, expected,
             `Parser test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
         assert.equal(errors.length, 0,
@@ -73,175 +73,175 @@ test.describe('parser', () => {
     // Unary operations
     test_parser('+x',
         `Unary: Add(+)\n`+
-        `\tIdent: Ident(x)`)
+        `  Ident: Ident(x)`)
     test_parser('-y',
         `Unary: Sub(-)\n`+
-        `\tIdent: Ident(y)`)
+        `  Ident: Ident(y)`)
 
     // Simple binary operations
     test_parser('a + b',
         `Binary: Add(+)\n`+
-        `\tIdent: Ident(a)\n`+
-        `\tIdent: Ident(b)`)
+        `  Ident: Ident(a)\n`+
+        `  Ident: Ident(b)`)
     test_parser('a - b',
         `Binary: Sub(-)\n`+
-        `\tIdent: Ident(a)\n`+
-        `\tIdent: Ident(b)`)
+        `  Ident: Ident(a)\n`+
+        `  Ident: Ident(b)`)
 
     // Operator precedence tests
     test_parser('a + b * c',
         `Binary: Add(+)\n`+
-        `\tIdent: Ident(a)\n`+
-        `\tBinary: Mul(*)\n`+
-        `\t\tIdent: Ident(b)\n`+
-        `\t\tIdent: Ident(c)`)
+        `  Ident: Ident(a)\n`+
+        `  Binary: Mul(*)\n`+
+        `    Ident: Ident(b)\n`+
+        `    Ident: Ident(c)`)
     test_parser('a * b + c',
         `Binary: Add(+)\n`+
-        `\tBinary: Mul(*)\n`+
-        `\t\tIdent: Ident(a)\n`+
-        `\t\tIdent: Ident(b)\n`+
-        `\tIdent: Ident(c)`)
+        `  Binary: Mul(*)\n`+
+        `    Ident: Ident(a)\n`+
+        `    Ident: Ident(b)\n`+
+        `  Ident: Ident(c)`)
 
     test_parser('a / b / c',
         `Binary: Div(/)\n`+
-        `\tBinary: Div(/)\n`+
-        `\t\tIdent: Ident(a)\n`+
-        `\t\tIdent: Ident(b)\n`+
-        `\tIdent: Ident(c)`)
+        `  Binary: Div(/)\n`+
+        `    Ident: Ident(a)\n`+
+        `    Ident: Ident(b)\n`+
+        `  Ident: Ident(c)`)
 
     test_parser('a ^ b ^ c',
         `Binary: Pow(^)\n`+
-        `\tIdent: Ident(a)\n`+
-        `\tBinary: Pow(^)\n`+
-        `\t\tIdent: Ident(b)\n`+
-        `\t\tIdent: Ident(c)`)
+        `  Ident: Ident(a)\n`+
+        `  Binary: Pow(^)\n`+
+        `    Ident: Ident(b)\n`+
+        `    Ident: Ident(c)`)
 
     // Right associativity for power operator
     test_parser('a ^ b ^ c',
         `Binary: Pow(^)\n`+
-        `\tIdent: Ident(a)\n`+
-        `\tBinary: Pow(^)\n`+
-        `\t\tIdent: Ident(b)\n`+
-        `\t\tIdent: Ident(c)`)
+        `  Ident: Ident(a)\n`+
+        `  Binary: Pow(^)\n`+
+        `    Ident: Ident(b)\n`+
+        `    Ident: Ident(c)`)
 
     // Complex expressions
     // (a + (b * (c ^ d))) - (e / f)
     test_parser('a + b * c ^ d - e / f',
         `Binary: Sub(-)\n`+
-        `\tBinary: Add(+)\n`+
-        `\t\tIdent: Ident(a)\n`+
-        `\t\tBinary: Mul(*)\n`+
-        `\t\t\tIdent: Ident(b)\n`+
-        `\t\t\tBinary: Pow(^)\n`+
-        `\t\t\t\tIdent: Ident(c)\n`+
-        `\t\t\t\tIdent: Ident(d)\n`+
-        `\tBinary: Div(/)\n`+
-        `\t\tIdent: Ident(e)\n`+
-        `\t\tIdent: Ident(f)`)
+        `  Binary: Add(+)\n`+
+        `    Ident: Ident(a)\n`+
+        `    Binary: Mul(*)\n`+
+        `      Ident: Ident(b)\n`+
+        `      Binary: Pow(^)\n`+
+        `        Ident: Ident(c)\n`+
+        `        Ident: Ident(d)\n`+
+        `  Binary: Div(/)\n`+
+        `    Ident: Ident(e)\n`+
+        `    Ident: Ident(f)`)
 
     // Unary with binary
     test_parser('-a + b',
         `Binary: Add(+)\n`+
-        `\tUnary: Sub(-)\n`+
-        `\t\tIdent: Ident(a)\n`+
-        `\tIdent: Ident(b)`)
+        `  Unary: Sub(-)\n`+
+        `    Ident: Ident(a)\n`+
+        `  Ident: Ident(b)`)
 
     // Parenthesized expressions
     test_parser('(a + b)',
         `Paren:\n`+
-        `\tBinary: Add(+)\n`+
-        `\t\tIdent: Ident(a)\n`+
-        `\t\tIdent: Ident(b)`)
+        `  Binary: Add(+)\n`+
+        `    Ident: Ident(a)\n`+
+        `    Ident: Ident(b)`)
     test_parser('()',
         `Paren:\n`+
-        `\t(empty)`)
+        `  (empty)`)
     test_parser('(())',
         `Paren:\n`+
-        `\tParen:\n`+
-        `\t\t(empty)`)
+        `  Paren:\n`+
+        `    (empty)`)
     test_parser('a * (b + c)',
         `Binary: Mul(*)\n`+
-        `\tIdent: Ident(a)\n`+
-        `\tParen:\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(b)\n`+
-        `\t\t\tIdent: Ident(c)`)
+        `  Ident: Ident(a)\n`+
+        `  Paren:\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(b)\n`+
+        `      Ident: Ident(c)`)
     test_parser('foo(a + b)',
         `Paren:\n`+
-        `\tIdent: Ident(foo)\n`+
-        `\tBinary: Add(+)\n`+
-        `\t\tIdent: Ident(a)\n`+
-        `\t\tIdent: Ident(b)`)
+        `  Ident: Ident(foo)\n`+
+        `  Binary: Add(+)\n`+
+        `    Ident: Ident(a)\n`+
+        `    Ident: Ident(b)`)
     test_parser('(a + b, c + d)',
         `Paren:\n`+
-        `\tBinary: Comma(,)\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(a)\n`+
-        `\t\t\tIdent: Ident(b)\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(c)\n`+
-        `\t\t\tIdent: Ident(d)`)
+        `  Binary: Comma(,)\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(a)\n`+
+        `      Ident: Ident(b)\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(c)\n`+
+        `      Ident: Ident(d)`)
     test_parser('(a + b, c + d,)',
         `Paren:\n`+
-        `\tBinary: Comma(,)\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(a)\n`+
-        `\t\t\tIdent: Ident(b)\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(c)\n`+
-        `\t\t\tIdent: Ident(d)`)
+        `  Binary: Comma(,)\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(a)\n`+
+        `      Ident: Ident(b)\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(c)\n`+
+        `      Ident: Ident(d)`)
     test_parser('(a + b\n\tc + d)',
         `Paren:\n`+
-        `\tBinary: EOL\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(a)\n`+
-        `\t\t\tIdent: Ident(b)\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(c)\n`+
-        `\t\t\tIdent: Ident(d)`)
+        `  Binary: EOL\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(a)\n`+
+        `      Ident: Ident(b)\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(c)\n`+
+        `      Ident: Ident(d)`)
     test_parser('(\n\ta + b\n\tc + d\n)',
         `Paren:\n`+
-        `\tBinary: EOL\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(a)\n`+
-        `\t\t\tIdent: Ident(b)\n`+
-        `\t\tBinary: Add(+)\n`+
-        `\t\t\tIdent: Ident(c)\n`+
-        `\t\t\tIdent: Ident(d)`)
+        `  Binary: EOL\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(a)\n`+
+        `      Ident: Ident(b)\n`+
+        `    Binary: Add(+)\n`+
+        `      Ident: Ident(c)\n`+
+        `      Ident: Ident(d)`)
 
     // Assignment operations
     test_parser('x = 123',
         `Binary: Eq(=)\n`+
-        `\tIdent: Ident(x)\n`+
-        `\tNumber: Int(123)`)
+        `  Ident: Ident(x)\n`+
+        `  Number: Int(123)`)
     test_parser('123 = x',
         `Binary: Eq(=)\n`+
-        `\tNumber: Int(123)\n`+
-        `\tIdent: Ident(x)`)
+        `  Number: Int(123)\n`+
+        `  Ident: Ident(x)`)
     test_parser('x = y = z',
         `Binary: Eq(=)\n`+
-        `\tBinary: Eq(=)\n`+
-        `\t\tIdent: Ident(x)\n`+
-        `\t\tIdent: Ident(y)\n`+
-        `\tIdent: Ident(z)`)
+        `  Binary: Eq(=)\n`+
+        `    Ident: Ident(x)\n`+
+        `    Ident: Ident(y)\n`+
+        `  Ident: Ident(z)`)
     test_parser('x = y = z = w',
         `Binary: Eq(=)\n`+
-        `\tBinary: Eq(=)\n`+
-        `\t\tBinary: Eq(=)\n`+
-        `\t\t\tIdent: Ident(x)\n`+
-        `\t\t\tIdent: Ident(y)\n`+
-        `\t\tIdent: Ident(z)\n`+
-        `\tIdent: Ident(w)`)
+        `  Binary: Eq(=)\n`+
+        `    Binary: Eq(=)\n`+
+        `      Ident: Ident(x)\n`+
+        `      Ident: Ident(y)\n`+
+        `    Ident: Ident(z)\n`+
+        `  Ident: Ident(w)`)
 
     // Many expressions
-    test_parser('foo = bar = baz\nx = 123',
+    test_parser('foo <= bar = baz\nx > 123',
         `Binary: EOL\n`+
-        `\tBinary: Eq(=)\n`+
-        `\t\tBinary: Eq(=)\n`+
-        `\t\t\tIdent: Ident(foo)\n`+
-        `\t\t\tIdent: Ident(bar)\n`+
-        `\t\tIdent: Ident(baz)\n`+
-        `\tBinary: Eq(=)\n`+
-        `\t\tIdent: Ident(x)\n`+
-        `\t\tNumber: Int(123)`)
+        `  Binary: Eq(=)\n`+
+        `    Binary: Less_Eq(<=)\n`+
+        `      Ident: Ident(foo)\n`+
+        `      Ident: Ident(bar)\n`+
+        `    Ident: Ident(baz)\n`+
+        `  Binary: Greater(>)\n`+
+        `    Ident: Ident(x)\n`+
+        `    Number: Int(123)`)
 })

@@ -462,8 +462,8 @@ export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected to
     return expr
 }
 
-export const expr_display = (src: string, expr: Expr, indent = 0): string => {
-    let ind = '\t'.repeat(indent)
+export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0): string => {
+    let ind = indent.repeat(depth)
 
     switch (expr.kind) {
     case 'Expr_Ident':
@@ -473,20 +473,20 @@ export const expr_display = (src: string, expr: Expr, indent = 0): string => {
         return `${ind}Number: ${token_display(src, expr.tok)}`
 
     case 'Expr_Unary':
-        return `${ind}Unary: ${token_display(src, expr.op)}\n${expr_display(src, expr.rhs, indent + 1)}`
+        return `${ind}Unary: ${token_display(src, expr.op)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
     case 'Expr_Binary':
-        return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent + 1)}\n${expr_display(src, expr.rhs, indent + 1)}`
+        return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
     case 'Expr_Paren':
         if (expr.type) {
             // Typed paren like foo(...)
-            let type_str = expr_display(src, expr.type, indent + 1)
-            let body_str = expr.body ? expr_display(src, expr.body, indent + 1) : `${ind}\t(empty)`
+            let type_str = expr_display(src, expr.type, indent, depth+1)
+            let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
             return `${ind}Paren:\n${type_str}\n${body_str}`
         } else {
             // Regular paren (...)
-            let body_str = expr.body ? expr_display(src, expr.body, indent + 1) : `${ind}\t(empty)`
+            let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
             return `${ind}Paren:\n${body_str}`
         }
 
