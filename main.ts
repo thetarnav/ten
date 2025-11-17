@@ -462,6 +462,42 @@ export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected to
     return expr
 }
 
+export const expr_display = (src: string, expr: Expr, indent = 0): string => {
+    let ind = '\t'.repeat(indent)
+
+    switch (expr.kind) {
+    case 'Expr_Ident':
+        return `${ind}Ident: ${token_display(src, expr.tok)}`
+
+    case 'Expr_Number':
+        return `${ind}Number: ${token_display(src, expr.tok)}`
+
+    case 'Expr_Unary':
+        return `${ind}Unary: ${token_display(src, expr.op)}\n${expr_display(src, expr.rhs, indent + 1)}`
+
+    case 'Expr_Binary':
+        return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent + 1)}\n${expr_display(src, expr.rhs, indent + 1)}`
+
+    case 'Expr_Paren':
+        if (expr.type) {
+            // Typed paren like foo(...)
+            let type_str = expr_display(src, expr.type, indent + 1)
+            let body_str = expr.body ? expr_display(src, expr.body, indent + 1) : `${ind}\t(empty)`
+            return `${ind}Paren:\n${type_str}\n${body_str}`
+        } else {
+            // Regular paren (...)
+            let body_str = expr.body ? expr_display(src, expr.body, indent + 1) : `${ind}\t(empty)`
+            return `${ind}Paren:\n${body_str}`
+        }
+
+    case 'Expr_Comma':
+        return `${ind}Comma: ${token_display(src, expr.tok)}`
+
+    case 'Expr_Invalid':
+        return `${ind}Invalid: ${token_display(src, expr.tok)} (${expr.reason})`
+    }
+}
+
 export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
     case Token_Kind.EOL:        return 1
