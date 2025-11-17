@@ -2,55 +2,24 @@ import * as test   from 'node:test'
 import * as assert from 'node:assert/strict'
 import * as lang   from './main.ts'
 
-test.test('tokenizer', () => {
-    let input: [line: string, expected: string][] = [[
-        `Counter = (\ncount`,
-        `Ident(Counter) Eq(=) Paren_L(()\nIdent(count)`,
-    ], [
-        `\tcount ?= 12\n`,
-        `Ident(count) Question(?) Eq(=) Int(12)\n`,
-    ], [
-        `\tx2 -= count * 2`,
-        `Ident(x2) Sub_Eq(-=) Ident(count) Mul(*) Int(2)`,
-    ], [
-        `inc = @(num+=12)`,
-        `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`,
-    ], [
-        `_render = Btn("Hello")`,
-        `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`,
-    ], [
-        `0.123 = x = y`,
-        `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`,
-    ], [
-        `\t  text = "Count: " + count + "!"`,
-        `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
-    ], [
-        `\t\tonclick = inc`,
-        `Ident(onclick) Eq(=) Ident(inc)`,
-    ], [
-        `0.0.0`,
-        `Float(0.0) Float(.0)`,
-    ], [
-        `()`,
-        `Paren_L(() Paren_R())`,
-    ], [
-        `a >b >= c = d < e<= f`,
-        `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Ident(f)`,
-    ]]
+/*--------------------------------------------------------------*
+    Helpers for testing tokenizer and parser
+*/
 
-    for (let [line, expected] of input) {
-        let t = lang.tokenizer_make(line)
+function test_tokenizer(input: string, stringified: string) {
+    test.test(input, () => {
+        let t = lang.tokenizer_make(input)
         let tokens: lang.Token[] = []
         for (;;) {
             let tok = lang.token_next(t)
             if (tok.kind === lang.Token_Kind.EOF) break
             tokens.push(tok)
         }
-        let result = lang.tokens_display(line, tokens)
-        assert.equal(result, expected,
-            `\nExpected\n"${line}"\nto produce\n${expected}\nbut got\n${result}`)
-    }
-})
+        let result = lang.tokens_display(input, tokens)
+        assert.equal(result, stringified,
+            `Tokenizer test failed for input: "${input}"\nExpected: ${stringified}\nGot: ${result}`)
+    })
+}
 
 function test_parser(input: string, expected: lang.Expr) {
     test.test(input, () => {
@@ -61,6 +30,57 @@ function test_parser(input: string, expected: lang.Expr) {
             `Parser test failed for input: "${input}"\nExpected no errors but got: ${JSON.stringify(errors)}`)
     })
 }
+
+/*--------------------------------------------------------------*
+    Tokenizer and parser tests
+*/
+
+test.describe('tokenizer', () => {
+    test_tokenizer(
+        `Counter = (\ncount`,
+        `Ident(Counter) Eq(=) Paren_L(()\nIdent(count)`,
+    )
+    test_tokenizer(
+        `\tcount ?= 12\n`,
+        `Ident(count) Question(?) Eq(=) Int(12)\n`,
+    )
+    test_tokenizer(
+        `\tx2 -= count * 2`,
+        `Ident(x2) Sub_Eq(-=) Ident(count) Mul(*) Int(2)`,
+    )
+    test_tokenizer(
+        `inc = @(num+=12)`,
+        `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`,
+    )
+    test_tokenizer(
+        `_render = Btn("Hello")`,
+        `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`,
+    )
+    test_tokenizer(
+        `0.123 = x = y`,
+        `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`,
+    )
+    test_tokenizer(
+        `\t  text = "Count: " + count + "!"`,
+        `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!")`,
+    )
+    test_tokenizer(
+        `\t\tonclick = inc`,
+        `Ident(onclick) Eq(=) Ident(inc)`,
+    )
+    test_tokenizer(
+        `0.0.0`,
+        `Float(0.0) Float(.0)`,
+    )
+    test_tokenizer(
+        `()`,
+        `Paren_L(() Paren_R())`,
+    )
+    test_tokenizer(
+        `a >b >= c = d < e<= f`,
+        `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Ident(f)`,
+    )
+})
 
 test.describe('parser', () => {
     // Simple identifiers and numbers
