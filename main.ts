@@ -400,6 +400,14 @@ export const tokens_display = (src: string, tokens: Token[]): string => {
     PARSER
 */
 
+export enum Expr_Kind {
+    Token,
+    Unary,
+    Binary,
+    Paren,
+    Invalid,
+}
+
 export type Expr =
     | Expr_Token
     | Expr_Unary
@@ -408,63 +416,52 @@ export type Expr =
     | Expr_Invalid
 
 export type Expr_Token = {
-    kind: 'Expr_Token'
+    kind: Expr_Kind.Token
     tok:  Token
  }
 
 export type Expr_Unary = {
-    kind: 'Expr_Unary'
+    kind: Expr_Kind.Unary
     op:   Token
     rhs:  Expr
 }
 
 export type Expr_Binary = {
-    kind: 'Expr_Binary'
+    kind: Expr_Kind.Binary
     op:   Token
     lhs:  Expr
     rhs:  Expr
 }
 
 export type Expr_Paren = {
-    kind: 'Expr_Paren'
+    kind: Expr_Kind.Paren
     type: Expr | null
     body: Expr | null
 }
 
-export type Expr_Comma = {
-    kind: 'Expr_Comma'
-    tok:  Token
-}
-
 export type Expr_Invalid = {
-    kind:   'Expr_Invalid'
+    kind:   Expr_Kind.Invalid
     tok:    Token
     reason: string
 }
 
 export const expr_binary = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
-    return {kind: 'Expr_Binary', op, lhs, rhs}
+    return {kind: Expr_Kind.Binary, op, lhs, rhs}
 }
 export const expr_unary = (op: Token, rhs: Expr): Expr_Unary => {
-    return {kind: 'Expr_Unary', op, rhs}
+    return {kind: Expr_Kind.Unary, op, rhs}
 }
 export const expr_token = (tok: Token): Expr_Token => {
-    return {kind: 'Expr_Token', tok}
-}
-export const expr_ident = (tok: Token): Expr_Token => {
-    return {kind: 'Expr_Token', tok}
-}
-export const expr_number = (tok: Token): Expr_Token => {
-    return {kind: 'Expr_Token', tok}
+    return {kind: Expr_Kind.Token, tok}
 }
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
-    return {kind: 'Expr_Invalid', tok, reason}
+    return {kind: Expr_Kind.Invalid, tok, reason}
 }
 export const expr_paren = (body: Expr | null): Expr_Paren => {
-    return {kind: 'Expr_Paren', type: null, body: body}
+    return {kind: Expr_Kind.Paren, type: null, body: body}
 }
 export const expr_paren_typed = (type: Expr, body: Expr): Expr_Paren => {
-    return {kind: 'Expr_Paren', type, body}
+    return {kind: Expr_Kind.Paren, type, body}
 }
 export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     let expr = expr_invalid(tok, reason)
@@ -476,16 +473,16 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
     let ind = indent.repeat(depth)
 
     switch (expr.kind) {
-    case 'Expr_Token':
+    case Expr_Kind.Token:
         return `${ind}Token: ${token_display(src, expr.tok)}`
 
-    case 'Expr_Unary':
+    case Expr_Kind.Unary:
         return `${ind}Unary: ${token_display(src, expr.op)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
-    case 'Expr_Binary':
+    case Expr_Kind.Binary:
         return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
-    case 'Expr_Paren':
+    case Expr_Kind.Paren:
         if (expr.type) {
             // Typed paren like foo(...)
             let type_str = expr_display(src, expr.type, indent, depth+1)
@@ -497,7 +494,7 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
             return `${ind}Paren:\n${body_str}`
         }
 
-    case 'Expr_Invalid':
+    case Expr_Kind.Invalid:
         return `${ind}Invalid: ${token_display(src, expr.tok)} (${expr.reason})`
     }
 }
@@ -646,7 +643,7 @@ const parse_expr_atom = (p: Parser): Expr => {
         return expr_paren(body)
     }
     case Token_Kind.Ident: {
-        expr = expr_ident(parser_token(p))
+        expr = expr_token(parser_token(p))
         parser_next_token(p)
         if (parser_token(p).kind === Token_Kind.Paren_L) {
             parser_next_token(p)
