@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict'
 import * as lang   from './main.ts'
 
 /*--------------------------------------------------------------*
+
     Helpers for testing tokenizer and parser
 */
 
@@ -33,6 +34,7 @@ function test_parser(input: string, expected: string) {
 }
 
 /*--------------------------------------------------------------*
+
     Tokenizer and parser tests
 */
 

@@ -1,9 +1,6 @@
-const len = (a: ArrayLike<any>): number => a.length
+/*--------------------------------------------------------------*
 
-/*
-
- TOKENIZER
-
+    TOKENIZER
 */
 
 export enum Token_Kind {
@@ -380,10 +377,9 @@ export const tokens_display = (src: string, tokens: Token[]): string => {
     return result
 }
 
-/*
+/*--------------------------------------------------------------*
 
- PARSER
-
+    PARSER
 */
 
 export type Expr =
