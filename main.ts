@@ -27,6 +27,8 @@ export enum Token_Kind {
     /** =           */ Eq,
     /** +           */ Add,
     /** -           */ Sub,
+    /** +=          */ Add_Eq,
+    /** -=          */ Sub_Eq,
     /** *           */ Mul,
     /** /           */ Div,
     /** ^           */ Pow,
@@ -147,9 +149,19 @@ export const token_next = (t: Tokenizer): Token => {
     case 41 /* ')' */: return token_make_move(t, Token_Kind.Paren_R)
     // Operators
     case 61 /* '=' */: return token_make_move(t, Token_Kind.Eq)
-    case 43 /* '+' */: return token_make_move(t, Token_Kind.Add)
+    case 43 /* '+' */: {
+        if (next_char_code(t) === 61 /* '=' */) {
+            return token_make_move(t, Token_Kind.Add_Eq)
+        }
+        return token_make_move_back(t, Token_Kind.Add)
+    }
     case 44 /* ',' */: return token_make_move(t, Token_Kind.Comma)
-    case 45 /* '-' */: return token_make_move(t, Token_Kind.Sub)
+    case 45 /* '-' */: {
+        if (next_char_code(t) === 61 /* '=' */) {
+            return token_make_move(t, Token_Kind.Sub_Eq)
+        }
+        return token_make_move_back(t, Token_Kind.Sub)
+    }
     case 42 /* '*' */: return token_make_move(t, Token_Kind.Mul)
     case 47 /* '/' */: return token_make_move(t, Token_Kind.Div)
     case 94 /* '^' */: return token_make_move(t, Token_Kind.Pow)
@@ -161,13 +173,13 @@ export const token_next = (t: Tokenizer): Token => {
         if (next_char_code(t) === 61 /* '=' */) {
             return token_make_move(t, Token_Kind.Greater_Eq)
         }
-        return token_make_move(t, Token_Kind.Greater)
+        return token_make_move_back(t, Token_Kind.Greater)
     }
     case 60 /* '<' */: {
         if (next_char_code(t) === 61 /* '=' */) {
             return token_make_move(t, Token_Kind.Less_Eq)
         }
-        return token_make_move(t, Token_Kind.Less)
+        return token_make_move_back(t, Token_Kind.Less)
     }
     // String
     case 34 /* '"' */: {
@@ -275,6 +287,8 @@ export const token_len = (src: string, tok: Token): number => {
 
     case Token_Kind.Greater_Eq:
     case Token_Kind.Less_Eq:
+    case Token_Kind.Add_Eq:
+    case Token_Kind.Sub_Eq:
         return 2
 
     // Multi-character tokens
@@ -453,6 +467,8 @@ export const token_kind_precedence = (kind: Token_Kind): number => {
     case Token_Kind.EOL:        return 1
     case Token_Kind.Comma:      return 1
     case Token_Kind.Eq:         return 2
+    case Token_Kind.Add_Eq:     return 2
+    case Token_Kind.Sub_Eq:     return 2
     case Token_Kind.Greater:    return 3
     case Token_Kind.Greater_Eq: return 3
     case Token_Kind.Less:       return 3

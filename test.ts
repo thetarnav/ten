@@ -10,11 +10,11 @@ test.test('tokenizer', () => {
         `\tcount ?= 12\n`,
         `Ident(count) Question(?) Eq(=) Int(12)\n`,
     ], [
-        `\tx2 = count * 2`,
-        `Ident(x2) Eq(=) Ident(count) Mul(*) Int(2)`,
+        `\tx2 -= count * 2`,
+        `Ident(x2) Sub_Eq(-=) Ident(count) Mul(*) Int(2)`,
     ], [
         `inc = @(num+=12)`,
-        `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add(+) Eq(=) Int(12) Paren_R())`,
+        `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`,
     ], [
         `_render = Btn("Hello")`,
         `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`,
@@ -34,7 +34,7 @@ test.test('tokenizer', () => {
         `()`,
         `Paren_L(() Paren_R())`,
     ], [
-        `a > b >= c = d < e <= f`,
+        `a >b >= c = d < e<= f`,
         `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Ident(f)`,
     ]]
 
