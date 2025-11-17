@@ -183,6 +183,7 @@ test.describe('parser', () => {
         ),
     ))
     test_parser('()', lang.expr_paren(null))
+    test_parser('(())', lang.expr_paren(lang.expr_paren(null)))
     test_parser('a * (b + c)', lang.expr_binary(
         {kind: lang.Token_Kind.Mul, pos: 2},
         lang.expr_ident({kind: lang.Token_Kind.Ident, pos: 0}),
