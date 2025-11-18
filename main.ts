@@ -788,6 +788,19 @@ export const node_from_expr = (expr: Expr): Node | null => {
 }
 export {node_from_expr as expr_to_node}
 
+const _apply_constraint = (
+    name:     string,
+    expected: boolean,
+    vars:     Map<string, boolean>,
+): Node => {
+    let existing = vars.get(name)
+    if (existing != null && existing !== expected) {
+        return node_bool(false) // Conflict
+    }
+    vars.set(name, expected)
+    return node_bool(true)
+}
+
 // Helper to handle binary operations with one var and one bool symmetrically
 const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: string, vars: Map<string, boolean>): Node | null => {
     if (var_node.kind !== Node_Kind.Var || bool_node.kind !== Node_Kind.Bool) {
@@ -919,19 +932,6 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         return node_binary(node.op, lhs, rhs)
     }
     }
-}
-
-const _apply_constraint = (
-    name:           string,
-    required_value: boolean,
-    vars:           Map<string, boolean>,
-): Node => {
-    let existing = vars.get(name)
-    if (existing != null && existing !== required_value) {
-        return node_bool(false) // Conflict
-    }
-    vars.set(name, required_value)
-    return node_bool(true)
 }
 
 export const node_display = (src: string, node: Node, indent = '\t', depth = 0): string => {
