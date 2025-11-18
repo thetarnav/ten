@@ -391,6 +391,7 @@ test.describe('reducer', {concurrency: true}, () => {
         `Bool: true`)
 
     // Variables
+    // Variables
     test_reducer('a = true',
         `Bool: true`)
     test_reducer('false = b',
@@ -401,4 +402,40 @@ test.describe('reducer', {concurrency: true}, () => {
         `Bool: true`)
     test_reducer('a = true, a = false',
         `Bool: false`)
+
+    // Variables with != operator
+    test_reducer('a != true',
+        `Bool: true`)
+    test_reducer('a != false',
+        `Bool: true`)
+    test_reducer('a != true, a = false',
+        `Bool: true`)
+    test_reducer('a != true, a = true',
+        `Bool: false`)
+    test_reducer('a != b',
+        `Bool: true`)
+    test_reducer('a != b, a = true, b = false',
+        `Bool: true`)
+    test_reducer('a = true, b = true, a != b',
+        `Bool: false`)
+
+    // Variables with OR operations
+    test_reducer('a + false',
+        `Var: a`)
+    test_reducer('false | a',
+        `Var: a`)
+    test_reducer('a + true',
+        `Bool: true`)
+
+    // Variables with AND operations
+    test_reducer('a * true',
+        `Var: a`)
+    test_reducer('true & a',
+        `Var: a`)
+    test_reducer('a * false',
+        `Bool: false`)
+
+    // Variables with XOR operations
+    test_reducer('a ^ false',
+        `Var: a`)
 })

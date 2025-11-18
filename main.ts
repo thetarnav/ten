@@ -807,29 +807,26 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         let lhs = reduce(node.lhs, src, vars)
         let rhs = reduce(node.rhs, src, vars)
 
-        // Handle variable assignments/constraints with = operator
-        if (node.op === Token_Kind.Eq) {
-            // a = true -> constraint that a must be true
+        // Handle operations with variables
+        // Try to extract constraints from operations like: a = true, a != false, a + false = true, etc.
+
+        // For operations that should always be true (constraints):
+        // a = true -> a must be true
+        // a != false -> a must be true
+        // We evaluate the expression and if it reduces to a constraint, we apply it
+
+        // Handle specific operations with variables and booleans
+        switch (node.op) {
+        case Token_Kind.Eq:
+            // a = true -> a must be true
             if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool) {
-                let name = token_string(src, lhs.tok)
-                let existing = vars.get(name)
-                if (existing !== undefined && existing !== rhs.value) {
-                    // Conflict: variable already has different value
-                    return node_bool(false)
-                }
-                vars.set(name, rhs.value)
-                return node_bool(true)
+                let lhs_name = token_string(src, lhs.tok)
+                return _apply_constraint(lhs_name, rhs.value, vars)
             }
-            // true = a -> constraint that a must be true
+            // true = a -> a must be true
             if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Var) {
-                let name = token_string(src, rhs.tok)
-                let existing = vars.get(name)
-                if (existing !== undefined && existing !== lhs.value) {
-                    // Conflict: variable already has different value
-                    return node_bool(false)
-                }
-                vars.set(name, lhs.value)
-                return node_bool(true)
+                let rhs_name = token_string(src, rhs.tok)
+                return _apply_constraint(rhs_name, lhs.value, vars)
             }
             // a = b -> both variables must have same value
             if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
@@ -851,9 +848,110 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
                 // Both unknown, assume they can be equal
                 return node_bool(true)
             }
+            break
+
+        case Token_Kind.Not_Eq:
+            // a != true -> a must be false
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool) {
+                let lhs_name = token_string(src, lhs.tok)
+                return _apply_constraint(lhs_name, !rhs.value, vars)
+            }
+            // true != a -> a must be false
+            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Var) {
+                let rhs_name = token_string(src, rhs.tok)
+                return _apply_constraint(rhs_name, !lhs.value, vars)
+            }
+            // a != b -> variables must have different values
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
+                let lhs_name = token_string(src, lhs.tok)
+                let rhs_name = token_string(src, rhs.tok)
+                let lhs_val = vars.get(lhs_name)
+                let rhs_val = vars.get(rhs_name)
+                if (lhs_val !== undefined && rhs_val !== undefined) {
+                    // Both known, check if they're different
+                    return node_bool(lhs_val !== rhs_val)
+                }
+                // If only one is known, we can't determine the constraint yet
+                // Don't set opposite value, just return true (constraint can be satisfied)
+                return node_bool(true)
+            }
+            break
+
+        case Token_Kind.Add:
+        case Token_Kind.Or:
+            // a + false = a OR false = a, so if result must be true, a must be true
+            // false + a = a, so if result must be true, a must be true
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === false) {
+                // This is just a, keep it as variable
+                return lhs
+            }
+            if (lhs.kind === Node_Kind.Bool && lhs.value === false && rhs.kind === Node_Kind.Var) {
+                return rhs
+            }
+            // a + true = true (always true regardless of a)
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === true) {
+                return node_bool(true)
+            }
+            if (lhs.kind === Node_Kind.Bool && lhs.value === true && rhs.kind === Node_Kind.Var) {
+                return node_bool(true)
+            }
+            break
+
+        case Token_Kind.Mul:
+        case Token_Kind.And:
+            // a * true = a AND true = a
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === true) {
+                return lhs
+            }
+            if (lhs.kind === Node_Kind.Bool && lhs.value === true && rhs.kind === Node_Kind.Var) {
+                return rhs
+            }
+            // a * false = false (always false regardless of a)
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === false) {
+                return node_bool(false)
+            }
+            if (lhs.kind === Node_Kind.Bool && lhs.value === false && rhs.kind === Node_Kind.Var) {
+                return node_bool(false)
+            }
+            break
+
+        case Token_Kind.Sub:
+            // a - true: a XNOR true = NOT(a XOR true) = NOT(a != true) = (a == true)
+            // So: a - true = true means a = true, a - true = false means a = false
+            // Simpler: a - b = (a == b), so a - true reduces based on context
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool) {
+                // a - true means a XNOR true = (a == true)
+                // a - false means a XNOR false = (a == false) = NOT a
+                // Keep as operation for now, would need context to resolve
+                return node_binary(node.op, lhs, rhs)
+            }
+            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Var) {
+                // true - a means true XNOR a = (true == a)
+                // false - a means false XNOR a = (false == a) = NOT a
+                return node_binary(node.op, lhs, rhs)
+            }
+            break
+
+        case Token_Kind.Pow:
+            // a ^ true: a XOR true = NOT a
+            // a ^ false: a XOR false = a
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === false) {
+                return lhs
+            }
+            if (lhs.kind === Node_Kind.Bool && lhs.value === false && rhs.kind === Node_Kind.Var) {
+                return rhs
+            }
+            // a ^ true = NOT a, keep as operation
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === true) {
+                return node_binary(node.op, lhs, rhs)
+            }
+            if (lhs.kind === Node_Kind.Bool && lhs.value === true && rhs.kind === Node_Kind.Var) {
+                return node_binary(node.op, lhs, rhs)
+            }
+            break
         }
 
-        // Boolean operations
+        // Boolean operations (both sides are concrete booleans)
         if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Bool) {
             switch (node.op) {
             // Add and Or are OR
@@ -878,6 +976,19 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         return node_binary(node.op, lhs, rhs)
     }
     }
+}
+
+const _apply_constraint = (
+    name:           string,
+    required_value: boolean,
+    vars:           Map<string, boolean>,
+): Node => {
+    let existing = vars.get(name)
+    if (existing !== undefined && existing !== required_value) {
+        return node_bool(false) // Conflict
+    }
+    vars.set(name, required_value)
+    return node_bool(true)
 }
 
 export const node_display = (src: string, node: Node, indent = '\t', depth = 0): string => {
