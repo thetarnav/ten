@@ -330,10 +330,20 @@ test.describe('reducer', {concurrency: true}, () => {
     // Nested operations
     test_reducer('true + false * true',
         `Bool: true`)
-    test_reducer('(true + false) * (true + false)',
+    test_reducer('(true + false) * (false = false)',
         `Bool: true`)
     test_reducer('-(-true)',
         `Bool: true`)
     test_reducer('-(true + false)',
+        `Bool: false`)
+
+    // Boolean equality (=)
+    test_reducer('true = true',
+        `Bool: true`)
+    test_reducer('false = false',
+        `Bool: true`)
+    test_reducer('true = false',
+        `Bool: false`)
+    test_reducer('false = true',
         `Bool: false`)
 })
