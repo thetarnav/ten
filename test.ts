@@ -287,6 +287,12 @@ test.describe('reducer', () => {
     test_reducer('false',
         `Bool: false`)
 
+    // Unary plus (identity)
+    test_reducer('+true',
+        `Bool: true`)
+    test_reducer('+false',
+        `Bool: false`)
+
     // Boolean NOT (unary negation)
     test_reducer('-true',
         `Bool: false`)
