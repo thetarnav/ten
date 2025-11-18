@@ -324,6 +324,22 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer('false * false',
         `Bool: false`)
 
+    // Boolean OR (|)
+    test_reducer('true | false',
+        `Bool: true`)
+    test_reducer('false | false',
+        `Bool: false`)
+    test_reducer('true | true',
+        `Bool: true`)
+
+    // Boolean AND (&)
+    test_reducer('true & false',
+        `Bool: false`)
+    test_reducer('true & true',
+        `Bool: true`)
+    test_reducer('false & false',
+        `Bool: false`)
+
     // Complex expressions
     test_reducer('true * (false + true)',
         `Bool: true`)
