@@ -69,8 +69,8 @@ test.describe('tokenizer', {concurrency: true}, () => {
         `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`)
     test_tokenizer(`_render = Btn("Hello")`,
         `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`)
-    test_tokenizer(`0.123 = x = y = 12.s`,
-        `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y) Eq(=) Invalid(12) Ident(s)`)
+    test_tokenizer(`0.123 = x != y = 12.s`,
+        `Float(0.123) Eq(=) Ident(x) Not_Eq(!=) Ident(y) Eq(=) Invalid(12) Ident(s)`)
     test_tokenizer(`\t  text = "Count: " + count + "!\\n"`,
         `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!\\n")`)
     test_tokenizer(`\t\tonclick = inc`,
@@ -79,8 +79,8 @@ test.describe('tokenizer', {concurrency: true}, () => {
         `Float(0.0) Float(.0)`)
     test_tokenizer(`()`,
         `Paren_L(() Paren_R())`)
-    test_tokenizer(`a >b >= c = d < e<= f`,
-        `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Ident(f)`)
+    test_tokenizer(`a >b >= c = d < e<= !f`,
+        `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Neg(!) Ident(f)`)
     test_tokenizer(`true false`,
         `True(true) False(false)`)
     test_tokenizer(`x = true, y = false`,
@@ -244,12 +244,13 @@ test.describe('parser', {concurrency: true}, () => {
         `      Token: Ident(d)`)
 
     // Assignment operations
-    test_parser('x = 123',
+    test_parser('x = !123',
         `Binary: Eq(=)\n`+
         `  Token: Ident(x)\n`+
-        `  Token: Int(123)`)
-    test_parser('123 = x',
-        `Binary: Eq(=)\n`+
+        `  Unary: Neg(!)\n`+
+        `    Token: Int(123)`)
+    test_parser('123 != x',
+        `Binary: Not_Eq(!=)\n`+
         `  Token: Int(123)\n`+
         `  Token: Ident(x)`)
     test_parser('x = y = z',

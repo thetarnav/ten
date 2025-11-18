@@ -19,6 +19,7 @@ export enum Token_Kind {
     /** >=          */ Greater_Eq,
     /** <=          */ Less_Eq,
     /** !           */ Neg,
+    /** !=          */ Not_Eq,
     /** |           */ Or,
     /** &           */ And,
     /** =           */ Eq,
@@ -164,6 +165,12 @@ export const token_next = (t: Tokenizer): Token => {
         }
         return _token_make_move_back(t, Token_Kind.Sub)
     }
+    case 33 /* '!' */: {
+        if (next_char_code(t) === 61 /* '=' */) {
+            return _token_make_move(t, Token_Kind.Not_Eq)
+        }
+        return _token_make_move_back(t, Token_Kind.Neg)
+    }
     case 42 /* '*' */: return _token_make_move(t, Token_Kind.Mul)
     case 47 /* '/' */: return _token_make_move(t, Token_Kind.Div)
     case 94 /* '^' */: return _token_make_move(t, Token_Kind.Pow)
@@ -298,6 +305,7 @@ export const token_len = (src: string, tok: Token): number => {
     case Token_Kind.Less_Eq:
     case Token_Kind.Add_Eq:
     case Token_Kind.Sub_Eq:
+    case Token_Kind.Not_Eq:
         return 2
 
     case Token_Kind.True:
@@ -504,6 +512,7 @@ export const token_kind_precedence = (kind: Token_Kind): number => {
     case Token_Kind.EOL:        return 1
     case Token_Kind.Comma:      return 1
     case Token_Kind.Eq:         return 2
+    case Token_Kind.Not_Eq:     return 2
     case Token_Kind.Add_Eq:     return 2
     case Token_Kind.Sub_Eq:     return 2
     case Token_Kind.Greater:    return 3
