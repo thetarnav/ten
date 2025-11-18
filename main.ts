@@ -691,42 +691,42 @@ export type Node =
     | Node_Paren
 
 export type Node_Bool = {
-    kind:  Node_Kind.Bool
-    value: boolean
-    expr?: Expr
+    kind:   Node_Kind.Bool
+    value:  boolean
+    expr:   Expr | null
 }
 
 export type Node_Unary = {
-    kind: Node_Kind.Unary
-    op:   Token_Kind
-    rhs:  Node
-    expr?: Expr
+    kind:   Node_Kind.Unary
+    op:     Token_Kind
+    rhs:    Node
+    expr:   Expr | null
 }
 
 export type Node_Binary = {
-    kind: Node_Kind.Binary
-    op:   Token_Kind
-    lhs:  Node
-    rhs:  Node
-    expr?: Expr
+    kind:   Node_Kind.Binary
+    op:     Token_Kind
+    lhs:    Node
+    rhs:    Node
+    expr:   Expr | null
 }
 
 export type Node_Paren = {
-    kind: Node_Kind.Paren
-    body: Node
-    expr?: Expr
+    kind:   Node_Kind.Paren
+    body:   Node
+    expr:   Expr | null
 }
 
-export const node_bool = (value: boolean, expr?: Expr): Node_Bool => {
+export const node_bool = (value: boolean, expr: Expr | null = null): Node_Bool => {
     return {kind: Node_Kind.Bool, value, expr}
 }
-export const node_unary = (op: Token_Kind, rhs: Node, expr?: Expr): Node_Unary => {
+export const node_unary = (op: Token_Kind, rhs: Node, expr: Expr | null = null): Node_Unary => {
     return {kind: Node_Kind.Unary, op, rhs, expr}
 }
-export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr?: Expr): Node_Binary => {
+export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr: Expr | null = null): Node_Binary => {
     return {kind: Node_Kind.Binary, op, lhs, rhs, expr}
 }
-export const node_paren = (body: Node, expr?: Expr): Node_Paren => {
+export const node_paren = (body: Node, expr: Expr | null = null): Node_Paren => {
     return {kind: Node_Kind.Paren, body, expr}
 }
 
