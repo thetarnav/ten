@@ -116,13 +116,13 @@ export const token_make = (t: Tokenizer, kind: Token_Kind): Token => {
         kind: kind,
     }
 }
-export const token_make_move = (t: Tokenizer, kind: Token_Kind): Token => {
+const _token_make_move = (t: Tokenizer, kind: Token_Kind): Token => {
     let token = token_make(t, kind)
     t.pos_write = t.pos_read + 1
     t.pos_read  = Math.min(t.pos_read + 1, t.src.length)
     return token
 }
-export const token_make_move_back = (t: Tokenizer, kind: Token_Kind): Token => {
+const _token_make_move_back = (t: Tokenizer, kind: Token_Kind): Token => {
     let token = token_make(t, kind)
     t.pos_write = t.pos_read
     return token
@@ -131,7 +131,7 @@ export const token_make_move_back = (t: Tokenizer, kind: Token_Kind): Token => {
 export const token_next = (t: Tokenizer): Token => {
 
     if (t.pos_read >= t.src.length) {
-        return token_make_move(t, Token_Kind.EOF)
+        return _token_make_move(t, Token_Kind.EOF)
     }
 
     let ch = char_code(t)
@@ -139,7 +139,7 @@ export const token_next = (t: Tokenizer): Token => {
     switch (ch) {
     // Whitespace
     case 10 /* '\n' */:
-        return token_make_move(t, Token_Kind.EOL)
+        return _token_make_move(t, Token_Kind.EOL)
     case 32 /* ' '  */:
     case 9  /* '\t' */:
     case 13 /* '\r' */:
@@ -147,41 +147,41 @@ export const token_next = (t: Tokenizer): Token => {
         t.pos_write = t.pos_read
         return token_next(t)
     // Punctuators
-    case 40 /* '(' */: return token_make_move(t, Token_Kind.Paren_L)
-    case 41 /* ')' */: return token_make_move(t, Token_Kind.Paren_R)
+    case 40 /* '(' */: return _token_make_move(t, Token_Kind.Paren_L)
+    case 41 /* ')' */: return _token_make_move(t, Token_Kind.Paren_R)
     // Operators
-    case 61 /* '=' */: return token_make_move(t, Token_Kind.Eq)
+    case 61 /* '=' */: return _token_make_move(t, Token_Kind.Eq)
     case 43 /* '+' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return token_make_move(t, Token_Kind.Add_Eq)
+            return _token_make_move(t, Token_Kind.Add_Eq)
         }
-        return token_make_move_back(t, Token_Kind.Add)
+        return _token_make_move_back(t, Token_Kind.Add)
     }
-    case 44 /* ',' */: return token_make_move(t, Token_Kind.Comma)
+    case 44 /* ',' */: return _token_make_move(t, Token_Kind.Comma)
     case 45 /* '-' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return token_make_move(t, Token_Kind.Sub_Eq)
+            return _token_make_move(t, Token_Kind.Sub_Eq)
         }
-        return token_make_move_back(t, Token_Kind.Sub)
+        return _token_make_move_back(t, Token_Kind.Sub)
     }
-    case 42 /* '*' */: return token_make_move(t, Token_Kind.Mul)
-    case 47 /* '/' */: return token_make_move(t, Token_Kind.Div)
-    case 94 /* '^' */: return token_make_move(t, Token_Kind.Pow)
-    case 38 /* '&' */: return token_make_move(t, Token_Kind.And)
-    case 124/* '|' */: return token_make_move(t, Token_Kind.Or)
-    case 63 /* '?' */: return token_make_move(t, Token_Kind.Question)
-    case 64 /* '@' */: return token_make_move(t, Token_Kind.At)
+    case 42 /* '*' */: return _token_make_move(t, Token_Kind.Mul)
+    case 47 /* '/' */: return _token_make_move(t, Token_Kind.Div)
+    case 94 /* '^' */: return _token_make_move(t, Token_Kind.Pow)
+    case 38 /* '&' */: return _token_make_move(t, Token_Kind.And)
+    case 124/* '|' */: return _token_make_move(t, Token_Kind.Or)
+    case 63 /* '?' */: return _token_make_move(t, Token_Kind.Question)
+    case 64 /* '@' */: return _token_make_move(t, Token_Kind.At)
     case 62 /* '>' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return token_make_move(t, Token_Kind.Greater_Eq)
+            return _token_make_move(t, Token_Kind.Greater_Eq)
         }
-        return token_make_move_back(t, Token_Kind.Greater)
+        return _token_make_move_back(t, Token_Kind.Greater)
     }
     case 60 /* '<' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return token_make_move(t, Token_Kind.Less_Eq)
+            return _token_make_move(t, Token_Kind.Less_Eq)
         }
-        return token_make_move_back(t, Token_Kind.Less)
+        return _token_make_move_back(t, Token_Kind.Less)
     }
     // String
     case 34 /* '"' */: {
@@ -193,13 +193,13 @@ export const token_next = (t: Tokenizer): Token => {
             switch (next_char_code(t)) {
             case 0:
             case 10 /* '\n' */:
-                return token_make_move_back(t, Token_Kind.Invalid)
+                return _token_make_move_back(t, Token_Kind.Invalid)
             case 92 /* '\\' */:
                 escaping = !escaping
                 break
             case 34 /* '"' */:
                 if (!escaping) {
-                    return token_make_move(t, Token_Kind.String)
+                    return _token_make_move(t, Token_Kind.String)
                 }
                 escaping = false
                 break
@@ -225,15 +225,15 @@ export const token_next = (t: Tokenizer): Token => {
             if (ch === 46 /* '.' */) {
 
                 if (!is_digit_code(next_char_code(t))) {
-                    return token_make_move_back(t, Token_Kind.Invalid)
+                    return _token_make_move_back(t, Token_Kind.Invalid)
                 }
 
                 while (is_digit_code(next_char_code(t))) {}
 
-                return token_make_move_back(t, Token_Kind.Float)
+                return _token_make_move_back(t, Token_Kind.Float)
             }
 
-            return token_make_move_back(t, Token_Kind.Int)
+            return _token_make_move_back(t, Token_Kind.Int)
         }
     }
 
@@ -242,10 +242,10 @@ export const token_next = (t: Tokenizer): Token => {
 
         if (is_digit_code(ch)) {
             while (is_digit_code(next_char_code(t))) {}
-            return token_make_move_back(t, Token_Kind.Float)
+            return _token_make_move_back(t, Token_Kind.Float)
         }
 
-        return token_make_move_back(t, Token_Kind.Invalid)
+        return _token_make_move_back(t, Token_Kind.Invalid)
     }
 
     // Identifiers and Keywords
@@ -254,14 +254,14 @@ export const token_next = (t: Tokenizer): Token => {
 
         // Check for keywords
         switch (t.src.substring(t.pos_write, t.pos_read)) {
-        case 'true':  return token_make_move_back(t, Token_Kind.True)
-        case 'false': return token_make_move_back(t, Token_Kind.False)
+        case 'true':  return _token_make_move_back(t, Token_Kind.True)
+        case 'false': return _token_make_move_back(t, Token_Kind.False)
         }
 
-        return token_make_move_back(t, Token_Kind.Ident)
+        return _token_make_move_back(t, Token_Kind.Ident)
     }
 
-    return token_make_move(t, Token_Kind.Invalid)
+    return _token_make_move(t, Token_Kind.Invalid)
 }
 export const next_token = token_next
 
@@ -581,11 +581,11 @@ export const parse_src = (src: string): [body: Expr, errors: Expr_Invalid[]] => 
 }
 
 export const parse_expr = (p: Parser): Expr => {
-    return parse_expr_bp(p, 1)
+    return _parse_expr_bp(p, 1)
 }
 
-const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
-    let lhs = parse_expr_atom(p)
+const _parse_expr_bp = (p: Parser, min_bp: number): Expr => {
+    let lhs = _parse_expr_atom(p)
 
     for (;;) {
         let op = p.token
@@ -603,7 +603,7 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 
         if (p.token.kind === Token_Kind.Paren_R) break
 
-        let rhs = parse_expr_bp(p, rbp)
+        let rhs = _parse_expr_bp(p, rbp)
 
         lhs = expr_binary(op, lhs, rhs)
     }
@@ -611,7 +611,7 @@ const parse_expr_bp = (p: Parser, min_bp: number): Expr => {
     return lhs
 }
 
-const parse_expr_atom = (p: Parser): Expr => {
+const _parse_expr_atom = (p: Parser): Expr => {
     let expr: Expr
 
     // ignore EOL
@@ -626,7 +626,7 @@ const parse_expr_atom = (p: Parser): Expr => {
     case Token_Kind.Neg: {
         let op = parser_token(p)
         parser_next_token(p)
-        let rhs = parse_expr_atom(p)
+        let rhs = _parse_expr_atom(p)
         return expr_unary(op, rhs)
     }
     case Token_Kind.Paren_L: {
@@ -666,7 +666,7 @@ const parse_expr_atom = (p: Parser): Expr => {
     }
     case Token_Kind.EOL:
         parser_next_token(p)
-        return parse_expr_atom(p)
+        return _parse_expr_atom(p)
     }
 
     return expr_invalid_push(p, parser_token(p))
@@ -776,6 +776,7 @@ export const node_from_expr = (expr: Expr): Node | null => {
         return null
     }
 }
+export {node_from_expr as expr_to_node}
 
 export const reduce = (node: Node): Node => {
     switch (node.kind) {
