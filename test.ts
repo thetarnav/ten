@@ -301,6 +301,12 @@ test.describe('reducer', {concurrency: true}, () => {
         `Bool: true`)
     test_reducer('--true',
         `Bool: true`)
+    test_reducer('!true',
+        `Bool: false`)
+    test_reducer('!false',
+        `Bool: true`)
+    test_reducer('!!true',
+        `Bool: true`)
 
     // Boolean OR (addition)
     test_reducer('true + false',

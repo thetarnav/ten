@@ -727,14 +727,22 @@ export const node_from_expr = (expr: Expr): Node | null => {
         return null
 
     case Expr_Kind.Unary: {
-        // Convert unary to binary: both +x and -x become false op x
-        // +x becomes false + x, which reduces to x (OR identity)
-        // -x becomes false - x, which reduces to NOT x (XNOR negation)
+        // Convert unary to binary
         let rhs = node_from_expr(expr.rhs)
         if (!rhs) return null
 
         let lhs = node_bool(false)
-        return node_binary(expr.op.kind, lhs, rhs, expr)
+
+        switch (expr.op.kind) {
+        // `+x` -> `false + x` -> `x` (OR identity)
+        case Token_Kind.Add: return node_binary(Token_Kind.Add, lhs, rhs, expr)
+        // `-x` -> `false - x` -> `NOT x` (XNOR negation)
+        case Token_Kind.Sub: return node_binary(Token_Kind.Sub, lhs, rhs, expr)
+        // `!x` -> `false - x` -> `NOT x` (XNOR negation)
+        case Token_Kind.Neg: return node_binary(Token_Kind.Sub, lhs, rhs, expr)
+        }
+
+        return null
     }
 
     case Expr_Kind.Binary: {
