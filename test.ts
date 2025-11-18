@@ -83,8 +83,8 @@ test.describe('tokenizer', {concurrency: true}, () => {
         `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Neg(!) Ident(f)`)
     test_tokenizer(`true false`,
         `True(true) False(false)`)
-    test_tokenizer(`x = true, y = false`,
-        `Ident(x) Eq(=) True(true) Comma(,) Ident(y) Eq(=) False(false)`)
+    test_tokenizer(`x ^ true, y = false`,
+        `Ident(x) Pow(^) True(true) Comma(,) Ident(y) Eq(=) False(false)`)
     test_tokenizer(`trueish falsey`,
         `Ident(trueish) Ident(falsey)`)
 })
@@ -339,6 +339,16 @@ test.describe('reducer', {concurrency: true}, () => {
         `Bool: true`)
     test_reducer('false & false',
         `Bool: false`)
+
+    // Boolean XOR (^)
+    test_reducer('true ^ false',
+        `Bool: true`)
+    test_reducer('false ^ false',
+        `Bool: false`)
+    test_reducer('true ^ true',
+        `Bool: false`)
+    test_reducer('false ^ true',
+        `Bool: true`)
 
     // Complex expressions
     test_reducer('true * (false + true)',
