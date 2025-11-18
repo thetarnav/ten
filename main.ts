@@ -866,14 +866,25 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         let lhs = reduce(node.lhs, src, vars)
         let rhs = reduce(node.rhs, src, vars)
 
-        // Special handling for comma: after evaluating rhs (which may set new constraints),
-        // re-reduce lhs from the original node to pick up those constraints
-        if (node.op === Token_Kind.Comma) {
-            lhs = reduce(node.lhs, src, vars)  // Re-reduce original lhs node with updated vars
+        // Special handling for operators that evaluate both sides (like AND/conjunction):
+        if (node.op === Token_Kind.Comma ||
+            node.op === Token_Kind.Mul ||
+            node.op === Token_Kind.And
+        ) {
+            // After evaluating rhs (which may set new constraints), re-reduce lhs from the
+            // original node to pick up those constraints
+            lhs = reduce(node.lhs, src, vars)
+
+            // After re-reduction, check for var-bool simplifications
+            let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
+                      || _handle_var_bool(node.op, rhs, lhs, src, vars)
+            if (result != null) return result
+
             // If both sides are booleans, AND them
             if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Bool) {
                 return node_bool(lhs.value && rhs.value)
             }
+
             return node_binary(node.op, lhs, rhs)
         }
 
@@ -883,7 +894,9 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         if (result != null) return result
 
         // Handle var-var operations
-        if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
+        if (lhs.kind === Node_Kind.Var &&
+            rhs.kind === Node_Kind.Var
+        ) {
             let lhs_name = token_string(src, lhs.tok)
             let rhs_name = token_string(src, rhs.tok)
 
@@ -911,14 +924,13 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         }
 
         // Boolean operations (both sides are concrete booleans)
-        if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Bool) {
+        if (lhs.kind === Node_Kind.Bool &&
+            rhs.kind === Node_Kind.Bool
+        ) {
             switch (node.op) {
             // Add and Or are OR
             case Token_Kind.Add:
             case Token_Kind.Or:     return node_bool(lhs.value || rhs.value)
-            // Mul and And are AND
-            case Token_Kind.Mul:
-            case Token_Kind.And:    return node_bool(lhs.value && rhs.value)
             // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
             case Token_Kind.Sub:    return node_bool(lhs.value === rhs.value)
             // Pow is XOR
