@@ -904,15 +904,8 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
                 if (lhs_val != null && rhs_val != null) {
                     return node_bool(lhs_val === rhs_val)
                 }
-                if (lhs_val != null) {
-                    return _apply_constraint(rhs_name, lhs_val, vars)
-                }
-                if (rhs_val != null) {
-                    return _apply_constraint(lhs_name, rhs_val, vars)
-                }
-                // Both unknown: the constraint "x = y" is satisfiable but we don't know the concrete value yet.
-                // In an optimistic evaluation model, we can return true (the constraint can be satisfied)
-                // but we keep it as a binary node to allow re-evaluation in comma contexts.
+                // If only one or neither is known, return true (optimistically satisfiable)
+                // The comma operator's re-reduction will handle constraint propagation
                 return node_bool(true)
 
             case Token_Kind.Not_Eq:
