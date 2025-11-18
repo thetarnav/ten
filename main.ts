@@ -746,11 +746,12 @@ export const node_from_expr = (expr: Expr): Node | null => {
     }
 
     case Expr_Kind.Binary: {
-        // Only handle Add (OR), Mul (AND), Sub (for negation), Eq (equality)
+        // Only handle Add (OR), Mul (AND), Sub (for negation), Eq (equality), Not_Eq (inequality)
         if (expr.op.kind !== Token_Kind.Add &&
             expr.op.kind !== Token_Kind.Mul &&
             expr.op.kind !== Token_Kind.Sub &&
-            expr.op.kind !== Token_Kind.Eq) {
+            expr.op.kind !== Token_Kind.Eq &&
+            expr.op.kind !== Token_Kind.Not_Eq) {
             return null
         }
 
@@ -793,6 +794,8 @@ export const reduce = (node: Node): Node => {
             case Token_Kind.Sub: return node_bool(lhs.value === rhs.value)
             // Eq is equality
             case Token_Kind.Eq:  return node_bool(lhs.value === rhs.value)
+            // Not_Eq is inequality
+            case Token_Kind.Not_Eq: return node_bool(lhs.value !== rhs.value)
             }
         }
 

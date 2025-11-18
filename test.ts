@@ -353,4 +353,14 @@ test.describe('reducer', {concurrency: true}, () => {
         `Bool: false`)
     test_reducer('false = true',
         `Bool: false`)
+
+    // Boolean inequality (!=)
+    test_reducer('true != true',
+        `Bool: false`)
+    test_reducer('false != false',
+        `Bool: false`)
+    test_reducer('true != false',
+        `Bool: true`)
+    test_reducer('false != true',
+        `Bool: true`)
 })
