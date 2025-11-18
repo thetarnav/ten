@@ -58,7 +58,7 @@ function test_reducer(input: string, expected: string) {
     Tokenizer and parser tests
 */
 
-test.describe('tokenizer', () => {
+test.describe('tokenizer', {concurrency: true}, () => {
     test_tokenizer(`Counter = (\ncount`,
         `Ident(Counter) Eq(=) Paren_L(()\nIdent(count)`)
     test_tokenizer(`\tcount ?= 12\n`,
@@ -89,7 +89,7 @@ test.describe('tokenizer', () => {
         `Ident(trueish) Ident(falsey)`)
 })
 
-test.describe('parser', () => {
+test.describe('parser', {concurrency: true}, () => {
     // Simple identifiers and numbers
     test_parser('x',
         `Token: Ident(x)`)
@@ -280,7 +280,7 @@ test.describe('parser', () => {
         `    Token: Int(123)`)
 })
 
-test.describe('reducer', () => {
+test.describe('reducer', {concurrency: true}, () => {
     // Simple boolean values
     test_reducer('true',
         `Bool: true`)
