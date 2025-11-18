@@ -69,10 +69,10 @@ test.describe('tokenizer', {concurrency: true}, () => {
         `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`)
     test_tokenizer(`_render = Btn("Hello")`,
         `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`)
-    test_tokenizer(`0.123 = x = y`,
-        `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y)`)
-    test_tokenizer(`\t  text = "Count: " + count + "!"`,
-        `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!")`)
+    test_tokenizer(`0.123 = x = y = 12.s`,
+        `Float(0.123) Eq(=) Ident(x) Eq(=) Ident(y) Eq(=) Invalid(12) Ident(s)`)
+    test_tokenizer(`\t  text = "Count: " + count + "!\\n"`,
+        `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!\\n")`)
     test_tokenizer(`\t\tonclick = inc`,
         `Ident(onclick) Eq(=) Ident(inc)`)
     test_tokenizer(`0.0.0`,
