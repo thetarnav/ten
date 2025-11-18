@@ -866,17 +866,35 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         let lhs = reduce(node.lhs, src, vars)
         let rhs = reduce(node.rhs, src, vars)
 
+        // Special handling for comma: after evaluating rhs (which may set new constraints),
+        // re-reduce lhs from the original node to pick up those constraints
+        if (node.op === Token_Kind.Comma) {
+            lhs = reduce(node.lhs, src, vars)  // Re-reduce original lhs node with updated vars
+            // If both sides are booleans, AND them
+            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Bool) {
+                return node_bool(lhs.value && rhs.value)
+            }
+            return node_binary(node.op, lhs, rhs)
+        }
+
         // Try both directions for var-bool operations
         let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
-        if (result != null) return result
-
-        result = _handle_var_bool(node.op, rhs, lhs, src, vars)
+                  || _handle_var_bool(node.op, rhs, lhs, src, vars)
         if (result != null) return result
 
         // Handle var-var operations
         if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
             let lhs_name = token_string(src, lhs.tok)
             let rhs_name = token_string(src, rhs.tok)
+
+            // Special case: variable compared with itself
+            if (lhs_name === rhs_name) {
+                switch (node.op) {
+                case Token_Kind.Eq:     return node_bool(true)  // x = x is always true
+                case Token_Kind.Not_Eq: return node_bool(false) // x != x is always false
+                }
+            }
+
             let lhs_val = vars.get(lhs_name)
             let rhs_val = vars.get(rhs_name)
 
@@ -887,14 +905,14 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
                     return node_bool(lhs_val === rhs_val)
                 }
                 if (lhs_val != null) {
-                    vars.set(rhs_name, lhs_val)
-                    return node_bool(true)
+                    return _apply_constraint(rhs_name, lhs_val, vars)
                 }
                 if (rhs_val != null) {
-                    vars.set(lhs_name, rhs_val)
-                    return node_bool(true)
+                    return _apply_constraint(lhs_name, rhs_val, vars)
                 }
-                // Both unknown, assume they can be equal
+                // Both unknown: the constraint "x = y" is satisfiable but we don't know the concrete value yet.
+                // In an optimistic evaluation model, we can return true (the constraint can be satisfied)
+                // but we keep it as a binary node to allow re-evaluation in comma contexts.
                 return node_bool(true)
 
             case Token_Kind.Not_Eq:
@@ -924,8 +942,6 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
             case Token_Kind.Eq:     return node_bool(lhs.value === rhs.value)
             // Not_Eq is inequality
             case Token_Kind.Not_Eq: return node_bool(lhs.value !== rhs.value)
-            // Comma evaluates both sides and ANDs them (both constraints must be satisfied)
-            case Token_Kind.Comma:  return node_bool(lhs.value && rhs.value)
             }
         }
 
