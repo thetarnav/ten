@@ -887,14 +887,6 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
             let lhs_name = token_string(src, lhs.tok)
             let rhs_name = token_string(src, rhs.tok)
 
-            // Special case: variable compared with itself
-            if (lhs_name === rhs_name) {
-                switch (node.op) {
-                case Token_Kind.Eq:     return node_bool(true)  // x = x is always true
-                case Token_Kind.Not_Eq: return node_bool(false) // x != x is always false
-                }
-            }
-
             let lhs_val = vars.get(lhs_name)
             let rhs_val = vars.get(rhs_name)
 
@@ -938,7 +930,7 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
             }
         }
 
-        return node_binary(node.op, lhs, rhs)
+        return node
     }
     }
 }
