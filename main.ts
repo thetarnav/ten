@@ -788,6 +788,52 @@ export const node_from_expr = (expr: Expr): Node | null => {
 }
 export {node_from_expr as expr_to_node}
 
+// Helper to handle binary operations with one var and one bool symmetrically
+const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: string, vars: Map<string, boolean>): Node | null => {
+    if (var_node.kind !== Node_Kind.Var || bool_node.kind !== Node_Kind.Bool) {
+        return null
+    }
+
+    let var_name = token_string(src, var_node.tok)
+    let bool_val = bool_node.value
+
+    switch (op) {
+    case Token_Kind.Eq:
+        // a = true -> a must be true
+        return _apply_constraint(var_name, bool_val, vars)
+
+    case Token_Kind.Not_Eq:
+        // a != true -> a must be false
+        return _apply_constraint(var_name, !bool_val, vars)
+
+    case Token_Kind.Add:
+    case Token_Kind.Or:
+        // a + false = a (OR identity)
+        if (bool_val === false) return var_node
+        // a + true = true (OR absorption)
+        return node_bool(true)
+
+    case Token_Kind.Mul:
+    case Token_Kind.And:
+        // a * true = a (AND identity)
+        if (bool_val === true) return var_node
+        // a * false = false (AND absorption)
+        return node_bool(false)
+
+    case Token_Kind.Sub:
+        // a - b = a XNOR b, keep as operation
+        return node_binary(op, var_node, bool_node)
+
+    case Token_Kind.Pow:
+        // a ^ false = a (XOR identity)
+        if (bool_val === false) return var_node
+        // a ^ true = NOT a, keep as operation
+        return node_binary(op, var_node, bool_node)
+    }
+
+    return null
+}
+
 export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new Map()): Node => {
     switch (node.kind) {
     case Node_Kind.Bool:
@@ -797,7 +843,7 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         // Return the variable's value if known, otherwise keep as variable
         let name = token_string(src, node.tok)
         let value = vars.get(name)
-        if (value !== undefined) {
+        if (value != null) {
             return node_bool(value)
         }
         return node
@@ -807,148 +853,45 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         let lhs = reduce(node.lhs, src, vars)
         let rhs = reduce(node.rhs, src, vars)
 
-        // Handle operations with variables
-        // Try to extract constraints from operations like: a = true, a != false, a + false = true, etc.
+        // Try both directions for var-bool operations
+        let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
+        if (result != null) return result
 
-        // For operations that should always be true (constraints):
-        // a = true -> a must be true
-        // a != false -> a must be true
-        // We evaluate the expression and if it reduces to a constraint, we apply it
+        result = _handle_var_bool(node.op, rhs, lhs, src, vars)
+        if (result != null) return result
 
-        // Handle specific operations with variables and booleans
-        switch (node.op) {
-        case Token_Kind.Eq:
-            // a = true -> a must be true
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool) {
-                let lhs_name = token_string(src, lhs.tok)
-                return _apply_constraint(lhs_name, rhs.value, vars)
-            }
-            // true = a -> a must be true
-            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Var) {
-                let rhs_name = token_string(src, rhs.tok)
-                return _apply_constraint(rhs_name, lhs.value, vars)
-            }
-            // a = b -> both variables must have same value
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
-                let lhs_name = token_string(src, lhs.tok)
-                let rhs_name = token_string(src, rhs.tok)
-                let lhs_val = vars.get(lhs_name)
-                let rhs_val = vars.get(rhs_name)
-                if (lhs_val !== undefined && rhs_val !== undefined) {
+        // Handle var-var operations
+        if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
+            let lhs_name = token_string(src, lhs.tok)
+            let rhs_name = token_string(src, rhs.tok)
+            let lhs_val = vars.get(lhs_name)
+            let rhs_val = vars.get(rhs_name)
+
+            switch (node.op) {
+            case Token_Kind.Eq:
+                // a = b -> both variables must have same value
+                if (lhs_val != null && rhs_val != null) {
                     return node_bool(lhs_val === rhs_val)
                 }
-                if (lhs_val !== undefined) {
+                if (lhs_val != null) {
                     vars.set(rhs_name, lhs_val)
                     return node_bool(true)
                 }
-                if (rhs_val !== undefined) {
+                if (rhs_val != null) {
                     vars.set(lhs_name, rhs_val)
                     return node_bool(true)
                 }
                 // Both unknown, assume they can be equal
                 return node_bool(true)
-            }
-            break
 
-        case Token_Kind.Not_Eq:
-            // a != true -> a must be false
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool) {
-                let lhs_name = token_string(src, lhs.tok)
-                return _apply_constraint(lhs_name, !rhs.value, vars)
-            }
-            // true != a -> a must be false
-            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Var) {
-                let rhs_name = token_string(src, rhs.tok)
-                return _apply_constraint(rhs_name, !lhs.value, vars)
-            }
-            // a != b -> variables must have different values
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
-                let lhs_name = token_string(src, lhs.tok)
-                let rhs_name = token_string(src, rhs.tok)
-                let lhs_val = vars.get(lhs_name)
-                let rhs_val = vars.get(rhs_name)
-                if (lhs_val !== undefined && rhs_val !== undefined) {
-                    // Both known, check if they're different
+            case Token_Kind.Not_Eq:
+                // a != b -> variables must have different values
+                if (lhs_val != null && rhs_val != null) {
                     return node_bool(lhs_val !== rhs_val)
                 }
-                // If only one is known, we can't determine the constraint yet
-                // Don't set opposite value, just return true (constraint can be satisfied)
+                // If only one is known, constraint can be satisfied
                 return node_bool(true)
             }
-            break
-
-        case Token_Kind.Add:
-        case Token_Kind.Or:
-            // a + false = a OR false = a, so if result must be true, a must be true
-            // false + a = a, so if result must be true, a must be true
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === false) {
-                // This is just a, keep it as variable
-                return lhs
-            }
-            if (lhs.kind === Node_Kind.Bool && lhs.value === false && rhs.kind === Node_Kind.Var) {
-                return rhs
-            }
-            // a + true = true (always true regardless of a)
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === true) {
-                return node_bool(true)
-            }
-            if (lhs.kind === Node_Kind.Bool && lhs.value === true && rhs.kind === Node_Kind.Var) {
-                return node_bool(true)
-            }
-            break
-
-        case Token_Kind.Mul:
-        case Token_Kind.And:
-            // a * true = a AND true = a
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === true) {
-                return lhs
-            }
-            if (lhs.kind === Node_Kind.Bool && lhs.value === true && rhs.kind === Node_Kind.Var) {
-                return rhs
-            }
-            // a * false = false (always false regardless of a)
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === false) {
-                return node_bool(false)
-            }
-            if (lhs.kind === Node_Kind.Bool && lhs.value === false && rhs.kind === Node_Kind.Var) {
-                return node_bool(false)
-            }
-            break
-
-        case Token_Kind.Sub:
-            // a - true: a XNOR true = NOT(a XOR true) = NOT(a != true) = (a == true)
-            // So: a - true = true means a = true, a - true = false means a = false
-            // Simpler: a - b = (a == b), so a - true reduces based on context
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool) {
-                // a - true means a XNOR true = (a == true)
-                // a - false means a XNOR false = (a == false) = NOT a
-                // Keep as operation for now, would need context to resolve
-                return node_binary(node.op, lhs, rhs)
-            }
-            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Var) {
-                // true - a means true XNOR a = (true == a)
-                // false - a means false XNOR a = (false == a) = NOT a
-                return node_binary(node.op, lhs, rhs)
-            }
-            break
-
-        case Token_Kind.Pow:
-            // a ^ true: a XOR true = NOT a
-            // a ^ false: a XOR false = a
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === false) {
-                return lhs
-            }
-            if (lhs.kind === Node_Kind.Bool && lhs.value === false && rhs.kind === Node_Kind.Var) {
-                return rhs
-            }
-            // a ^ true = NOT a, keep as operation
-            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool && rhs.value === true) {
-                return node_binary(node.op, lhs, rhs)
-            }
-            if (lhs.kind === Node_Kind.Bool && lhs.value === true && rhs.kind === Node_Kind.Var) {
-                return node_binary(node.op, lhs, rhs)
-            }
-            break
         }
 
         // Boolean operations (both sides are concrete booleans)
@@ -984,7 +927,7 @@ const _apply_constraint = (
     vars:           Map<string, boolean>,
 ): Node => {
     let existing = vars.get(name)
-    if (existing !== undefined && existing !== required_value) {
+    if (existing != null && existing !== required_value) {
         return node_bool(false) // Conflict
     }
     vars.set(name, required_value)
