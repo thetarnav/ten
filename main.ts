@@ -757,24 +757,23 @@ export const node_from_expr = (expr: Expr): Node | null => {
     }
 
     case Expr_Kind.Binary: {
-        // Only handle Add/Or (OR), Mul/And (AND), Sub (XNOR), Pow (XOR), Eq (equality), Not_Eq (inequality), Comma
-        if (expr.op.kind !== Token_Kind.Add &&
-            expr.op.kind !== Token_Kind.Or &&
-            expr.op.kind !== Token_Kind.Mul &&
-            expr.op.kind !== Token_Kind.And &&
-            expr.op.kind !== Token_Kind.Sub &&
-            expr.op.kind !== Token_Kind.Pow &&
-            expr.op.kind !== Token_Kind.Eq &&
-            expr.op.kind !== Token_Kind.Not_Eq &&
-            expr.op.kind !== Token_Kind.Comma) {
-            return null
+        switch (expr.op.kind) {
+        case Token_Kind.Add:
+        case Token_Kind.Or:
+        case Token_Kind.Mul:
+        case Token_Kind.And:
+        case Token_Kind.Sub:
+        case Token_Kind.Pow:
+        case Token_Kind.Eq:
+        case Token_Kind.Not_Eq:
+        case Token_Kind.Comma:
+            let lhs = node_from_expr(expr.lhs)
+            let rhs = node_from_expr(expr.rhs)
+            if (!lhs || !rhs) return null
+
+            return node_binary(expr.op.kind, lhs, rhs, expr)
         }
-
-        let lhs = node_from_expr(expr.lhs)
-        let rhs = node_from_expr(expr.rhs)
-        if (!lhs || !rhs) return null
-
-        return node_binary(expr.op.kind, lhs, rhs, expr)
+        return null
     }
 
     case Expr_Kind.Paren: {
