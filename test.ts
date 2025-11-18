@@ -510,11 +510,45 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer('a != false, a = true, a != false',
         `Bool: true`)
 
-    // Variable operations before constraint is known
+    // Variable disjunctions
+    test_reducer('a + b, a = false, b = false',
+        `Bool: false`)
+    test_reducer('a + b, a = false, b = true',
+        `Bool: true`)
     test_reducer('a + b, a = true, b = false',
         `Bool: true`)
+    test_reducer('a + b, a = true, b = true',
+        `Bool: true`)
+
+    // Variable conjunctions
+    test_reducer('a * b, a = false, b = false',
+        `Bool: false`)
+    test_reducer('a * b, a = false, b = true',
+        `Bool: false`)
     test_reducer('a * b, a = true, b = false',
         `Bool: false`)
+    test_reducer('a * b, a = true, b = true',
+        `Bool: true`)
+
+    // Variable xor
+    test_reducer('a ^ b, a = false, b = false',
+        `Bool: false`)
+    test_reducer('a ^ b, a = false, b = true',
+        `Bool: true`)
+    test_reducer('a ^ b, a = true, b = false',
+        `Bool: true`)
     test_reducer('a ^ b, a = true, b = true',
+        `Bool: false`)
+
+    // Complex operations with variables
+    test_reducer('a = b, b != c, c = true, a = false',
+        `Bool: true`)
+    test_reducer('a = b, b != c, c = true, a = true',
+        `Bool: false`)
+    test_reducer('a = b, b != c, c = false, c = a ^ true',
+        `Bool: true`)
+    test_reducer('a = (false + b), c = b, c = true, a = true',
+        `Bool: true`)
+    test_reducer('a = (false + b), c = b, c = true, a = false',
         `Bool: false`)
 })
