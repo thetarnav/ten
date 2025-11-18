@@ -688,16 +688,24 @@ const _parse_expr_atom = (p: Parser): Expr => {
 
 export enum Node_Kind {
     Bool,
+    Var,
     Binary,
 }
 
 export type Node =
     | Node_Bool
+    | Node_Var
     | Node_Binary
 
 export type Node_Bool = {
     kind:   Node_Kind.Bool
     value:  boolean
+    expr:   Expr | null
+}
+
+export type Node_Var = {
+    kind:   Node_Kind.Var
+    tok:    Token
     expr:   Expr | null
 }
 
@@ -712,6 +720,9 @@ export type Node_Binary = {
 export const node_bool = (value: boolean, expr: Expr | null = null): Node_Bool => {
     return {kind: Node_Kind.Bool, value, expr}
 }
+export const node_var = (tok: Token, expr: Expr | null = null): Node_Var => {
+    return {kind: Node_Kind.Var, tok, expr}
+}
 export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr: Expr | null = null): Node_Binary => {
     return {kind: Node_Kind.Binary, op, lhs, rhs, expr}
 }
@@ -719,10 +730,10 @@ export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr: Expr | n
 export const node_from_expr = (expr: Expr): Node | null => {
     switch (expr.kind) {
     case Expr_Kind.Token:
-        // Only handle booleans for now
         switch (expr.tok.kind) {
         case Token_Kind.True:  return node_bool(true, expr)
         case Token_Kind.False: return node_bool(false, expr)
+        case Token_Kind.Ident: return node_var(expr.tok, expr)
         }
         return null
 
@@ -746,7 +757,7 @@ export const node_from_expr = (expr: Expr): Node | null => {
     }
 
     case Expr_Kind.Binary: {
-        // Only handle Add/Or (OR), Mul/And (AND), Sub (XNOR), Pow (XOR), Eq (equality), Not_Eq (inequality)
+        // Only handle Add/Or (OR), Mul/And (AND), Sub (XNOR), Pow (XOR), Eq (equality), Not_Eq (inequality), Comma
         if (expr.op.kind !== Token_Kind.Add &&
             expr.op.kind !== Token_Kind.Or &&
             expr.op.kind !== Token_Kind.Mul &&
@@ -754,7 +765,8 @@ export const node_from_expr = (expr: Expr): Node | null => {
             expr.op.kind !== Token_Kind.Sub &&
             expr.op.kind !== Token_Kind.Pow &&
             expr.op.kind !== Token_Kind.Eq &&
-            expr.op.kind !== Token_Kind.Not_Eq) {
+            expr.op.kind !== Token_Kind.Not_Eq &&
+            expr.op.kind !== Token_Kind.Comma) {
             return null
         }
 
@@ -777,32 +789,90 @@ export const node_from_expr = (expr: Expr): Node | null => {
 }
 export {node_from_expr as expr_to_node}
 
-export const reduce = (node: Node): Node => {
+export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new Map()): Node => {
     switch (node.kind) {
     case Node_Kind.Bool:
         return node
 
+    case Node_Kind.Var: {
+        // Return the variable's value if known, otherwise keep as variable
+        let name = token_string(src, node.tok)
+        let value = vars.get(name)
+        if (value !== undefined) {
+            return node_bool(value)
+        }
+        return node
+    }
+
     case Node_Kind.Binary: {
-        let lhs = reduce(node.lhs)
-        let rhs = reduce(node.rhs)
+        let lhs = reduce(node.lhs, src, vars)
+        let rhs = reduce(node.rhs, src, vars)
+
+        // Handle variable assignments/constraints with = operator
+        if (node.op === Token_Kind.Eq) {
+            // a = true -> constraint that a must be true
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Bool) {
+                let name = token_string(src, lhs.tok)
+                let existing = vars.get(name)
+                if (existing !== undefined && existing !== rhs.value) {
+                    // Conflict: variable already has different value
+                    return node_bool(false)
+                }
+                vars.set(name, rhs.value)
+                return node_bool(true)
+            }
+            // true = a -> constraint that a must be true
+            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Var) {
+                let name = token_string(src, rhs.tok)
+                let existing = vars.get(name)
+                if (existing !== undefined && existing !== lhs.value) {
+                    // Conflict: variable already has different value
+                    return node_bool(false)
+                }
+                vars.set(name, lhs.value)
+                return node_bool(true)
+            }
+            // a = b -> both variables must have same value
+            if (lhs.kind === Node_Kind.Var && rhs.kind === Node_Kind.Var) {
+                let lhs_name = token_string(src, lhs.tok)
+                let rhs_name = token_string(src, rhs.tok)
+                let lhs_val = vars.get(lhs_name)
+                let rhs_val = vars.get(rhs_name)
+                if (lhs_val !== undefined && rhs_val !== undefined) {
+                    return node_bool(lhs_val === rhs_val)
+                }
+                if (lhs_val !== undefined) {
+                    vars.set(rhs_name, lhs_val)
+                    return node_bool(true)
+                }
+                if (rhs_val !== undefined) {
+                    vars.set(lhs_name, rhs_val)
+                    return node_bool(true)
+                }
+                // Both unknown, assume they can be equal
+                return node_bool(true)
+            }
+        }
 
         // Boolean operations
         if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Bool) {
             switch (node.op) {
             // Add and Or are OR
             case Token_Kind.Add:
-            case Token_Kind.Or: return node_bool(lhs.value || rhs.value)
+            case Token_Kind.Or:     return node_bool(lhs.value || rhs.value)
             // Mul and And are AND
             case Token_Kind.Mul:
-            case Token_Kind.And: return node_bool(lhs.value && rhs.value)
+            case Token_Kind.And:    return node_bool(lhs.value && rhs.value)
             // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
-            case Token_Kind.Sub: return node_bool(lhs.value === rhs.value)
+            case Token_Kind.Sub:    return node_bool(lhs.value === rhs.value)
             // Pow is XOR
-            case Token_Kind.Pow: return node_bool(lhs.value !== rhs.value)
+            case Token_Kind.Pow:    return node_bool(lhs.value !== rhs.value)
             // Eq is equality
-            case Token_Kind.Eq:  return node_bool(lhs.value === rhs.value)
+            case Token_Kind.Eq:     return node_bool(lhs.value === rhs.value)
             // Not_Eq is inequality
             case Token_Kind.Not_Eq: return node_bool(lhs.value !== rhs.value)
+            // Comma evaluates both sides and ANDs them (both constraints must be satisfied)
+            case Token_Kind.Comma:  return node_bool(lhs.value && rhs.value)
             }
         }
 
@@ -811,14 +881,17 @@ export const reduce = (node: Node): Node => {
     }
 }
 
-export const node_display = (node: Node, indent = '\t', depth = 0): string => {
+export const node_display = (src: string, node: Node, indent = '\t', depth = 0): string => {
     let ind = indent.repeat(depth)
 
     switch (node.kind) {
     case Node_Kind.Bool:
         return `${ind}Bool: ${node.value}`
 
+    case Node_Kind.Var:
+        return `${ind}Var: ${token_string(src, node.tok)}`
+
     case Node_Kind.Binary:
-        return `${ind}Binary: ${Token_Kind[node.op]}\n${node_display(node.lhs, indent, depth+1)}\n${node_display(node.rhs, indent, depth+1)}`
+        return `${ind}Binary: ${Token_Kind[node.op]}\n${node_display(src, node.lhs, indent, depth+1)}\n${node_display(src, node.rhs, indent, depth+1)}`
     }
 }

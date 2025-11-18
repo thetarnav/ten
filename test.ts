@@ -44,10 +44,10 @@ function test_reducer(input: string, expected: string) {
         assert.equal(errors.length, 0, `Parse errors: ${JSON.stringify(errors)}`)
 
         let node = lang.node_from_expr(expr)
-        assert.notEqual(node, null, `Failed to convert expr to node`)
+        assert.ok(node != null, `Failed to convert expr to node`)
 
-        let reduced = lang.reduce(node!)
-        let result_str = lang.node_display(reduced, '  ')
+        let reduced = lang.reduce(node, input)
+        let result_str = lang.node_display(input, reduced, '  ')
         assert.equal(result_str, expected,
             `Reducer test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
     })
@@ -389,4 +389,16 @@ test.describe('reducer', {concurrency: true}, () => {
         `Bool: true`)
     test_reducer('false != true',
         `Bool: true`)
+
+    // Variables
+    test_reducer('a = true',
+        `Bool: true`)
+    test_reducer('false = b',
+        `Bool: true`)
+    test_reducer('x = y',
+        `Bool: true`)
+    test_reducer('a = true, a = true',
+        `Bool: true`)
+    test_reducer('a = true, a = false',
+        `Bool: false`)
 })
