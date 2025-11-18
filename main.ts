@@ -671,3 +671,169 @@ const parse_expr_atom = (p: Parser): Expr => {
 
     return expr_invalid_push(p, parser_token(p))
 }
+
+/*--------------------------------------------------------------*
+
+    REDUCER
+*/
+
+export enum Node_Kind {
+    Bool,
+    Unary,
+    Binary,
+    Paren,
+}
+
+export type Node =
+    | Node_Bool
+    | Node_Unary
+    | Node_Binary
+    | Node_Paren
+
+export type Node_Bool = {
+    kind:  Node_Kind.Bool
+    value: boolean
+    expr?: Expr
+}
+
+export type Node_Unary = {
+    kind: Node_Kind.Unary
+    op:   Token_Kind
+    rhs:  Node
+    expr?: Expr
+}
+
+export type Node_Binary = {
+    kind: Node_Kind.Binary
+    op:   Token_Kind
+    lhs:  Node
+    rhs:  Node
+    expr?: Expr
+}
+
+export type Node_Paren = {
+    kind: Node_Kind.Paren
+    body: Node
+    expr?: Expr
+}
+
+export const node_bool = (value: boolean, expr?: Expr): Node_Bool => {
+    return {kind: Node_Kind.Bool, value, expr}
+}
+export const node_unary = (op: Token_Kind, rhs: Node, expr?: Expr): Node_Unary => {
+    return {kind: Node_Kind.Unary, op, rhs, expr}
+}
+export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr?: Expr): Node_Binary => {
+    return {kind: Node_Kind.Binary, op, lhs, rhs, expr}
+}
+export const node_paren = (body: Node, expr?: Expr): Node_Paren => {
+    return {kind: Node_Kind.Paren, body, expr}
+}
+
+export const node_from_expr = (expr: Expr): Node | null => {
+    switch (expr.kind) {
+    case Expr_Kind.Token:
+        // Only handle booleans for now
+        if (expr.tok.kind === Token_Kind.True) {
+            return node_bool(true, expr)
+        }
+        if (expr.tok.kind === Token_Kind.False) {
+            return node_bool(false, expr)
+        }
+        return null
+
+    case Expr_Kind.Unary: {
+        // Only handle Sub (negation) for booleans
+        if (expr.op.kind !== Token_Kind.Sub) {
+            return null
+        }
+        let rhs = node_from_expr(expr.rhs)
+        if (!rhs) return null
+        return node_unary(expr.op.kind, rhs, expr)
+    }
+
+    case Expr_Kind.Binary: {
+        // Only handle Add (OR), Mul (AND), Sub (for any future use)
+        if (expr.op.kind !== Token_Kind.Add &&
+            expr.op.kind !== Token_Kind.Mul &&
+            expr.op.kind !== Token_Kind.Sub) {
+            return null
+        }
+        let lhs = node_from_expr(expr.lhs)
+        let rhs = node_from_expr(expr.rhs)
+        if (!lhs || !rhs) return null
+        return node_binary(expr.op.kind, lhs, rhs, expr)
+    }
+
+    case Expr_Kind.Paren: {
+        if (!expr.body) return null
+        let body = node_from_expr(expr.body)
+        if (!body) return null
+        return node_paren(body, expr)
+    }
+
+    case Expr_Kind.Invalid:
+        return null
+    }
+}
+
+export const reduce = (node: Node): Node => {
+    switch (node.kind) {
+    case Node_Kind.Bool:
+        return node
+
+    case Node_Kind.Unary: {
+        let rhs = reduce(node.rhs)
+
+        // NOT operation on bool
+        if (node.op === Token_Kind.Sub && rhs.kind === Node_Kind.Bool) {
+            return node_bool(!rhs.value)
+        }
+
+        return node_unary(node.op, rhs)
+    }
+
+    case Node_Kind.Binary: {
+        let lhs = reduce(node.lhs)
+        let rhs = reduce(node.rhs)
+
+        // Boolean operations
+        if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Bool) {
+            // Add is OR
+            if (node.op === Token_Kind.Add) {
+                return node_bool(lhs.value || rhs.value)
+            }
+            // Mul is AND
+            if (node.op === Token_Kind.Mul) {
+                return node_bool(lhs.value && rhs.value)
+            }
+        }
+
+        return node_binary(node.op, lhs, rhs)
+    }
+
+    case Node_Kind.Paren: {
+        let body = reduce(node.body)
+        // Unwrap parentheses after reduction
+        return body
+    }
+    }
+}
+
+export const node_display = (node: Node, indent = '\t', depth = 0): string => {
+    let ind = indent.repeat(depth)
+
+    switch (node.kind) {
+    case Node_Kind.Bool:
+        return `${ind}Bool: ${node.value}`
+
+    case Node_Kind.Unary:
+        return `${ind}Unary: ${Token_Kind[node.op]}\n${node_display(node.rhs, indent, depth+1)}`
+
+    case Node_Kind.Binary:
+        return `${ind}Binary: ${Token_Kind[node.op]}\n${node_display(node.lhs, indent, depth+1)}\n${node_display(node.rhs, indent, depth+1)}`
+
+    case Node_Kind.Paren:
+        return `${ind}Paren:\n${node_display(node.body, indent, depth+1)}`
+    }
+}

@@ -35,6 +35,26 @@ function test_parser(input: string, expected: string) {
 
 /*--------------------------------------------------------------*
 
+    Helper for testing reducer
+*/
+
+function test_reducer(input: string, expected: string) {
+    test.test(input, () => {
+        let [expr, errors] = lang.parse_src(input)
+        assert.equal(errors.length, 0, `Parse errors: ${JSON.stringify(errors)}`)
+
+        let node = lang.node_from_expr(expr)
+        assert.notEqual(node, null, `Failed to convert expr to node`)
+
+        let reduced = lang.reduce(node!)
+        let result_str = lang.node_display(reduced, '  ')
+        assert.equal(result_str, expected,
+            `Reducer test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
+    })
+}
+
+/*--------------------------------------------------------------*
+
     Tokenizer and parser tests
 */
 
@@ -258,4 +278,56 @@ test.describe('parser', () => {
         `  Binary: Greater(>)\n`+
         `    Token: Ident(x)\n`+
         `    Token: Int(123)`)
+})
+
+test.describe('reducer', () => {
+    // Simple boolean values
+    test_reducer('true',
+        `Bool: true`)
+    test_reducer('false',
+        `Bool: false`)
+
+    // Boolean NOT (unary negation)
+    test_reducer('-true',
+        `Bool: false`)
+    test_reducer('-false',
+        `Bool: true`)
+    test_reducer('--true',
+        `Bool: true`)
+
+    // Boolean OR (addition)
+    test_reducer('true + false',
+        `Bool: true`)
+    test_reducer('false + false',
+        `Bool: false`)
+    test_reducer('true + true',
+        `Bool: true`)
+
+    // Boolean AND (multiplication)
+    test_reducer('true * false',
+        `Bool: false`)
+    test_reducer('true * true',
+        `Bool: true`)
+    test_reducer('false * false',
+        `Bool: false`)
+
+    // Complex expressions
+    test_reducer('true * (false + true)',
+        `Bool: true`)
+    test_reducer('(true + false) * false',
+        `Bool: false`)
+    test_reducer('-(true * false)',
+        `Bool: true`)
+    test_reducer('-false + true',
+        `Bool: true`)
+
+    // Nested operations
+    test_reducer('true + false * true',
+        `Bool: true`)
+    test_reducer('(true + false) * (true + false)',
+        `Bool: true`)
+    test_reducer('-(-true)',
+        `Bool: true`)
+    test_reducer('-(true + false)',
+        `Bool: false`)
 })
