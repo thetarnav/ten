@@ -3,8 +3,8 @@
     "type": "module",
     "version": "0.0.0",
     "scripts": {
-        "test": "node --experimental-transform-types --test",
-        "test:watch": "node --watch --experimental-transform-types --test"
+        "test": "node --test",
+        "test:watch": "node --watch --test"
     },
     "devDependencies": {
         "@types/node": "^24.10.1"

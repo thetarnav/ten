@@ -3,50 +3,110 @@
     TOKENIZER
 */
 
-export enum Token_Kind {
-    /*
-        Special Tokens
-    */
-    /**             */ Invalid,
-    /** end of file */ EOF,
-    /** \n          */ EOL,
-    /*
-        Symbol Tokens
-    */
-    /** ?           */ Question,
-    /** >           */ Greater,
-    /** <           */ Less,
-    /** >=          */ Greater_Eq,
-    /** <=          */ Less_Eq,
-    /** !           */ Neg,
-    /** !=          */ Not_Eq,
-    /** |           */ Or,
-    /** &           */ And,
-    /** =           */ Eq,
-    /** +           */ Add,
-    /** -           */ Sub,
-    /** +=          */ Add_Eq,
-    /** -=          */ Sub_Eq,
-    /** *           */ Mul,
-    /** /           */ Div,
-    /** ^           */ Pow,
-    /** @           */ At,
-    /** "           */ Quote,
-    /** (           */ Paren_L,
-    /** )           */ Paren_R,
-    /** ,           */ Comma,
-    /*
-        Keyword Tokens
-    */
-    /** true        */ True,
-    /** false       */ False,
-    /*
-        Long Tokens
-    */
-    /** "<string>"  */ String,
-    /** foo         */ Ident,
-    /** 123         */ Int,
-    /** 123.123     */ Float,
+export const
+    TOKEN_INVALID    =  0,
+    TOKEN_EOF        =  1,
+    TOKEN_EOL        =  2,
+    TOKEN_QUESTION   =  3,
+    TOKEN_GREATER    =  4,
+    TOKEN_LESS       =  5,
+    TOKEN_GREATER_EQ =  6,
+    TOKEN_LESS_EQ    =  7,
+    TOKEN_NEG        =  8,
+    TOKEN_NOT_EQ     =  9,
+    TOKEN_OR         = 10,
+    TOKEN_AND        = 11,
+    TOKEN_EQ         = 12,
+    TOKEN_ADD        = 13,
+    TOKEN_SUB        = 14,
+    TOKEN_ADD_EQ     = 15,
+    TOKEN_SUB_EQ     = 16,
+    TOKEN_MUL        = 17,
+    TOKEN_DIV        = 18,
+    TOKEN_POW        = 19,
+    TOKEN_AT         = 20,
+    TOKEN_QUOTE      = 21,
+    TOKEN_PAREN_L    = 22,
+    TOKEN_PAREN_R    = 23,
+    TOKEN_COMMA      = 24,
+    TOKEN_TRUE       = 25,
+    TOKEN_FALSE      = 26,
+    TOKEN_STRING     = 27,
+    TOKEN_IDENT      = 28,
+    TOKEN_INT        = 29,
+    TOKEN_FLOAT      = 30
+
+export const Token_Kind = {
+    Invalid:    TOKEN_INVALID,
+    EOF:        TOKEN_EOF,
+    EOL:        TOKEN_EOL,
+    Question:   TOKEN_QUESTION,
+    Greater:    TOKEN_GREATER,
+    Less:       TOKEN_LESS,
+    Greater_Eq: TOKEN_GREATER_EQ,
+    Less_Eq:    TOKEN_LESS_EQ,
+    Neg:        TOKEN_NEG,
+    Not_Eq:     TOKEN_NOT_EQ,
+    Or:         TOKEN_OR,
+    And:        TOKEN_AND,
+    Eq:         TOKEN_EQ,
+    Add:        TOKEN_ADD,
+    Sub:        TOKEN_SUB,
+    Add_Eq:     TOKEN_ADD_EQ,
+    Sub_Eq:     TOKEN_SUB_EQ,
+    Mul:        TOKEN_MUL,
+    Div:        TOKEN_DIV,
+    Pow:        TOKEN_POW,
+    At:         TOKEN_AT,
+    Quote:      TOKEN_QUOTE,
+    Paren_L:    TOKEN_PAREN_L,
+    Paren_R:    TOKEN_PAREN_R,
+    Comma:      TOKEN_COMMA,
+    True:       TOKEN_TRUE,
+    False:      TOKEN_FALSE,
+    String:     TOKEN_STRING,
+    Ident:      TOKEN_IDENT,
+    Int:        TOKEN_INT,
+    Float:      TOKEN_FLOAT,
+} as const
+
+export type Token_Kind = typeof Token_Kind[keyof typeof Token_Kind]
+
+export const token_kind_string = (kind: Token_Kind): string => {
+    switch (kind) {
+    case TOKEN_INVALID:    return "Invalid"
+    case TOKEN_EOF:        return "EOF"
+    case TOKEN_EOL:        return "EOL"
+    case TOKEN_QUESTION:   return "Question"
+    case TOKEN_GREATER:    return "Greater"
+    case TOKEN_LESS:       return "Less"
+    case TOKEN_GREATER_EQ: return "Greater_Eq"
+    case TOKEN_LESS_EQ:    return "Less_Eq"
+    case TOKEN_NEG:        return "Neg"
+    case TOKEN_NOT_EQ:     return "Not_Eq"
+    case TOKEN_OR:         return "Or"
+    case TOKEN_AND:        return "And"
+    case TOKEN_EQ:         return "Eq"
+    case TOKEN_ADD:        return "Add"
+    case TOKEN_SUB:        return "Sub"
+    case TOKEN_ADD_EQ:     return "Add_Eq"
+    case TOKEN_SUB_EQ:     return "Sub_Eq"
+    case TOKEN_MUL:        return "Mul"
+    case TOKEN_DIV:        return "Div"
+    case TOKEN_POW:        return "Pow"
+    case TOKEN_AT:         return "At"
+    case TOKEN_QUOTE:      return "Quote"
+    case TOKEN_PAREN_L:    return "Paren_L"
+    case TOKEN_PAREN_R:    return "Paren_R"
+    case TOKEN_COMMA:      return "Comma"
+    case TOKEN_TRUE:       return "True"
+    case TOKEN_FALSE:      return "False"
+    case TOKEN_STRING:     return "String"
+    case TOKEN_IDENT:      return "Ident"
+    case TOKEN_INT:        return "Int"
+    case TOKEN_FLOAT:      return "Float"
+    default:               return "Unknown"
+    }
 }
 
 export type Token = {
@@ -132,7 +192,7 @@ const _token_make_move_back = (t: Tokenizer, kind: Token_Kind): Token => {
 export const token_next = (t: Tokenizer): Token => {
 
     if (t.pos_read >= t.src.length) {
-        return _token_make_move(t, Token_Kind.EOF)
+        return _token_make_move(t, TOKEN_EOF)
     }
 
     let ch = char_code(t)
@@ -140,7 +200,7 @@ export const token_next = (t: Tokenizer): Token => {
     switch (ch) {
     // Whitespace
     case 10 /* '\n' */:
-        return _token_make_move(t, Token_Kind.EOL)
+        return _token_make_move(t, TOKEN_EOL)
     case 32 /* ' '  */:
     case 9  /* '\t' */:
     case 13 /* '\r' */:
@@ -148,47 +208,47 @@ export const token_next = (t: Tokenizer): Token => {
         t.pos_write = t.pos_read
         return token_next(t)
     // Punctuators
-    case 40 /* '(' */: return _token_make_move(t, Token_Kind.Paren_L)
-    case 41 /* ')' */: return _token_make_move(t, Token_Kind.Paren_R)
+    case 40 /* '(' */: return _token_make_move(t, TOKEN_PAREN_L)
+    case 41 /* ')' */: return _token_make_move(t, TOKEN_PAREN_R)
     // Operators
-    case 61 /* '=' */: return _token_make_move(t, Token_Kind.Eq)
+    case 61 /* '=' */: return _token_make_move(t, TOKEN_EQ)
     case 43 /* '+' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return _token_make_move(t, Token_Kind.Add_Eq)
+            return _token_make_move(t, TOKEN_ADD_EQ)
         }
-        return _token_make_move_back(t, Token_Kind.Add)
+        return _token_make_move_back(t, TOKEN_ADD)
     }
-    case 44 /* ',' */: return _token_make_move(t, Token_Kind.Comma)
+    case 44 /* ',' */: return _token_make_move(t, TOKEN_COMMA)
     case 45 /* '-' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return _token_make_move(t, Token_Kind.Sub_Eq)
+            return _token_make_move(t, TOKEN_SUB_EQ)
         }
-        return _token_make_move_back(t, Token_Kind.Sub)
+        return _token_make_move_back(t, TOKEN_SUB)
     }
     case 33 /* '!' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return _token_make_move(t, Token_Kind.Not_Eq)
+            return _token_make_move(t, TOKEN_NOT_EQ)
         }
-        return _token_make_move_back(t, Token_Kind.Neg)
+        return _token_make_move_back(t, TOKEN_NEG)
     }
-    case 42 /* '*' */: return _token_make_move(t, Token_Kind.Mul)
-    case 47 /* '/' */: return _token_make_move(t, Token_Kind.Div)
-    case 94 /* '^' */: return _token_make_move(t, Token_Kind.Pow)
-    case 38 /* '&' */: return _token_make_move(t, Token_Kind.And)
-    case 124/* '|' */: return _token_make_move(t, Token_Kind.Or)
-    case 63 /* '?' */: return _token_make_move(t, Token_Kind.Question)
-    case 64 /* '@' */: return _token_make_move(t, Token_Kind.At)
+    case 42 /* '*' */: return _token_make_move(t, TOKEN_MUL)
+    case 47 /* '/' */: return _token_make_move(t, TOKEN_DIV)
+    case 94 /* '^' */: return _token_make_move(t, TOKEN_POW)
+    case 38 /* '&' */: return _token_make_move(t, TOKEN_AND)
+    case 124/* '|' */: return _token_make_move(t, TOKEN_OR)
+    case 63 /* '?' */: return _token_make_move(t, TOKEN_QUESTION)
+    case 64 /* '@' */: return _token_make_move(t, TOKEN_AT)
     case 62 /* '>' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return _token_make_move(t, Token_Kind.Greater_Eq)
+            return _token_make_move(t, TOKEN_GREATER_EQ)
         }
-        return _token_make_move_back(t, Token_Kind.Greater)
+        return _token_make_move_back(t, TOKEN_GREATER)
     }
     case 60 /* '<' */: {
         if (next_char_code(t) === 61 /* '=' */) {
-            return _token_make_move(t, Token_Kind.Less_Eq)
+            return _token_make_move(t, TOKEN_LESS_EQ)
         }
-        return _token_make_move_back(t, Token_Kind.Less)
+        return _token_make_move_back(t, TOKEN_LESS)
     }
     // String
     case 34 /* '"' */: {
@@ -200,13 +260,13 @@ export const token_next = (t: Tokenizer): Token => {
             switch (next_char_code(t)) {
             case 0:
             case 10 /* '\n' */:
-                return _token_make_move_back(t, Token_Kind.Invalid)
+                return _token_make_move_back(t, TOKEN_INVALID)
             case 92 /* '\\' */:
                 escaping = !escaping
                 break
             case 34 /* '"' */:
                 if (!escaping) {
-                    return _token_make_move(t, Token_Kind.String)
+                    return _token_make_move(t, TOKEN_STRING)
                 }
                 escaping = false
                 break
@@ -232,15 +292,15 @@ export const token_next = (t: Tokenizer): Token => {
             if (ch === 46 /* '.' */) {
 
                 if (!is_digit_code(next_char_code(t))) {
-                    return _token_make_move_back(t, Token_Kind.Invalid)
+                    return _token_make_move_back(t, TOKEN_INVALID)
                 }
 
                 while (is_digit_code(next_char_code(t))) {}
 
-                return _token_make_move_back(t, Token_Kind.Float)
+                return _token_make_move_back(t, TOKEN_FLOAT)
             }
 
-            return _token_make_move_back(t, Token_Kind.Int)
+            return _token_make_move_back(t, TOKEN_INT)
         }
     }
 
@@ -249,10 +309,10 @@ export const token_next = (t: Tokenizer): Token => {
 
         if (is_digit_code(ch)) {
             while (is_digit_code(next_char_code(t))) {}
-            return _token_make_move_back(t, Token_Kind.Float)
+            return _token_make_move_back(t, TOKEN_FLOAT)
         }
 
-        return _token_make_move_back(t, Token_Kind.Invalid)
+        return _token_make_move_back(t, TOKEN_INVALID)
     }
 
     // Identifiers and Keywords
@@ -261,14 +321,14 @@ export const token_next = (t: Tokenizer): Token => {
 
         // Check for keywords
         switch (t.src.substring(t.pos_write, t.pos_read)) {
-        case 'true':  return _token_make_move_back(t, Token_Kind.True)
-        case 'false': return _token_make_move_back(t, Token_Kind.False)
+        case 'true':  return _token_make_move_back(t, TOKEN_TRUE)
+        case 'false': return _token_make_move_back(t, TOKEN_FALSE)
         }
 
-        return _token_make_move_back(t, Token_Kind.Ident)
+        return _token_make_move_back(t, TOKEN_IDENT)
     }
 
-    return _token_make_move(t, Token_Kind.Invalid)
+    return _token_make_move(t, TOKEN_INVALID)
 }
 export const next_token = token_next
 
@@ -278,53 +338,53 @@ export const next_token = token_next
 export const token_len = (src: string, tok: Token): number => {
     switch (tok.kind) {
     default:
-    case Token_Kind.EOF:
+    case TOKEN_EOF:
         return 0
 
-    case Token_Kind.EOL:
-    case Token_Kind.Question:
-    case Token_Kind.Neg:
-    case Token_Kind.Or:
-    case Token_Kind.And:
-    case Token_Kind.Eq:
-    case Token_Kind.Add:
-    case Token_Kind.Sub:
-    case Token_Kind.Mul:
-    case Token_Kind.Div:
-    case Token_Kind.Pow:
-    case Token_Kind.At:
-    case Token_Kind.Quote:
-    case Token_Kind.Paren_L:
-    case Token_Kind.Paren_R:
-    case Token_Kind.Comma:
-    case Token_Kind.Greater:
-    case Token_Kind.Less:
+    case TOKEN_EOL:
+    case TOKEN_QUESTION:
+    case TOKEN_NEG:
+    case TOKEN_OR:
+    case TOKEN_AND:
+    case TOKEN_EQ:
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+    case TOKEN_MUL:
+    case TOKEN_DIV:
+    case TOKEN_POW:
+    case TOKEN_AT:
+    case TOKEN_QUOTE:
+    case TOKEN_PAREN_L:
+    case TOKEN_PAREN_R:
+    case TOKEN_COMMA:
+    case TOKEN_GREATER:
+    case TOKEN_LESS:
         return 1
 
-    case Token_Kind.Greater_Eq:
-    case Token_Kind.Less_Eq:
-    case Token_Kind.Add_Eq:
-    case Token_Kind.Sub_Eq:
-    case Token_Kind.Not_Eq:
+    case TOKEN_GREATER_EQ:
+    case TOKEN_LESS_EQ:
+    case TOKEN_ADD_EQ:
+    case TOKEN_SUB_EQ:
+    case TOKEN_NOT_EQ:
         return 2
 
-    case Token_Kind.True:
+    case TOKEN_TRUE:
         return 4
 
-    case Token_Kind.False:
+    case TOKEN_FALSE:
         return 5
 
     // Multi-character tokens
-    case Token_Kind.String:
-    case Token_Kind.Ident:
-    case Token_Kind.Int:
-    case Token_Kind.Float:
-    case Token_Kind.Invalid: {
+    case TOKEN_STRING:
+    case TOKEN_IDENT:
+    case TOKEN_INT:
+    case TOKEN_FLOAT:
+    case TOKEN_INVALID: {
         let start = tok.pos
         let end   = start + 1
 
         switch (tok.kind) {
-        case Token_Kind.String:
+        case TOKEN_STRING:
             for (;end < src.length; end++) {
                 if (src[end] === '"' && src[end-1] !== '\\') {
                     end++
@@ -332,13 +392,13 @@ export const token_len = (src: string, tok: Token): number => {
                 }
             }
             break
-        case Token_Kind.Ident:
+        case TOKEN_IDENT:
             for (;end < src.length && is_ident_code(src.charCodeAt(end)); end++) {}
             break
-        case Token_Kind.Int:
+        case TOKEN_INT:
             for (;end < src.length && is_digit_code(src.charCodeAt(end)); end++) {}
             break
-        case Token_Kind.Float: {
+        case TOKEN_FLOAT: {
             let dot = false
             for (;end < src.length; end++) {
                 let ch = src.charCodeAt(end)
@@ -376,11 +436,11 @@ export const token_string = (src: string, tok: Token): string => {
 
 export const token_display = (src: string, tok: Token): string => {
     switch (tok.kind) {
-    case Token_Kind.EOF:
-    case Token_Kind.EOL:
-        return Token_Kind[tok.kind]
+    case TOKEN_EOF:
+    case TOKEN_EOL:
+        return token_kind_string(tok.kind)
     default:
-        return `${Token_Kind[tok.kind]}(${token_string(src, tok)})`
+        return `${token_kind_string(tok.kind)}(${token_string(src, tok)})`
     }
 }
 
@@ -389,7 +449,7 @@ export const tokens_display = (src: string, tokens: Token[]): string => {
     let first = true
     for (let i = 0; i < tokens.length; i++) {
         let tok = tokens[i]
-        if (tok.kind === Token_Kind.EOL) {
+        if (tok.kind === TOKEN_EOL) {
             result += '\n'
             first = true
         } else {
@@ -408,12 +468,32 @@ export const tokens_display = (src: string, tokens: Token[]): string => {
     PARSER
 */
 
-export enum Expr_Kind {
-    Token,
-    Unary,
-    Binary,
-    Paren,
-    Invalid,
+export const
+    EXPR_TOKEN   = 1,
+    EXPR_UNARY   = 2,
+    EXPR_BINARY  = 3,
+    EXPR_PAREN   = 4,
+    EXPR_INVALID = 5
+
+export const Expr_Kind = {
+    Token:   EXPR_TOKEN,
+    Unary:   EXPR_UNARY,
+    Binary:  EXPR_BINARY,
+    Paren:   EXPR_PAREN,
+    Invalid: EXPR_INVALID,
+} as const
+
+export type Expr_Kind = typeof Expr_Kind[keyof typeof Expr_Kind]
+
+export const expr_kind_string = (kind: Expr_Kind): string => {
+    switch (kind) {
+    case EXPR_TOKEN:   return "Token"
+    case EXPR_UNARY:   return "Unary"
+    case EXPR_BINARY:  return "Binary"
+    case EXPR_PAREN:   return "Paren"
+    case EXPR_INVALID: return "Invalid"
+    default:           return "Unknown"
+    }
 }
 
 export type Expr =
@@ -424,52 +504,52 @@ export type Expr =
     | Expr_Invalid
 
 export type Expr_Token = {
-    kind: Expr_Kind.Token
+    kind: typeof EXPR_TOKEN
     tok:  Token
  }
 
 export type Expr_Unary = {
-    kind: Expr_Kind.Unary
+    kind: typeof EXPR_UNARY
     op:   Token
     rhs:  Expr
 }
 
 export type Expr_Binary = {
-    kind: Expr_Kind.Binary
+    kind: typeof EXPR_BINARY
     op:   Token
     lhs:  Expr
     rhs:  Expr
 }
 
 export type Expr_Paren = {
-    kind: Expr_Kind.Paren
+    kind: typeof EXPR_PAREN
     type: Expr | null
     body: Expr | null
 }
 
 export type Expr_Invalid = {
-    kind:   Expr_Kind.Invalid
+    kind:   typeof EXPR_INVALID
     tok:    Token
     reason: string
 }
 
 export const expr_binary = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
-    return {kind: Expr_Kind.Binary, op, lhs, rhs}
+    return {kind: EXPR_BINARY, op, lhs, rhs}
 }
 export const expr_unary = (op: Token, rhs: Expr): Expr_Unary => {
-    return {kind: Expr_Kind.Unary, op, rhs}
+    return {kind: EXPR_UNARY, op, rhs}
 }
 export const expr_token = (tok: Token): Expr_Token => {
-    return {kind: Expr_Kind.Token, tok}
+    return {kind: EXPR_TOKEN, tok}
 }
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
-    return {kind: Expr_Kind.Invalid, tok, reason}
+    return {kind: EXPR_INVALID, tok, reason}
 }
 export const expr_paren = (body: Expr | null): Expr_Paren => {
-    return {kind: Expr_Kind.Paren, type: null, body: body}
+    return {kind: EXPR_PAREN, type: null, body: body}
 }
 export const expr_paren_typed = (type: Expr, body: Expr): Expr_Paren => {
-    return {kind: Expr_Kind.Paren, type, body}
+    return {kind: EXPR_PAREN, type, body}
 }
 export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     let expr = expr_invalid(tok, reason)
@@ -481,16 +561,16 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
     let ind = indent.repeat(depth)
 
     switch (expr.kind) {
-    case Expr_Kind.Token:
+    case EXPR_TOKEN:
         return `${ind}Token: ${token_display(src, expr.tok)}`
 
-    case Expr_Kind.Unary:
+    case EXPR_UNARY:
         return `${ind}Unary: ${token_display(src, expr.op)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
-    case Expr_Kind.Binary:
+    case EXPR_BINARY:
         return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
-    case Expr_Kind.Paren:
+    case EXPR_PAREN:
         if (expr.type) {
             // Typed paren like foo(...)
             let type_str = expr_display(src, expr.type, indent, depth+1)
@@ -502,31 +582,34 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
             return `${ind}Paren:\n${body_str}`
         }
 
-    case Expr_Kind.Invalid:
+    case EXPR_INVALID:
         return `${ind}Invalid: ${token_display(src, expr.tok)} (${expr.reason})`
+
+    default:
+        return `${ind}Unknown`
     }
 }
 
 export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
-    case Token_Kind.EOL:        return 1
-    case Token_Kind.Comma:      return 1
-    case Token_Kind.Eq:         return 2
-    case Token_Kind.Not_Eq:     return 2
-    case Token_Kind.Add_Eq:     return 2
-    case Token_Kind.Sub_Eq:     return 2
-    case Token_Kind.Greater:    return 3
-    case Token_Kind.Greater_Eq: return 3
-    case Token_Kind.Less:       return 3
-    case Token_Kind.Less_Eq:    return 3
-    case Token_Kind.Add:        return 4
-    case Token_Kind.Sub:        return 4
-    case Token_Kind.Mul:        return 5
-    case Token_Kind.Div:        return 5
-    case Token_Kind.Pow:        return 6
-    case Token_Kind.And:        return 7
-    case Token_Kind.Or:         return 7
-    default:                    return 0
+    case TOKEN_EOL:        return 1
+    case TOKEN_COMMA:      return 1
+    case TOKEN_EQ:         return 2
+    case TOKEN_NOT_EQ:     return 2
+    case TOKEN_ADD_EQ:     return 2
+    case TOKEN_SUB_EQ:     return 2
+    case TOKEN_GREATER:    return 3
+    case TOKEN_GREATER_EQ: return 3
+    case TOKEN_LESS:       return 3
+    case TOKEN_LESS_EQ:    return 3
+    case TOKEN_ADD:        return 4
+    case TOKEN_SUB:        return 4
+    case TOKEN_MUL:        return 5
+    case TOKEN_DIV:        return 5
+    case TOKEN_POW:        return 6
+    case TOKEN_AND:        return 7
+    case TOKEN_OR:         return 7
+    default:               return 0
     }
 }
 export const token_precedence = (tok: Token): number => {
@@ -535,9 +618,9 @@ export const token_precedence = (tok: Token): number => {
 
 export const token_kind_is_unary = (kind: Token_Kind): boolean => {
     switch (kind) {
-    case Token_Kind.Add:
-    case Token_Kind.Sub:
-    case Token_Kind.Neg:
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+    case TOKEN_NEG:
         return true
     }
     return false
@@ -598,19 +681,19 @@ const _parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 
     for (;;) {
         let op = p.token
-        if (op.kind === Token_Kind.EOF) break
+        if (op.kind === TOKEN_EOF) break
 
         let lbp = token_precedence(op)
         if (lbp < min_bp) break
 
         let rbp = lbp
-        if (op.kind !== Token_Kind.Pow) {
+        if (op.kind !== TOKEN_POW) {
             rbp += 1 // Right-associative for Pow
         }
 
         parser_next_token(p)
 
-        if (p.token.kind === Token_Kind.Paren_R) break
+        if (p.token.kind === TOKEN_PAREN_R) break
 
         let rhs = _parse_expr_bp(p, rbp)
 
@@ -624,56 +707,56 @@ const _parse_expr_atom = (p: Parser): Expr => {
     let expr: Expr
 
     // ignore EOL
-    while (parser_token(p).kind === Token_Kind.EOL) {
+    while (parser_token(p).kind === TOKEN_EOL) {
         parser_next_token(p)
     }
 
     switch (parser_token(p).kind) {
     /* Unary */
-    case Token_Kind.Add:
-    case Token_Kind.Sub:
-    case Token_Kind.Neg: {
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+    case TOKEN_NEG: {
         let op = parser_token(p)
         parser_next_token(p)
         let rhs = _parse_expr_atom(p)
         return expr_unary(op, rhs)
     }
-    case Token_Kind.Paren_L: {
+    case TOKEN_PAREN_L: {
         parser_next_token(p)
-        if (parser_token(p).kind === Token_Kind.Paren_R) {
+        if (parser_token(p).kind === TOKEN_PAREN_R) {
             return expr_paren(null)
         }
         let body = parse_expr(p)
         let paren_r = parser_token(p)
-        if (paren_r.kind !== Token_Kind.Paren_R) {
+        if (paren_r.kind !== TOKEN_PAREN_R) {
             return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
         }
         parser_next_token(p)
         return expr_paren(body)
     }
-    case Token_Kind.Ident: {
+    case TOKEN_IDENT: {
         expr = expr_token(parser_token(p))
         parser_next_token(p)
-        if (parser_token(p).kind === Token_Kind.Paren_L) {
+        if (parser_token(p).kind === TOKEN_PAREN_L) {
             parser_next_token(p)
             let body = parse_expr(p)
             let paren_r = parser_token(p)
-            if (paren_r.kind !== Token_Kind.Paren_R) {
+            if (paren_r.kind !== TOKEN_PAREN_R) {
                 return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
             }
             return expr_paren_typed(expr, body)
         }
         return expr
     }
-    case Token_Kind.Float:
-    case Token_Kind.Int:
-    case Token_Kind.True:
-    case Token_Kind.False: {
+    case TOKEN_FLOAT:
+    case TOKEN_INT:
+    case TOKEN_TRUE:
+    case TOKEN_FALSE: {
         expr = expr_token(parser_token(p))
         parser_next_token(p)
         return expr
     }
-    case Token_Kind.EOL:
+    case TOKEN_EOL:
         parser_next_token(p)
         return _parse_expr_atom(p)
     }
@@ -686,10 +769,26 @@ const _parse_expr_atom = (p: Parser): Expr => {
     REDUCER
 */
 
-export enum Node_Kind {
-    Bool,
-    Var,
-    Binary,
+export const
+    NODE_BOOL   = 1,
+    NODE_VAR    = 2,
+    NODE_BINARY = 3
+
+export const Node_Kind = {
+    Bool:   NODE_BOOL,
+    Var:    NODE_VAR,
+    Binary: NODE_BINARY,
+} as const
+
+export type Node_Kind = typeof Node_Kind[keyof typeof Node_Kind]
+
+export const node_kind_string = (kind: Node_Kind): string => {
+    switch (kind) {
+    case NODE_BOOL:   return "Bool"
+    case NODE_VAR:    return "Var"
+    case NODE_BINARY: return "Binary"
+    default:          return "Unknown"
+    }
 }
 
 export type Node =
@@ -698,19 +797,19 @@ export type Node =
     | Node_Binary
 
 export type Node_Bool = {
-    kind:   Node_Kind.Bool
+    kind:   typeof NODE_BOOL
     value:  boolean
     expr:   Expr | null
 }
 
 export type Node_Var = {
-    kind:   Node_Kind.Var
+    kind:   typeof NODE_VAR
     tok:    Token
     expr:   Expr | null
 }
 
 export type Node_Binary = {
-    kind:   Node_Kind.Binary
+    kind:   typeof NODE_BINARY
     op:     Token_Kind
     lhs:    Node
     rhs:    Node
@@ -718,26 +817,26 @@ export type Node_Binary = {
 }
 
 export const node_bool = (value: boolean, expr: Expr | null = null): Node_Bool => {
-    return {kind: Node_Kind.Bool, value, expr}
+    return {kind: NODE_BOOL, value, expr}
 }
 export const node_var = (tok: Token, expr: Expr | null = null): Node_Var => {
-    return {kind: Node_Kind.Var, tok, expr}
+    return {kind: NODE_VAR, tok, expr}
 }
 export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr: Expr | null = null): Node_Binary => {
-    return {kind: Node_Kind.Binary, op, lhs, rhs, expr}
+    return {kind: NODE_BINARY, op, lhs, rhs, expr}
 }
 
 export const node_from_expr = (expr: Expr): Node | null => {
     switch (expr.kind) {
-    case Expr_Kind.Token:
+    case EXPR_TOKEN:
         switch (expr.tok.kind) {
-        case Token_Kind.True:  return node_bool(true, expr)
-        case Token_Kind.False: return node_bool(false, expr)
-        case Token_Kind.Ident: return node_var(expr.tok, expr)
+        case TOKEN_TRUE:  return node_bool(true, expr)
+        case TOKEN_FALSE: return node_bool(false, expr)
+        case TOKEN_IDENT: return node_var(expr.tok, expr)
         }
         return null
 
-    case Expr_Kind.Unary: {
+    case EXPR_UNARY: {
         // Convert unary to binary
         let rhs = node_from_expr(expr.rhs)
         if (!rhs) return null
@@ -746,27 +845,27 @@ export const node_from_expr = (expr: Expr): Node | null => {
 
         switch (expr.op.kind) {
         // `+x` -> `false + x` -> `x` (OR identity)
-        case Token_Kind.Add: return node_binary(Token_Kind.Add, lhs, rhs, expr)
+        case TOKEN_ADD: return node_binary(TOKEN_ADD, lhs, rhs, expr)
         // `-x` -> `false - x` -> `NOT x` (XNOR negation)
-        case Token_Kind.Sub: return node_binary(Token_Kind.Sub, lhs, rhs, expr)
+        case TOKEN_SUB: return node_binary(TOKEN_SUB, lhs, rhs, expr)
         // `!x` -> `false - x` -> `NOT x` (XNOR negation)
-        case Token_Kind.Neg: return node_binary(Token_Kind.Sub, lhs, rhs, expr)
+        case TOKEN_NEG: return node_binary(TOKEN_SUB, lhs, rhs, expr)
         }
 
         return null
     }
 
-    case Expr_Kind.Binary: {
+    case EXPR_BINARY: {
         switch (expr.op.kind) {
-        case Token_Kind.Add:
-        case Token_Kind.Or:
-        case Token_Kind.Mul:
-        case Token_Kind.And:
-        case Token_Kind.Sub:
-        case Token_Kind.Pow:
-        case Token_Kind.Eq:
-        case Token_Kind.Not_Eq:
-        case Token_Kind.Comma:
+        case TOKEN_ADD:
+        case TOKEN_OR:
+        case TOKEN_MUL:
+        case TOKEN_AND:
+        case TOKEN_SUB:
+        case TOKEN_POW:
+        case TOKEN_EQ:
+        case TOKEN_NOT_EQ:
+        case TOKEN_COMMA:
             let lhs = node_from_expr(expr.lhs)
             let rhs = node_from_expr(expr.rhs)
             if (!lhs || !rhs) return null
@@ -776,13 +875,16 @@ export const node_from_expr = (expr: Expr): Node | null => {
         return null
     }
 
-    case Expr_Kind.Paren: {
+    case EXPR_PAREN: {
         // Unwrap parentheses directly
         if (!expr.body) return null
         return node_from_expr(expr.body)
     }
 
-    case Expr_Kind.Invalid:
+    case EXPR_INVALID:
+        return null
+
+    default:
         return null
     }
 }
@@ -803,7 +905,7 @@ const _apply_constraint = (
 
 // Helper to handle binary operations with one var and one bool symmetrically
 const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: string, vars: Map<string, boolean>): Node | null => {
-    if (var_node.kind !== Node_Kind.Var || bool_node.kind !== Node_Kind.Bool) {
+    if (var_node.kind !== NODE_VAR || bool_node.kind !== NODE_BOOL) {
         return null
     }
 
@@ -811,33 +913,33 @@ const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: 
     let bool_val = bool_node.value
 
     switch (op) {
-    case Token_Kind.Eq:
+    case TOKEN_EQ:
         // a = true -> a must be true
         return _apply_constraint(var_name, bool_val, vars)
 
-    case Token_Kind.Not_Eq:
+    case TOKEN_NOT_EQ:
         // a != true -> a must be false
         return _apply_constraint(var_name, !bool_val, vars)
 
-    case Token_Kind.Add:
-    case Token_Kind.Or:
+    case TOKEN_ADD:
+    case TOKEN_OR:
         // a + false = a (OR identity)
         if (bool_val === false) return var_node
         // a + true = true (OR absorption)
         return node_bool(true)
 
-    case Token_Kind.Mul:
-    case Token_Kind.And:
+    case TOKEN_MUL:
+    case TOKEN_AND:
         // a * true = a (AND identity)
         if (bool_val === true) return var_node
         // a * false = false (AND absorption)
         return node_bool(false)
 
-    case Token_Kind.Sub:
+    case TOKEN_SUB:
         // a - b = a XNOR b, keep as operation
         return node_binary(op, var_node, bool_node)
 
-    case Token_Kind.Pow:
+    case TOKEN_POW:
         // a ^ false = a (XOR identity)
         if (bool_val === false) return var_node
         // a ^ true = NOT a, keep as operation
@@ -849,10 +951,10 @@ const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: 
 
 export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new Map()): Node => {
     switch (node.kind) {
-    case Node_Kind.Bool:
+    case NODE_BOOL:
         return node
 
-    case Node_Kind.Var: {
+    case NODE_VAR: {
         // Return the variable's value if known, otherwise keep as variable
         let name = token_string(src, node.tok)
         let value = vars.get(name)
@@ -862,14 +964,14 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         return node
     }
 
-    case Node_Kind.Binary: {
+    case NODE_BINARY: {
         let lhs = reduce(node.lhs, src, vars)
         let rhs = reduce(node.rhs, src, vars)
 
         // Special handling for operators that evaluate both sides (like AND/conjunction):
-        if (node.op === Token_Kind.Comma ||
-            node.op === Token_Kind.Mul ||
-            node.op === Token_Kind.And
+        if (node.op === TOKEN_COMMA ||
+            node.op === TOKEN_MUL ||
+            node.op === TOKEN_AND
         ) {
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
@@ -881,7 +983,7 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
             if (result != null) return result
 
             // If both sides are booleans, AND them
-            if (lhs.kind === Node_Kind.Bool && rhs.kind === Node_Kind.Bool) {
+            if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL) {
                 return node_bool(lhs.value && rhs.value)
             }
 
@@ -894,8 +996,8 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         if (result != null) return result
 
         // Handle var-var operations
-        if (lhs.kind === Node_Kind.Var &&
-            rhs.kind === Node_Kind.Var
+        if (lhs.kind === NODE_VAR &&
+            rhs.kind === NODE_VAR
         ) {
             let lhs_name = token_string(src, lhs.tok)
             let rhs_name = token_string(src, rhs.tok)
@@ -904,7 +1006,7 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
             let rhs_val = vars.get(rhs_name)
 
             switch (node.op) {
-            case Token_Kind.Eq:
+            case TOKEN_EQ:
                 // a = b -> both variables must have same value
                 if (lhs_val != null && rhs_val != null) {
                     return node_bool(lhs_val === rhs_val)
@@ -913,7 +1015,7 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
                 // The comma operator's re-reduction will handle constraint propagation
                 return node_bool(true)
 
-            case Token_Kind.Not_Eq:
+            case TOKEN_NOT_EQ:
                 // a != b -> variables must have different values
                 if (lhs_val != null && rhs_val != null) {
                     return node_bool(lhs_val !== rhs_val)
@@ -924,26 +1026,29 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
         }
 
         // Boolean operations (both sides are concrete booleans)
-        if (lhs.kind === Node_Kind.Bool &&
-            rhs.kind === Node_Kind.Bool
+        if (lhs.kind === NODE_BOOL &&
+            rhs.kind === NODE_BOOL
         ) {
             switch (node.op) {
             // Add and Or are OR
-            case Token_Kind.Add:
-            case Token_Kind.Or:     return node_bool(lhs.value || rhs.value)
+            case TOKEN_ADD:
+            case TOKEN_OR:     return node_bool(lhs.value || rhs.value)
             // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
-            case Token_Kind.Sub:    return node_bool(lhs.value === rhs.value)
+            case TOKEN_SUB:    return node_bool(lhs.value === rhs.value)
             // Pow is XOR
-            case Token_Kind.Pow:    return node_bool(lhs.value !== rhs.value)
+            case TOKEN_POW:    return node_bool(lhs.value !== rhs.value)
             // Eq is equality
-            case Token_Kind.Eq:     return node_bool(lhs.value === rhs.value)
+            case TOKEN_EQ:     return node_bool(lhs.value === rhs.value)
             // Not_Eq is inequality
-            case Token_Kind.Not_Eq: return node_bool(lhs.value !== rhs.value)
+            case TOKEN_NOT_EQ: return node_bool(lhs.value !== rhs.value)
             }
         }
 
-        return node
+        return node_binary(node.op, lhs, rhs)
     }
+
+    default:
+        return node
     }
 }
 
@@ -951,13 +1056,13 @@ export const node_display = (src: string, node: Node, indent = '\t', depth = 0):
     let ind = indent.repeat(depth)
 
     switch (node.kind) {
-    case Node_Kind.Bool:
+    case NODE_BOOL:
         return `${ind}Bool: ${node.value}`
 
-    case Node_Kind.Var:
+    case NODE_VAR:
         return `${ind}Var: ${token_string(src, node.tok)}`
 
-    case Node_Kind.Binary:
-        return `${ind}Binary: ${Token_Kind[node.op]}\n${node_display(src, node.lhs, indent, depth+1)}\n${node_display(src, node.rhs, indent, depth+1)}`
+    case NODE_BINARY:
+        return `${ind}Binary: ${token_kind_string(node.op)}\n${node_display(src, node.lhs, indent, depth+1)}\n${node_display(src, node.rhs, indent, depth+1)}`
     }
 }

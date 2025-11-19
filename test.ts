@@ -13,7 +13,7 @@ function test_tokenizer(input: string, stringified: string) {
         let tokens: lang.Token[] = []
         for (;;) {
             let tok = lang.token_next(t)
-            if (tok.kind === lang.Token_Kind.EOF) break
+            if (tok.kind === lang.TOKEN_EOF) break
             tokens.push(tok)
         }
         let result = lang.tokens_display(input, tokens)
