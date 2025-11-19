@@ -444,7 +444,7 @@ test.describe('reducer', {concurrency: true}, () => {
         // Nested variable operations with constraint propagation
         test_reducer(`(a = b)${and}(b = false)${and}(a = true)`,
             `Bool: false`)
-        test_reducer(`true * (a = false)${and}a = true`,
+        test_reducer(`true${and}(a = false)${and}a = true`,
             `Bool: false`)
 
         // Edge cases for constraint propagation through comma
@@ -498,7 +498,7 @@ test.describe('reducer', {concurrency: true}, () => {
         // Operations with variable constraints
         test_reducer(`(a = b)${and}(b = false)${and}(a + true)`,
             `Bool: true`)
-        test_reducer(`(a = b)${and}(b = true)${and}(a * false)`,
+        test_reducer(`(a = b)${and}(b = true)${and}(a${and}false)`,
             `Bool: false`)
         test_reducer(`(a = b)${and}(b = false)${and}(a ^ true)`,
             `Bool: true`)
@@ -511,24 +511,14 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`(a != false)${and}(a = true)${and}(a != false)`,
             `Bool: true`)
 
-        // Variable disjunctions
-        test_reducer(`(a + b)${and}(a = false)${and}(b = false)`,
-            `Bool: false`)
-        test_reducer(`(a + b)${and}(a = false)${and}(b = true)`,
-            `Bool: true`)
-        test_reducer(`(a + b)${and}(a = true)${and}(b = false)`,
-            `Bool: true`)
-        test_reducer(`(a + b)${and}(a = true)${and}(b = true)`,
-            `Bool: true`)
-
         // Variable conjunctions
-        test_reducer(`(a * b)${and}(a = false)${and}(b = false)`,
+        test_reducer(`(a${and}b)${and}(a = false)${and}(b = false)`,
             `Bool: false`)
-        test_reducer(`(a * b)${and}(a = false)${and}(b = true)`,
+        test_reducer(`(a${and}b)${and}(a = false)${and}(b = true)`,
             `Bool: false`)
-        test_reducer(`(a * b)${and}(a = true)${and}(b = false)`,
+        test_reducer(`(a${and}b)${and}(a = true)${and}(b = false)`,
             `Bool: false`)
-        test_reducer(`(a * b)${and}(a = true)${and}(b = true)`,
+        test_reducer(`(a${and}b)${and}(a = true)${and}(b = true)`,
             `Bool: true`)
 
         // Variable xor
@@ -548,9 +538,24 @@ test.describe('reducer', {concurrency: true}, () => {
             `Bool: false`)
         test_reducer(`(a = b)${and}(b != c)${and}(c = false)${and}(c = a ^ true)`,
             `Bool: true`)
-        test_reducer(`(a = false + b)${and}(c = b)${and}(c = true)${and}(a = true)`,
-            `Bool: true`)
-        test_reducer(`(a = false + b)${and}(c = b)${and}(c = true)${and}(a = false)`,
-            `Bool: false`)
+
+        for (let or of [' + ', ' | ']) {
+
+            // Variable disjunctions
+            test_reducer(`(a${or}b)${and}(a = false)${and}(b = false)`,
+                `Bool: false`)
+            test_reducer(`(a${or}b)${and}(a = false)${and}(b = true)`,
+                `Bool: true`)
+            test_reducer(`(a${or}b)${and}(a = true)${and}(b = false)`,
+                `Bool: true`)
+            test_reducer(`(a${or}b)${and}(a = true)${and}(b = true)`,
+                `Bool: true`)
+
+            // Complex operations with variables
+            test_reducer(`(a = false${or}b)${and}(c = b)${and}(c = true)${and}(a = true)`,
+                `Bool: true`)
+            test_reducer(`(a = false${or}b)${and}(c = b)${and}(c = true)${and}(a = false)`,
+                `Bool: false`)
+        }
     }
 })
