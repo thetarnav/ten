@@ -14,5 +14,25 @@
                 "panel": "shared",
             },
         },
+        {
+            "label":   "Run",
+            "type":    "shell",
+            "command": "./run.ts",
+            "args":    ["-i", "${input:expression}"],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+            },
+        },
     ],
+    "inputs": [
+        {
+            "id": "expression",
+            "type": "promptString",
+            "description": "Enter expression to evaluate",
+            "default": "true | false"
+        }
+    ]
 }
