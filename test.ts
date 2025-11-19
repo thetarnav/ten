@@ -28,7 +28,7 @@ function test_tokenizer(input: string, stringified: string) {
         }
         let result = ten.tokens_display(input, tokens)
         equal(result, stringified,
-            `Tokenizer test failed for input: "${input}"\nExpected: ${stringified}\nGot: ${result}`)
+            `Tokenizer test failed for input: "${input}"\nExpected:\n${stringified}\nGot:\n${result}`)
     })
 }
 
@@ -72,10 +72,12 @@ test.describe('tokenizer', {concurrency: true}, () => {
         `Ident(x2) Sub_Eq(-=) Ident(count) Mul(*) Int(2)`)
     test_tokenizer(`inc = @(num+=12)`,
         `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`)
+    test_tokenizer(`foo{a + .num += 12}`,
+        `Ident(foo) Brace_L({) Ident(a) Add(+) Field(.num) Add_Eq(+=) Int(12) Brace_R(})`)
     test_tokenizer(`_render = Btn("Hello")`,
         `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`)
-    test_tokenizer(`0.123 = x != y = 12.s`,
-        `Float(0.123) Eq(=) Ident(x) Not_Eq(!=) Ident(y) Eq(=) Invalid(12) Ident(s)`)
+    test_tokenizer(`0.123 = .123 != y = 12.s`,
+        `Float(0.123) Eq(=) Float(.123) Not_Eq(!=) Ident(y) Eq(=) Invalid(12) Ident(s)`)
     test_tokenizer(`\t  text = "Count: " + count + "!\\n"`,
         `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!\\n")`)
     test_tokenizer(`\t\tonclick = inc`,

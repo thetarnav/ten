@@ -35,8 +35,9 @@ export const
     TOKEN_FALSE      = 28,
     TOKEN_STRING     = 29,
     TOKEN_IDENT      = 30,
-    TOKEN_INT        = 31,
-    TOKEN_FLOAT      = 32
+    TOKEN_FIELD      = 31,
+    TOKEN_INT        = 32,
+    TOKEN_FLOAT      = 33
 
 export const Token_Kind = {
     Invalid:    TOKEN_INVALID,
@@ -68,6 +69,7 @@ export const Token_Kind = {
     Comma:      TOKEN_COMMA,
     True:       TOKEN_TRUE,
     False:      TOKEN_FALSE,
+    Field:      TOKEN_FIELD,
     String:     TOKEN_STRING,
     Ident:      TOKEN_IDENT,
     Int:        TOKEN_INT,
@@ -109,9 +111,12 @@ export const token_kind_string = (kind: Token_Kind): string => {
     case TOKEN_FALSE:      return "False"
     case TOKEN_STRING:     return "String"
     case TOKEN_IDENT:      return "Ident"
+    case TOKEN_FIELD:      return "Field"
     case TOKEN_INT:        return "Int"
     case TOKEN_FLOAT:      return "Float"
-    default:               return "Unknown"
+    default:
+        kind satisfies never // exhaustive check
+        return "Unknown"
     }
 }
 
@@ -320,9 +325,16 @@ export const token_next = (t: Tokenizer): Token => {
     if (ch === 46 /* '.' */) {
         ch = next_char_code(t)
 
+        // fraction (.456)
         if (is_digit_code(ch)) {
             while (is_digit_code(next_char_code(t))) {}
             return _token_make_move_back(t, TOKEN_FLOAT)
+        }
+
+        // field (.foo)
+        if (is_ident_code(ch)) {
+            while (is_ident_code(next_char_code(t))) {}
+            return _token_make_move_back(t, TOKEN_FIELD)
         }
 
         return _token_make_move_back(t, TOKEN_INVALID)
@@ -391,6 +403,7 @@ export const token_len = (src: string, tok: Token): number => {
     // Multi-character tokens
     case TOKEN_STRING:
     case TOKEN_IDENT:
+    case TOKEN_FIELD:
     case TOKEN_INT:
     case TOKEN_FLOAT:
     case TOKEN_INVALID: {
@@ -407,6 +420,7 @@ export const token_len = (src: string, tok: Token): number => {
             }
             break
         case TOKEN_IDENT:
+        case TOKEN_FIELD:
             for (;end < src.length && is_ident_code(src.charCodeAt(end)); end++) {}
             break
         case TOKEN_INT:
@@ -540,10 +554,10 @@ export type Expr_Binary = {
 
 export type Expr_Paren = {
     kind:  typeof EXPR_PAREN
-    open:  Token // '(' or '{'
-    close: Token // ')' or '}'
-    type:  Token | null
-    body:  Expr | null
+    open:  Token        // '(' or '{'
+    close: Token        // ')' or '}'
+    type:  Token | null // Ident(foo) or At(@) or null
+    body:  Expr  | null
 }
 
 export type Expr_Invalid = {
