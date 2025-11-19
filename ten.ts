@@ -170,7 +170,7 @@ export const is_alpha_code = (code: number): boolean => (code >= 65 && code <= 9
 export const is_alnum_code = (code: number): boolean => is_digit_code(code) ||
                                                         is_alpha_code(code)
 export const is_ident_code = (code: number): boolean => is_alnum_code(code) ||
-                                                        code === 95 // '_'
+                                                        code === 95    // '_'
 export const is_white_code = (code: number): boolean => code === 32 || // ' '
                                                         code === 9  || // '\t'
                                                         code === 10 || // '\n'
@@ -527,21 +527,21 @@ export type Expr_Token = {
 
 export type Expr_Unary = {
     kind: typeof EXPR_UNARY
-    op:   Token
+    op:   Token // '-', '!', etc.
     rhs:  Expr
 }
 
 export type Expr_Binary = {
     kind: typeof EXPR_BINARY
-    op:   Token
+    op:   Token // '+', '-', '*', '/', etc.
     lhs:  Expr
     rhs:  Expr
 }
 
 export type Expr_Paren = {
     kind:  typeof EXPR_PAREN
-    open:  Token
-    close: Token
+    open:  Token // '(' or '{'
+    close: Token // ')' or '}'
     type:  Token | null
     body:  Expr | null
 }
