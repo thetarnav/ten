@@ -6,19 +6,26 @@ import * as ten  from './ten.ts'
     Helpers for testing
 */
 
-function ok(cond: any, msg: string): asserts cond {
-    if (!cond) {
-        let err = new Error(msg)
-        err.stack = undefined
-        throw err
-    }
+function fail(msg: string): never {
+    let err = new Error(msg)
+    err.name  = "ExpectationFailed"
+    err.stack = undefined
+    throw err
 }
-function equal<T>(a: T, b: T, msg: string) {
-    ok(a === b, msg)
+function expect(
+    condition: boolean,
+    msg:       string,
+    expected:  string,
+    actual:    string,
+): asserts condition {
+    if (!condition) {
+        fail(`${msg}\nExpected:\n\x1b[32m${expected}\x1b[0m\nActual:\n\x1b[31m${actual}\x1b[0m`)
+    }
 }
 
 function test_tokenizer(input: string, stringified: string) {
     test.test(input, () => {
+
         let t = ten.tokenizer_make(input)
         let tokens: ten.Token[] = []
         for (;;) {
@@ -27,34 +34,40 @@ function test_tokenizer(input: string, stringified: string) {
             tokens.push(tok)
         }
         let result = ten.tokens_display(input, tokens)
-        equal(result, stringified,
-            `Tokenizer test failed for input: "${input}"\nExpected:\n${stringified}\nGot:\n${result}`)
+
+        expect(result === stringified, "Tokenizer result mismatch", stringified, result)
     })
 }
 
 function test_parser(input: string, expected: string) {
     test.test(input, () => {
+
         let [result, errors] = ten.parse_src(input)
         let result_str = ten.expr_display(input, result, '  ')
-        equal(result_str, expected,
-            `Parser test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
-        equal(errors.length, 0,
-            `Parser test failed for input: "${input}"\nExpected no errors but got: ${JSON.stringify(errors)}`)
+
+        expect(result_str === expected, "Parser result mismatch", expected, result_str)
+        if (errors.length !== 0) {
+            fail(`Parse errors: ${JSON.stringify(errors)}`)
+        }
     })
 }
 
 function test_reducer(input: string, expected: string) {
     test.test(input, () => {
+
         let [expr, errors] = ten.parse_src(input)
-        equal(errors.length, 0, `Parse errors: ${JSON.stringify(errors)}`)
+        if (errors.length !== 0) {
+            fail(`Parse errors: ${JSON.stringify(errors)}`)
+        }
 
         let node = ten.node_from_expr(expr)
-        ok(node != null, `Failed to convert expr to node`)
+        if (node == null) {
+            fail(`Failed to convert expr to node`)
+        }
 
         let reduced = ten.reduce(node, input)
         let result_str = ten.node_display(input, reduced, '  ')
-        equal(result_str, expected,
-            `Reducer test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
+        expect(result_str === expected, "Reducer result mismatch", expected, result_str)
     })
 }
 
