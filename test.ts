@@ -1,6 +1,16 @@
-import * as test   from 'node:test'
-import * as assert from 'node:assert/strict'
-import * as lang   from './main.ts'
+import * as test from 'node:test'
+import * as lang from './main.ts'
+
+function ok (cond: any, msg: string): asserts cond {
+    if (!cond) {
+        let err = new Error(msg)
+        err.stack = undefined
+        throw err
+    }
+}
+function equal<T>(a: T, b: T, msg: string) {
+    ok(a === b, msg)
+}
 
 /*--------------------------------------------------------------*
 
@@ -17,7 +27,7 @@ function test_tokenizer(input: string, stringified: string) {
             tokens.push(tok)
         }
         let result = lang.tokens_display(input, tokens)
-        assert.equal(result, stringified,
+        equal(result, stringified,
             `Tokenizer test failed for input: "${input}"\nExpected: ${stringified}\nGot: ${result}`)
     })
 }
@@ -26,9 +36,9 @@ function test_parser(input: string, expected: string) {
     test.test(input, () => {
         let [result, errors] = lang.parse_src(input)
         let result_str = lang.expr_display(input, result, '  ')
-        assert.equal(result_str, expected,
+        equal(result_str, expected,
             `Parser test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
-        assert.equal(errors.length, 0,
+        equal(errors.length, 0,
             `Parser test failed for input: "${input}"\nExpected no errors but got: ${JSON.stringify(errors)}`)
     })
 }
@@ -41,14 +51,14 @@ function test_parser(input: string, expected: string) {
 function test_reducer(input: string, expected: string) {
     test.test(input, () => {
         let [expr, errors] = lang.parse_src(input)
-        assert.equal(errors.length, 0, `Parse errors: ${JSON.stringify(errors)}`)
+        equal(errors.length, 0, `Parse errors: ${JSON.stringify(errors)}`)
 
         let node = lang.node_from_expr(expr)
-        assert.ok(node != null, `Failed to convert expr to node`)
+        ok(node != null, `Failed to convert expr to node`)
 
         let reduced = lang.reduce(node, input)
         let result_str = lang.node_display(input, reduced, '  ')
-        assert.equal(result_str, expected,
+        equal(result_str, expected,
             `Reducer test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
     })
 }
