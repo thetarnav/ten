@@ -7,7 +7,6 @@
         "test:watch": "node --watch --experimental-transform-types --test"
     },
     "devDependencies": {
-        "@types/node": "^22.13.10",
-        "typescript": "^5.8.2"
+        "@types/node": "^24.10.1"
     }
 }
