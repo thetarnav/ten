@@ -556,7 +556,7 @@ export type Expr_Paren = {
     kind:  typeof EXPR_PAREN
     open:  Token        // '(' or '{'
     close: Token        // ')' or '}'
-    type:  Token | null // Ident(foo) or At(@) or null
+    type:  Token | null // Ident(foo) or Field(.foo) or At(@) or null
     body:  Expr  | null
 }
 
@@ -769,7 +769,9 @@ const _parse_expr_atom = (p: Parser): Expr => {
         parser_next_token(p)
         return expr_paren(tok, body, close)
     }
-    case TOKEN_IDENT: {
+    case TOKEN_IDENT:
+    case TOKEN_FIELD:
+    case TOKEN_AT: {
         parser_next_token(p)
         let open = parser_token(p)
         if (open.kind in _token_close_table) {

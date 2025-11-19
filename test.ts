@@ -109,12 +109,18 @@ test.describe('parser', {concurrency: true}, () => {
         `Token: Int(123)`)
     test_parser('3.14',
         `Token: Float(3.14)`)
+    test_parser('.14',
+        `Token: Float(.14)`)
 
     // Booleans
     test_parser('true',
         `Token: True(true)`)
     test_parser('false',
         `Token: False(false)`)
+    test_parser('.true',
+        `Token: Field(.true)`)
+    test_parser('.false',
+        `Token: Field(.false)`)
 
     // Unary operations
     test_parser('+x',
@@ -123,16 +129,19 @@ test.describe('parser', {concurrency: true}, () => {
     test_parser('-y',
         `Unary: Sub(-)\n`+
         `  Token: Ident(y)`)
+    test_parser('-.y',
+        `Unary: Sub(-)\n`+
+        `  Token: Field(.y)`)
 
     // Simple binary operations
     test_parser('a + true',
         `Binary: Add(+)\n`+
         `  Token: Ident(a)\n`+
         `  Token: True(true)`)
-    test_parser('a - b',
+    test_parser('.a - @',
         `Binary: Sub(-)\n`+
-        `  Token: Ident(a)\n`+
-        `  Token: Ident(b)`)
+        `  Token: Field(.a)\n`+
+        `  Token: At(@)`)
 
     // Operator precedence tests
     test_parser('a + false * c',
@@ -256,17 +265,20 @@ test.describe('parser', {concurrency: true}, () => {
             `    Binary: Add(+)\n`+
             `      Token: Ident(c)\n`+
             `      Token: Ident(d)`)
-        test_parser(`(Foo${l}a + b${r}, Bar${l}c + d${r})`,
-            `Paren: (...)\n`+
-            `  Binary: Comma(,)\n`+
-            `    Paren: Ident(Foo) ${l}...${r}\n`+
-            `      Binary: Add(+)\n`+
-            `        Token: Ident(a)\n`+
-            `        Token: Ident(b)\n`+
-            `    Paren: Ident(Bar) ${l}...${r}\n`+
-            `      Binary: Add(+)\n`+
-            `        Token: Ident(c)\n`+
-            `        Token: Ident(d)`)
+
+        for (let [type_str, type_tok] of [['Foo', 'Ident'], ['.foo', 'Field'], ['@', 'At']]) {
+            test_parser(`(${type_str}${l}a + b${r}, Bar${l}c + d${r})`,
+                `Paren: (...)\n`+
+                `  Binary: Comma(,)\n`+
+                `    Paren: ${type_tok}(${type_str}) ${l}...${r}\n`+
+                `      Binary: Add(+)\n`+
+                `        Token: Ident(a)\n`+
+                `        Token: Ident(b)\n`+
+                `    Paren: Ident(Bar) ${l}...${r}\n`+
+                `      Binary: Add(+)\n`+
+                `        Token: Ident(c)\n`+
+                `        Token: Ident(d)`)
+        }
     }
 
     // Assignment operations
