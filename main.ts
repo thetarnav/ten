@@ -469,11 +469,11 @@ export const tokens_display = (src: string, tokens: Token[]): string => {
 */
 
 export const
-    EXPR_TOKEN   = 1,
-    EXPR_UNARY   = 2,
-    EXPR_BINARY  = 3,
-    EXPR_PAREN   = 4,
-    EXPR_INVALID = 5
+    EXPR_TOKEN   = 101,
+    EXPR_UNARY   = 102,
+    EXPR_BINARY  = 103,
+    EXPR_PAREN   = 104,
+    EXPR_INVALID = 105
 
 export const Expr_Kind = {
     Token:   EXPR_TOKEN,
@@ -770,9 +770,9 @@ const _parse_expr_atom = (p: Parser): Expr => {
 */
 
 export const
-    NODE_BOOL   = 1,
-    NODE_VAR    = 2,
-    NODE_BINARY = 3
+    NODE_BOOL   = 201,
+    NODE_VAR    = 202,
+    NODE_BINARY = 203
 
 export const Node_Kind = {
     Bool:   NODE_BOOL,
