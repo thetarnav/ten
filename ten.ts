@@ -690,16 +690,12 @@ export const parse_src = (src: string): [body: Expr, errors: Expr_Invalid[]] => 
 
     let p = parser_make(src)
 
-    let body = parse_expr(p)
+    let body = _parse_expr(p)
 
     return [body, p.errors]
 }
 
-export const parse_expr = (p: Parser): Expr => {
-    return _parse_expr_bp(p, 1)
-}
-
-const _parse_expr_bp = (p: Parser, min_bp: number): Expr => {
+const _parse_expr = (p: Parser, min_bp = 1): Expr => {
     let lhs = _parse_expr_atom(p)
 
     for (;;) {
@@ -718,7 +714,7 @@ const _parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 
         if (p.token.kind === TOKEN_PAREN_R || p.token.kind === TOKEN_BRACE_R) break
 
-        let rhs = _parse_expr_bp(p, rbp)
+        let rhs = _parse_expr(p, rbp)
 
         lhs = expr_binary(op, lhs, rhs)
     }
@@ -751,7 +747,7 @@ const _parse_expr_atom = (p: Parser): Expr => {
             parser_next_token(p)
             return expr_paren(tok, null, close)
         }
-        let body = parse_expr(p)
+        let body = _parse_expr(p)
         close = parser_token(p)
         if (close.kind !== _token_close_table[tok.kind]) {
             return expr_invalid_push(p, close, "Expected closing parenthesis")
@@ -764,7 +760,7 @@ const _parse_expr_atom = (p: Parser): Expr => {
         let open = parser_token(p)
         if (open.kind in _token_close_table) {
             parser_next_token(p)
-            let body = parse_expr(p)
+            let body = _parse_expr(p)
             let close = parser_token(p)
             if (close.kind !== _token_close_table[open.kind]) {
                 return expr_invalid_push(p, close, "Expected closing parenthesis")
