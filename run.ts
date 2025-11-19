@@ -3,7 +3,7 @@
 import * as util    from 'node:util'
 import * as process from 'node:process'
 
-import * as ten     from './main.ts'
+import * as ten     from './ten.ts'
 
 let args = util.parseArgs({
     options: {

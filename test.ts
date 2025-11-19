@@ -1,5 +1,5 @@
 import * as test from 'node:test'
-import * as lang from './main.ts'
+import * as ten  from './ten.ts'
 
 /*--------------------------------------------------------------*
 
@@ -19,14 +19,14 @@ function equal<T>(a: T, b: T, msg: string) {
 
 function test_tokenizer(input: string, stringified: string) {
     test.test(input, () => {
-        let t = lang.tokenizer_make(input)
-        let tokens: lang.Token[] = []
+        let t = ten.tokenizer_make(input)
+        let tokens: ten.Token[] = []
         for (;;) {
-            let tok = lang.token_next(t)
-            if (tok.kind === lang.TOKEN_EOF) break
+            let tok = ten.token_next(t)
+            if (tok.kind === ten.TOKEN_EOF) break
             tokens.push(tok)
         }
-        let result = lang.tokens_display(input, tokens)
+        let result = ten.tokens_display(input, tokens)
         equal(result, stringified,
             `Tokenizer test failed for input: "${input}"\nExpected: ${stringified}\nGot: ${result}`)
     })
@@ -34,8 +34,8 @@ function test_tokenizer(input: string, stringified: string) {
 
 function test_parser(input: string, expected: string) {
     test.test(input, () => {
-        let [result, errors] = lang.parse_src(input)
-        let result_str = lang.expr_display(input, result, '  ')
+        let [result, errors] = ten.parse_src(input)
+        let result_str = ten.expr_display(input, result, '  ')
         equal(result_str, expected,
             `Parser test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
         equal(errors.length, 0,
@@ -45,14 +45,14 @@ function test_parser(input: string, expected: string) {
 
 function test_reducer(input: string, expected: string) {
     test.test(input, () => {
-        let [expr, errors] = lang.parse_src(input)
+        let [expr, errors] = ten.parse_src(input)
         equal(errors.length, 0, `Parse errors: ${JSON.stringify(errors)}`)
 
-        let node = lang.node_from_expr(expr)
+        let node = ten.node_from_expr(expr)
         ok(node != null, `Failed to convert expr to node`)
 
-        let reduced = lang.reduce(node, input)
-        let result_str = lang.node_display(input, reduced, '  ')
+        let reduced = ten.reduce(node, input)
+        let result_str = ten.node_display(input, reduced, '  ')
         equal(result_str, expected,
             `Reducer test failed for input: "${input}"\nExpected:\n${expected}\nGot:\n${result_str}`)
     })
