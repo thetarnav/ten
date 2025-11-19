@@ -28,13 +28,15 @@ export const
     TOKEN_QUOTE      = 21,
     TOKEN_PAREN_L    = 22,
     TOKEN_PAREN_R    = 23,
-    TOKEN_COMMA      = 24,
-    TOKEN_TRUE       = 25,
-    TOKEN_FALSE      = 26,
-    TOKEN_STRING     = 27,
-    TOKEN_IDENT      = 28,
-    TOKEN_INT        = 29,
-    TOKEN_FLOAT      = 30
+    TOKEN_BRACE_L    = 24,
+    TOKEN_BRACE_R    = 25,
+    TOKEN_COMMA      = 26,
+    TOKEN_TRUE       = 27,
+    TOKEN_FALSE      = 28,
+    TOKEN_STRING     = 29,
+    TOKEN_IDENT      = 30,
+    TOKEN_INT        = 31,
+    TOKEN_FLOAT      = 32
 
 export const Token_Kind = {
     Invalid:    TOKEN_INVALID,
@@ -61,6 +63,8 @@ export const Token_Kind = {
     Quote:      TOKEN_QUOTE,
     Paren_L:    TOKEN_PAREN_L,
     Paren_R:    TOKEN_PAREN_R,
+    Brace_L:    TOKEN_BRACE_L,
+    Brace_R:    TOKEN_BRACE_R,
     Comma:      TOKEN_COMMA,
     True:       TOKEN_TRUE,
     False:      TOKEN_FALSE,
@@ -98,6 +102,8 @@ export const token_kind_string = (kind: Token_Kind): string => {
     case TOKEN_QUOTE:      return "Quote"
     case TOKEN_PAREN_L:    return "Paren_L"
     case TOKEN_PAREN_R:    return "Paren_R"
+    case TOKEN_BRACE_L:    return "Brace_L"
+    case TOKEN_BRACE_R:    return "Brace_R"
     case TOKEN_COMMA:      return "Comma"
     case TOKEN_TRUE:       return "True"
     case TOKEN_FALSE:      return "False"
@@ -108,6 +114,11 @@ export const token_kind_string = (kind: Token_Kind): string => {
     default:               return "Unknown"
     }
 }
+
+const _token_close_table = {
+    [TOKEN_PAREN_L]: TOKEN_PAREN_R,
+    [TOKEN_BRACE_L]: TOKEN_BRACE_R,
+} as Record<Token_Kind, Token_Kind>
 
 export type Token = {
     pos:  number
@@ -210,6 +221,8 @@ export const token_next = (t: Tokenizer): Token => {
     // Punctuators
     case 40 /* '(' */: return _token_make_move(t, TOKEN_PAREN_L)
     case 41 /* ')' */: return _token_make_move(t, TOKEN_PAREN_R)
+    case 123/* '{' */: return _token_make_move(t, TOKEN_BRACE_L)
+    case 125/* '}' */: return _token_make_move(t, TOKEN_BRACE_R)
     // Operators
     case 61 /* '=' */: return _token_make_move(t, TOKEN_EQ)
     case 43 /* '+' */: {
@@ -337,7 +350,6 @@ export const next_token = token_next
  */
 export const token_len = (src: string, tok: Token): number => {
     switch (tok.kind) {
-    default:
     case TOKEN_EOF:
         return 0
 
@@ -356,6 +368,8 @@ export const token_len = (src: string, tok: Token): number => {
     case TOKEN_QUOTE:
     case TOKEN_PAREN_L:
     case TOKEN_PAREN_R:
+    case TOKEN_BRACE_L:
+    case TOKEN_BRACE_R:
     case TOKEN_COMMA:
     case TOKEN_GREATER:
     case TOKEN_LESS:
@@ -427,6 +441,9 @@ export const token_len = (src: string, tok: Token): number => {
 
         return end - start
     }
+    default:
+        tok.kind satisfies never // exhaustive check
+        return 0
     }
 }
 
@@ -522,9 +539,11 @@ export type Expr_Binary = {
 }
 
 export type Expr_Paren = {
-    kind: typeof EXPR_PAREN
-    type: Expr | null
-    body: Expr | null
+    kind:  typeof EXPR_PAREN
+    open:  Token
+    close: Token
+    type:  Token | null
+    body:  Expr | null
 }
 
 export type Expr_Invalid = {
@@ -545,11 +564,11 @@ export const expr_token = (tok: Token): Expr_Token => {
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     return {kind: EXPR_INVALID, tok, reason}
 }
-export const expr_paren = (body: Expr | null): Expr_Paren => {
-    return {kind: EXPR_PAREN, type: null, body: body}
+export const expr_paren = (open: Token, body: Expr | null, close: Token): Expr_Paren => {
+    return {kind: EXPR_PAREN, open, close, type: null, body: body}
 }
-export const expr_paren_typed = (type: Expr, body: Expr): Expr_Paren => {
-    return {kind: EXPR_PAREN, type, body}
+export const expr_paren_typed = (open: Token, type: Token, body: Expr | null, close: Token): Expr_Paren => {
+    return {kind: EXPR_PAREN, open, close, type, body}
 }
 export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     let expr = expr_invalid(tok, reason)
@@ -571,15 +590,19 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
         return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
     case EXPR_PAREN:
+        let open_close_str =
+            (expr.open.kind === TOKEN_PAREN_L || expr.open.kind === TOKEN_BRACE_L) &&
+            expr.close.kind === _token_close_table[expr.open.kind] ?
+                `${token_string(src, expr.open)}...${token_string(src, expr.close)}` :
+                `${token_display(src, expr.open)}...${token_display(src, expr.close)}`
+        let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
         if (expr.type) {
             // Typed paren like foo(...)
-            let type_str = expr_display(src, expr.type, indent, depth+1)
-            let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
-            return `${ind}Paren:\n${type_str}\n${body_str}`
+            let type_str = token_display(src, expr.type)
+            return `${ind}Paren: ${type_str} ${open_close_str}\n${body_str}`
         } else {
             // Regular paren (...)
-            let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
-            return `${ind}Paren:\n${body_str}`
+            return `${ind}Paren: ${open_close_str}\n${body_str}`
         }
 
     case EXPR_INVALID:
@@ -693,7 +716,7 @@ const _parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 
         parser_next_token(p)
 
-        if (p.token.kind === TOKEN_PAREN_R) break
+        if (p.token.kind === TOKEN_PAREN_R || p.token.kind === TOKEN_BRACE_R) break
 
         let rhs = _parse_expr_bp(p, rbp)
 
@@ -704,64 +727,66 @@ const _parse_expr_bp = (p: Parser, min_bp: number): Expr => {
 }
 
 const _parse_expr_atom = (p: Parser): Expr => {
-    let expr: Expr
 
     // ignore EOL
     while (parser_token(p).kind === TOKEN_EOL) {
         parser_next_token(p)
     }
 
-    switch (parser_token(p).kind) {
+    let tok = parser_token(p)
+    switch (tok.kind) {
     /* Unary */
     case TOKEN_ADD:
     case TOKEN_SUB:
     case TOKEN_NEG: {
-        let op = parser_token(p)
         parser_next_token(p)
         let rhs = _parse_expr_atom(p)
-        return expr_unary(op, rhs)
+        return expr_unary(tok, rhs)
     }
-    case TOKEN_PAREN_L: {
+    case TOKEN_PAREN_L:
+    case TOKEN_BRACE_L: {
         parser_next_token(p)
-        if (parser_token(p).kind === TOKEN_PAREN_R) {
-            return expr_paren(null)
+        let close = parser_token(p)
+        if (close.kind === _token_close_table[tok.kind]) {
+            parser_next_token(p)
+            return expr_paren(tok, null, close)
         }
         let body = parse_expr(p)
-        let paren_r = parser_token(p)
-        if (paren_r.kind !== TOKEN_PAREN_R) {
-            return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
+        close = parser_token(p)
+        if (close.kind !== _token_close_table[tok.kind]) {
+            return expr_invalid_push(p, close, "Expected closing parenthesis")
         }
         parser_next_token(p)
-        return expr_paren(body)
+        return expr_paren(tok, body, close)
     }
     case TOKEN_IDENT: {
-        expr = expr_token(parser_token(p))
         parser_next_token(p)
-        if (parser_token(p).kind === TOKEN_PAREN_L) {
+        let open = parser_token(p)
+        if (open.kind in _token_close_table) {
             parser_next_token(p)
             let body = parse_expr(p)
-            let paren_r = parser_token(p)
-            if (paren_r.kind !== TOKEN_PAREN_R) {
-                return expr_invalid_push(p, paren_r, "Expected closing parenthesis")
+            let close = parser_token(p)
+            if (close.kind !== _token_close_table[open.kind]) {
+                return expr_invalid_push(p, close, "Expected closing parenthesis")
             }
-            return expr_paren_typed(expr, body)
+            parser_next_token(p)
+            return expr_paren_typed(open, tok, body, close)
         }
-        return expr
+        return expr_token(tok)
     }
     case TOKEN_FLOAT:
     case TOKEN_INT:
     case TOKEN_TRUE:
     case TOKEN_FALSE: {
-        expr = expr_token(parser_token(p))
         parser_next_token(p)
-        return expr
+        return expr_token(tok)
     }
     case TOKEN_EOL:
         parser_next_token(p)
         return _parse_expr_atom(p)
     }
 
-    return expr_invalid_push(p, parser_token(p))
+    return expr_invalid_push(p, tok)
 }
 
 /*--------------------------------------------------------------*

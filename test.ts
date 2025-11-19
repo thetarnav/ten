@@ -191,67 +191,81 @@ test.describe('parser', {concurrency: true}, () => {
         `  Token: Ident(b)`)
 
     // Parenthesized expressions
-    test_parser('(a + b)',
-        `Paren:\n`+
-        `  Binary: Add(+)\n`+
-        `    Token: Ident(a)\n`+
-        `    Token: Ident(b)`)
-    test_parser('()',
-        `Paren:\n`+
-        `  (empty)`)
-    test_parser('(())',
-        `Paren:\n`+
-        `  Paren:\n`+
-        `    (empty)`)
-    test_parser('a * (b + c)',
-        `Binary: Mul(*)\n`+
-        `  Token: Ident(a)\n`+
-        `  Paren:\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(b)\n`+
-        `      Token: Ident(c)`)
-    test_parser('foo(a + b)',
-        `Paren:\n`+
-        `  Token: Ident(foo)\n`+
-        `  Binary: Add(+)\n`+
-        `    Token: Ident(a)\n`+
-        `    Token: Ident(b)`)
-    test_parser('(a + b, c + d)',
-        `Paren:\n`+
-        `  Binary: Comma(,)\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(a)\n`+
-        `      Token: Ident(b)\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(c)\n`+
-        `      Token: Ident(d)`)
-    test_parser('(a + b, c + d,)',
-        `Paren:\n`+
-        `  Binary: Comma(,)\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(a)\n`+
-        `      Token: Ident(b)\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(c)\n`+
-        `      Token: Ident(d)`)
-    test_parser('(a + b\n\tc + d)',
-        `Paren:\n`+
-        `  Binary: EOL\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(a)\n`+
-        `      Token: Ident(b)\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(c)\n`+
-        `      Token: Ident(d)`)
-    test_parser('(\n\ta + b\n\tc + d\n)',
-        `Paren:\n`+
-        `  Binary: EOL\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(a)\n`+
-        `      Token: Ident(b)\n`+
-        `    Binary: Add(+)\n`+
-        `      Token: Ident(c)\n`+
-        `      Token: Ident(d)`)
+    for (let open of [ten.TOKEN_PAREN_L, ten.TOKEN_BRACE_L]) {
+        let [l, r] = open === ten.TOKEN_PAREN_L ? ['(', ')'] : ['{', '}']
+
+        test_parser(`${l}a + b${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  Binary: Add(+)\n`+
+            `    Token: Ident(a)\n`+
+            `    Token: Ident(b)`)
+        test_parser(`${l}${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  (empty)`)
+        test_parser(`${l}()${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  Paren: (...)\n`+
+            `    (empty)`)
+        test_parser(`a * ${l}b + c${r}`,
+            `Binary: Mul(*)\n`+
+            `  Token: Ident(a)\n`+
+            `  Paren: ${l}...${r}\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(b)\n`+
+            `      Token: Ident(c)`)
+        test_parser(`foo${l}a + b${r}`,
+            `Paren: Ident(foo) ${l}...${r}\n`+
+            `  Binary: Add(+)\n`+
+            `    Token: Ident(a)\n`+
+            `    Token: Ident(b)`)
+        test_parser(`${l}a + b, c + d${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  Binary: Comma(,)\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(a)\n`+
+            `      Token: Ident(b)\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(c)\n`+
+            `      Token: Ident(d)`)
+        test_parser(`${l}a + b, c + d,${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  Binary: Comma(,)\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(a)\n`+
+            `      Token: Ident(b)\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(c)\n`+
+            `      Token: Ident(d)`)
+        test_parser(`${l}a + b\n\tc + d${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  Binary: EOL\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(a)\n`+
+            `      Token: Ident(b)\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(c)\n`+
+            `      Token: Ident(d)`)
+        test_parser(`${l}\n\ta + b\n\tc + d\n${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  Binary: EOL\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(a)\n`+
+            `      Token: Ident(b)\n`+
+            `    Binary: Add(+)\n`+
+            `      Token: Ident(c)\n`+
+            `      Token: Ident(d)`)
+        test_parser(`(Foo${l}a + b${r}, Bar${l}c + d${r})`,
+            `Paren: (...)\n`+
+            `  Binary: Comma(,)\n`+
+            `    Paren: Ident(Foo) ${l}...${r}\n`+
+            `      Binary: Add(+)\n`+
+            `        Token: Ident(a)\n`+
+            `        Token: Ident(b)\n`+
+            `    Paren: Ident(Bar) ${l}...${r}\n`+
+            `      Binary: Add(+)\n`+
+            `        Token: Ident(c)\n`+
+            `        Token: Ident(d)`)
+    }
 
     // Assignment operations
     test_parser('x = !123',
