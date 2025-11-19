@@ -965,14 +965,43 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
     }
 
     case NODE_BINARY: {
-        let lhs = reduce(node.lhs, src, vars)
-        let rhs = reduce(node.rhs, src, vars)
+        switch (node.op) {
+        case TOKEN_ADD:
+        case TOKEN_OR: {
+            // For OR/disjunction operators, each side needs its own variable scope
+            // since they represent alternative realities
+            let lhs_vars = new Map(vars)
+            let rhs_vars = new Map(vars)
 
-        // Special handling for operators that evaluate both sides (like AND/conjunction):
-        if (node.op === TOKEN_COMMA ||
-            node.op === TOKEN_MUL ||
-            node.op === TOKEN_AND
-        ) {
+            let lhs = reduce(node.lhs, src, lhs_vars)
+            let rhs = reduce(node.rhs, src, rhs_vars)
+
+            // Try both directions for var-bool operations
+            let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
+                      || _handle_var_bool(node.op, rhs, lhs, src, vars)
+            if (result != null) return result
+
+            // Boolean operations (both sides are concrete booleans)
+            if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL) {
+                return node_bool(lhs.value || rhs.value)
+            }
+
+            // If one side is true, return true (OR absorption)
+            if (lhs.kind === NODE_BOOL && lhs.value) return node_bool(true)
+            if (rhs.kind === NODE_BOOL && rhs.value) return node_bool(true)
+            // If one side is false, return the other (OR identity)
+            if (lhs.kind === NODE_BOOL && !lhs.value) return rhs
+            if (rhs.kind === NODE_BOOL && !rhs.value) return lhs
+
+            return node_binary(node.op, lhs, rhs)
+        }
+        case TOKEN_COMMA:
+        case TOKEN_MUL:
+        case TOKEN_AND: {
+            // Special handling for operators that evaluate both sides (like AND/conjunction):
+            let lhs = reduce(node.lhs, src, vars)
+            let rhs = reduce(node.rhs, src, vars)
+
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
             lhs = reduce(node.lhs, src, vars)
@@ -989,6 +1018,10 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
 
             return node_binary(node.op, lhs, rhs)
         }
+        }
+
+        let lhs = reduce(node.lhs, src, vars)
+        let rhs = reduce(node.rhs, src, vars)
 
         // Try both directions for var-bool operations
         let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
@@ -1030,9 +1063,6 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
             rhs.kind === NODE_BOOL
         ) {
             switch (node.op) {
-            // Add and Or are OR
-            case TOKEN_ADD:
-            case TOKEN_OR:     return node_bool(lhs.value || rhs.value)
             // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
             case TOKEN_SUB:    return node_bool(lhs.value === rhs.value)
             // Pow is XOR

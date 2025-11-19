@@ -560,6 +560,12 @@ test.describe('reducer', {concurrency: true}, () => {
                 `Bool: true`)
             test_reducer(`(a${or}b)${and}(a = true)${and}(b = true)`,
                 `Bool: true`)
+            test_reducer(`((a = false)${and}false)${or}((a = true)${and}true)`,
+                `Bool: true`)
+            test_reducer(`((a = false)${and}false)${or}((a = false)${and}true)`,
+                `Bool: true`)
+            test_reducer(`((a = false)${and}false)${or}((a = true)${and}false)`,
+                `Bool: false`)
 
             // Complex operations with variables
             test_reducer(`(a = false${or}b)${and}(c = b)${and}(c = true)${and}(a = true)`,
