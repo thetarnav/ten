@@ -1,7 +1,12 @@
 import * as test from 'node:test'
 import * as lang from './main.ts'
 
-function ok (cond: any, msg: string): asserts cond {
+/*--------------------------------------------------------------*
+
+    Helpers for testing
+*/
+
+function ok(cond: any, msg: string): asserts cond {
     if (!cond) {
         let err = new Error(msg)
         err.stack = undefined
@@ -11,11 +16,6 @@ function ok (cond: any, msg: string): asserts cond {
 function equal<T>(a: T, b: T, msg: string) {
     ok(a === b, msg)
 }
-
-/*--------------------------------------------------------------*
-
-    Helpers for testing tokenizer and parser
-*/
 
 function test_tokenizer(input: string, stringified: string) {
     test.test(input, () => {
@@ -43,11 +43,6 @@ function test_parser(input: string, expected: string) {
     })
 }
 
-/*--------------------------------------------------------------*
-
-    Helper for testing reducer
-*/
-
 function test_reducer(input: string, expected: string) {
     test.test(input, () => {
         let [expr, errors] = lang.parse_src(input)
@@ -65,7 +60,7 @@ function test_reducer(input: string, expected: string) {
 
 /*--------------------------------------------------------------*
 
-    Tokenizer and parser tests
+    Tokenizer tests
 */
 
 test.describe('tokenizer', {concurrency: true}, () => {
@@ -98,6 +93,11 @@ test.describe('tokenizer', {concurrency: true}, () => {
     test_tokenizer(`trueish falsey`,
         `Ident(trueish) Ident(falsey)`)
 })
+
+/*--------------------------------------------------------------*
+
+    Parser tests
+*/
 
 test.describe('parser', {concurrency: true}, () => {
     // Simple identifiers and numbers
@@ -290,6 +290,11 @@ test.describe('parser', {concurrency: true}, () => {
         `    Token: Ident(x)\n`+
         `    Token: Int(123)`)
 })
+
+/*--------------------------------------------------------------*
+
+    Reducer tests
+*/
 
 test.describe('reducer', {concurrency: true}, () => {
     // Simple boolean values
@@ -560,12 +565,24 @@ test.describe('reducer', {concurrency: true}, () => {
                 `Bool: true`)
             test_reducer(`(a${or}b)${and}(a = true)${and}(b = true)`,
                 `Bool: true`)
+
             test_reducer(`((a = false)${and}false)${or}((a = true)${and}true)`,
                 `Bool: true`)
             test_reducer(`((a = false)${and}false)${or}((a = false)${and}true)`,
                 `Bool: true`)
             test_reducer(`((a = false)${and}false)${or}((a = true)${and}false)`,
                 `Bool: false`)
+
+            test_reducer(`(((a = false)${and}false)${or}(a = true))${and}(a = false)`,
+                `Bool: false`)
+            test_reducer(`(((a = false)${and}false)${or}(a = true))${and}(a = true)`,
+                `Bool: true`)
+            test_reducer(`(((a = false)${and}false)${or}(a = true))${and}(a = true)`,
+                `Bool: true`)
+            test_reducer(`(false${or}(a = true))${and}(a = false)`,
+                `Bool: false`)
+            test_reducer(`((a = true)${or}(a = false))${and}(a = true)`,
+                `Bool: true`)
 
             // Complex operations with variables
             test_reducer(`(a = false${or}b)${and}(c = b)${and}(c = true)${and}(a = true)`,
