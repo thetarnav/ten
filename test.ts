@@ -234,6 +234,15 @@ test.describe('parser', {concurrency: true}, () => {
         `  Binary: Add(+)\n`+
         `    Token: Ident(c)\n`+
         `    Token: Ident(d)`)
+    // EOL as separator
+    test_parser(`a + b\nc + d`,
+        `Binary: EOL\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(a)\n`+
+        `    Token: Ident(b)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(c)\n`+
+        `    Token: Ident(d)`)
 
     // Parenthesized expressions
     for (let open of [ten.TOKEN_PAREN_L, ten.TOKEN_BRACE_L]) {
