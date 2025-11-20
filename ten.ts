@@ -1079,6 +1079,10 @@ const _apply_constraint = (
 // Helper to handle binary operations with one var and one bool symmetrically
 const _handle_lhs_rhs = (op: Token_Kind, a: Node, b: Node, src: string, vars: Vars): Node | null => {
 
+    if (a.kind === NODE_BOOL && b.kind === NODE_SCOPE) {
+        return node_bool(false)
+    }
+
     if (a.kind === NODE_VAR && b.kind === NODE_BOOL) {
         let var_name = token_string(src, a.tok)
         let bool_val = b.value

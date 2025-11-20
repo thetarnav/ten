@@ -687,6 +687,16 @@ test.describe('reducer', {concurrency: true}, () => {
         }
 
         // Nested scopes
+        test_reducer(`${sl}{a = false, c = a} = {a = false, c = a}${sr}`,
+            `true`)
+        test_reducer(`${sl}{a = true, c = a} = {a = false, c = a}${sr}`,
+            `false`)
+        test_reducer(`${sl}{a = false, a = c} = {a = false, c = a}${sr}`,
+            `true`)
+        test_reducer(`${sl}{a = false} = {a = false, c = a}${sr}`,
+            `false`)
+        test_reducer(`${sl}{a = false} = true${sr}`,
+            `false`)
         test_reducer(`${sl}foo = {a = true}, b = foo.a${sr}`,
             `{foo = {a = true}, b = true}`)
         test_reducer(`${sl}foo = {a = true}, a = false, b = a${sr}`,
