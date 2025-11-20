@@ -1,3 +1,9 @@
+function assert(condition: boolean, message?: string): asserts condition {
+    if (!condition) {
+        throw new Error(message || 'Assertion failed')
+    }
+}
+
 /*--------------------------------------------------------------*
 
     TOKENIZER
@@ -1002,6 +1008,53 @@ export const node_from_expr = (expr: Expr): Node | null => {
 }
 export {node_from_expr as expr_to_node}
 
+const node_equals = (a: Node, b: Node): boolean => {
+    if (a === b) return true
+    if (a.kind !== b.kind) return false
+
+    switch (a.kind) {
+    case NODE_BOOL:
+        return a.value === (b as Node_Bool).value
+
+    case NODE_VAR:
+        if (a.tok === (b as Node_Var).tok) return true
+        return a.tok.pos === (b as Node_Var).tok.pos &&
+               a.tok.kind === (b as Node_Var).tok.kind
+
+    case NODE_BINARY:
+        return a.op === (b as Node_Binary).op &&
+               node_equals(a.lhs, (b as Node_Binary).lhs) &&
+               node_equals(a.rhs, (b as Node_Binary).rhs)
+
+    case NODE_SELECTOR:
+        return a.lhs.pos === (b as Node_Selector).lhs.pos &&
+               a.lhs.kind === (b as Node_Selector).lhs.kind &&
+               a.rhs.pos === (b as Node_Selector).rhs.pos &&
+               a.rhs.kind === (b as Node_Selector).rhs.kind
+
+    case NODE_SCOPE: {
+        if (!node_equals(a.body, (b as Node_Scope).body)) return false
+
+        let a_vars = a.vars
+        let b_vars = (b as Node_Scope).vars
+        if (a_vars !== b_vars) {
+            if (a_vars.size !== b_vars.size) return false
+
+            for (let [k, v_a] of a_vars) {
+                let v_b = b_vars.get(k)
+                if (v_b == null) return false
+                if (!node_equals(v_a, v_b)) return false
+            }
+        }
+
+        return true
+    }
+
+    default:
+        return false
+    }
+}
+
 const _apply_constraint = (
     name:     string,
     expected: boolean,
@@ -1016,46 +1069,51 @@ const _apply_constraint = (
 }
 
 // Helper to handle binary operations with one var and one bool symmetrically
-const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: string, vars: Vars): Node | null => {
-    if (var_node.kind !== NODE_VAR || bool_node.kind !== NODE_BOOL) {
-        return null
+const _handle_lhs_rhs = (op: Token_Kind, a: Node, b: Node, src: string, vars: Vars): Node | null => {
+
+    if (a.kind === NODE_VAR && b.kind === NODE_BOOL) {
+        let var_name = token_string(src, a.tok)
+        let bool_val = b.value
+
+        switch (op) {
+        case TOKEN_EQ:
+            // a = true -> a must be true
+            return _apply_constraint(var_name, bool_val, vars)
+
+        case TOKEN_NOT_EQ:
+            // a != true -> a must be false
+            return _apply_constraint(var_name, !bool_val, vars)
+
+        case TOKEN_ADD:
+        case TOKEN_OR:
+            // a + false = a (OR identity)
+            if (bool_val === false) return a
+            // a + true = true (OR absorption)
+            return node_bool(true)
+
+        case TOKEN_MUL:
+        case TOKEN_AND:
+            // a * true = a (AND identity)
+            if (bool_val === true) return a
+            // a * false = false (AND absorption)
+            return node_bool(false)
+
+        case TOKEN_SUB:
+            // a - b = a XNOR b, keep as operation
+            return node_binary(op, a, b)
+
+        case TOKEN_POW:
+            // a ^ false = a (XOR identity)
+            if (bool_val === false) return a
+            // a ^ true = NOT a, keep as operation
+            return node_binary(op, a, b)
+        }
     }
 
-    let var_name = token_string(src, var_node.tok)
-    let bool_val = bool_node.value
-
-    switch (op) {
-    case TOKEN_EQ:
-        // a = true -> a must be true
-        return _apply_constraint(var_name, bool_val, vars)
-
-    case TOKEN_NOT_EQ:
-        // a != true -> a must be false
-        return _apply_constraint(var_name, !bool_val, vars)
-
-    case TOKEN_ADD:
-    case TOKEN_OR:
-        // a + false = a (OR identity)
-        if (bool_val === false) return var_node
-        // a + true = true (OR absorption)
+    if (a.kind === NODE_VAR && b.kind === NODE_SCOPE && op === TOKEN_EQ) {
+        let var_name = token_string(src, a.tok)
+        vars.set(var_name, b)
         return node_bool(true)
-
-    case TOKEN_MUL:
-    case TOKEN_AND:
-        // a * true = a (AND identity)
-        if (bool_val === true) return var_node
-        // a * false = false (AND absorption)
-        return node_bool(false)
-
-    case TOKEN_SUB:
-        // a - b = a XNOR b, keep as operation
-        return node_binary(op, var_node, bool_node)
-
-    case TOKEN_POW:
-        // a ^ false = a (XOR identity)
-        if (bool_val === false) return var_node
-        // a ^ true = NOT a, keep as operation
-        return node_binary(op, var_node, bool_node)
     }
 
     return null
@@ -1112,8 +1170,8 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
             lhs = reduce(node.lhs, src, vars)
 
             // After re-reduction, check for var-bool simplifications
-            let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
-                      || _handle_var_bool(node.op, rhs, lhs, src, vars)
+            let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
+                      || _handle_lhs_rhs(node.op, rhs, lhs, src, vars)
             if (result != null) return result
 
             // If both sides are booleans, AND them
@@ -1129,8 +1187,8 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
         let rhs = reduce(node.rhs, src, vars)
 
         // Try both directions for var-bool operations
-        let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
-                  || _handle_var_bool(node.op, rhs, lhs, src, vars)
+        let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
+                  || _handle_lhs_rhs(node.op, rhs, lhs, src, vars)
         if (result != null) return result
 
         // Handle var-var operations
@@ -1179,24 +1237,46 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
             }
         }
 
+        if (lhs.kind === NODE_SCOPE &&
+            rhs.kind === NODE_SCOPE
+        ) {
+            switch (node.op) {
+            // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
+            case TOKEN_SUB:    return node_bool(node_equals(lhs, rhs))
+            // Pow is XOR
+            case TOKEN_POW:    return node_bool(!node_equals(lhs, rhs))
+            // Eq is equality
+            case TOKEN_EQ:     return node_bool(node_equals(lhs, rhs))
+            // Not_Eq is inequality
+            case TOKEN_NOT_EQ: return node_bool(!node_equals(lhs, rhs))
+            }
+        }
+
         return node_binary(node.op, lhs, rhs)
     }
 
     case NODE_SELECTOR:
-        console.assert(node.lhs.kind === TOKEN_IDENT, "Selector LHS must be Ident")
-        console.assert(node.rhs.kind === TOKEN_FIELD, "Selector RHS must be Field")
+        assert(node.lhs.kind === TOKEN_IDENT, "Selector LHS must be Ident")
+        assert(node.rhs.kind === TOKEN_FIELD, "Selector RHS must be Field")
+
         let lhs_name = token_string(src, node.lhs)
         let rhs_name = token_string(src, node.rhs).substring(1) // skip '.'
 
         let lhs_val = vars.get(lhs_name)
-        // ??? lhs_val should be a node (Node_Scope)
+        if (lhs_val == null) return node
+        if (lhs_val.kind !== NODE_SCOPE) return node_bool(false) // Invalid selector on non-scope
 
-        // let rhs_val = vars.get(lhs_var.vars)
+        let rhs_val = lhs_val.vars.get(rhs_name)
+        if (rhs_val == null) return node
 
-        return node
+        return rhs_val
 
     case NODE_SCOPE:
-        return node_scope(reduce(node.body, src, node.vars), node.vars)
+        let body = reduce(node.body, src, node.vars)
+        if (body !== node.body) {
+            return node_scope(body, node.vars)
+        }
+        return node
 
     default:
         return node
