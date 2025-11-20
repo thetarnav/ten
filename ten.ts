@@ -839,12 +839,14 @@ const _parse_expr_atom = (p: Parser): Expr => {
 export const
     NODE_BOOL   = 201,
     NODE_VAR    = 202,
-    NODE_BINARY = 203
+    NODE_BINARY = 203,
+    NODE_SCOPE  = 204
 
 export const Node_Kind = {
     Bool:   NODE_BOOL,
     Var:    NODE_VAR,
     Binary: NODE_BINARY,
+    Scope:  NODE_SCOPE,
 } as const
 
 export type Node_Kind = typeof Node_Kind[keyof typeof Node_Kind]
@@ -854,6 +856,7 @@ export const node_kind_string = (kind: Node_Kind): string => {
     case NODE_BOOL:   return "Bool"
     case NODE_VAR:    return "Var"
     case NODE_BINARY: return "Binary"
+    case NODE_SCOPE:  return "Scope"
     default:          return "Unknown"
     }
 }
@@ -862,6 +865,7 @@ export type Node =
     | Node_Bool
     | Node_Var
     | Node_Binary
+    | Node_Scope
 
 export type Node_Bool = {
     kind:   typeof NODE_BOOL
@@ -883,6 +887,16 @@ export type Node_Binary = {
     expr:   Expr | null
 }
 
+export type Node_Scope = {
+    kind:   typeof NODE_SCOPE
+    body:   Node
+    vars:   Vars
+    expr:   Expr | null
+}
+
+/** Variable assignments collected during reduction */
+export type Vars = Map<string, boolean>
+
 export const node_bool = (value: boolean, expr: Expr | null = null): Node_Bool => {
     return {kind: NODE_BOOL, value, expr}
 }
@@ -891,6 +905,9 @@ export const node_var = (tok: Token, expr: Expr | null = null): Node_Var => {
 }
 export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr: Expr | null = null): Node_Binary => {
     return {kind: NODE_BINARY, op, lhs, rhs, expr}
+}
+export const node_scope = (body: Node, vars: Vars = new Map(), expr: Expr | null = null): Node_Scope => {
+    return {kind: NODE_SCOPE, body, vars, expr}
 }
 
 export const node_from_expr = (expr: Expr): Node | null => {
@@ -943,7 +960,14 @@ export const node_from_expr = (expr: Expr): Node | null => {
     }
 
     case EXPR_PAREN: {
-        // Unwrap parentheses directly
+        if (expr.open.kind === TOKEN_BRACE_L) {
+            // Scope {...}
+            if (!expr.body) return null
+            let body = node_from_expr(expr.body)
+            if (!body) return null
+            return node_scope(body, new Map(), expr)
+        }
+        // Regular paren (...)
         if (!expr.body) return null
         return node_from_expr(expr.body)
     }
@@ -956,9 +980,6 @@ export const node_from_expr = (expr: Expr): Node | null => {
     }
 }
 export {node_from_expr as expr_to_node}
-
-/** Variable assignments collected during reduction */
-export type Vars = Map<string, boolean>
 
 const _apply_constraint = (
     name:     string,
@@ -1144,6 +1165,9 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
         return node_binary(node.op, lhs, rhs)
     }
 
+    case NODE_SCOPE:
+        return node_scope(reduce(node.body, src, node.vars), node.vars)
+
     default:
         return node
     }
@@ -1189,22 +1213,33 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
         let result = `${lhs}${op}${rhs}`
         return needs_parens ? `(${result})` : result
     }
+
+    case NODE_SCOPE: {
+        let out = node_display(src, node.body)
+        if (node.vars.size > 0 && node.body.kind === NODE_BOOL && node.body.value === true) {
+            out += ' & {'
+            let first = true
+            for (let [name, value] of node.vars) {
+                if (!first) {
+                    out += ', '
+                }
+                first = false
+                out += `${name} = ${value ? 'true' : 'false'}`
+            }
+            out += '}'
+        }
+        return out
+    }
+
+    default:
+        console.error("Unknown node kind in node_display:", node)
+        return ''
     }
 }
 
 export const result_display = (src: string, node: Node, vars: Vars): string => {
-    let out = node_display(src, node)
-    if (vars.size > 0 && node.kind === NODE_BOOL && node.value === true) {
-        out += ' & ('
-        let first = true
-        for (let [name, value] of vars) {
-            if (!first) {
-                out += ', '
-            }
-            first = false
-            out += `${name} = ${value ? 'true' : 'false'}`
-        }
-        out += ')'
+    if (node.kind !== NODE_SCOPE) {
+        node = node_scope(node, vars)
     }
-    return out
+    return node_display(src, node)
 }
