@@ -53,12 +53,9 @@ const main = async () => {
         process.exit(1)
     }
 
-    let result = ten.reduce(node, input)
-    if (result.kind === ten.NODE_BOOL) {
-        console.log(result.value)
-    } else {
-        console.log(ten.node_display(input, result, '  ', 0))
-    }
+    let vars: ten.Vars = new Map()
+    let result = ten.reduce(node, input, vars)
+    console.log(ten.result_display(input, result, vars))
 }
 
 main().catch(err => {

@@ -957,10 +957,13 @@ export const node_from_expr = (expr: Expr): Node | null => {
 }
 export {node_from_expr as expr_to_node}
 
+/** Variable assignments collected during reduction */
+export type Vars = Map<string, boolean>
+
 const _apply_constraint = (
     name:     string,
     expected: boolean,
-    vars:     Map<string, boolean>,
+    vars:     Vars,
 ): Node => {
     let existing = vars.get(name)
     if (existing != null && existing !== expected) {
@@ -971,7 +974,7 @@ const _apply_constraint = (
 }
 
 // Helper to handle binary operations with one var and one bool symmetrically
-const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: string, vars: Map<string, boolean>): Node | null => {
+const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: string, vars: Vars): Node | null => {
     if (var_node.kind !== NODE_VAR || bool_node.kind !== NODE_BOOL) {
         return null
     }
@@ -1016,7 +1019,7 @@ const _handle_var_bool = (op: Token_Kind, var_node: Node, bool_node: Node, src: 
     return null
 }
 
-export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new Map()): Node => {
+export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node => {
     switch (node.kind) {
     case NODE_BOOL:
         return node
@@ -1043,22 +1046,19 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
             let lhs = reduce(node.lhs, src, lhs_vars)
             let rhs = reduce(node.rhs, src, rhs_vars)
 
-            // Try both directions for var-bool operations
-            let result = _handle_var_bool(node.op, lhs, rhs, src, vars)
-                      || _handle_var_bool(node.op, rhs, lhs, src, vars)
-            if (result != null) return result
-
-            // Boolean operations (both sides are concrete booleans)
-            if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL) {
-                return node_bool(lhs.value || rhs.value)
+            // If one side is false, return the other (OR identity)
+            if (lhs.kind === NODE_BOOL && !lhs.value) {
+                for (let [k, v] of rhs_vars) vars.set(k, v)
+                return rhs
+            }
+            if (rhs.kind === NODE_BOOL && !rhs.value) {
+                for (let [k, v] of lhs_vars) vars.set(k, v)
+                return lhs
             }
 
             // If one side is true, return true (OR absorption)
             if (lhs.kind === NODE_BOOL && lhs.value) return node_bool(true)
             if (rhs.kind === NODE_BOOL && rhs.value) return node_bool(true)
-            // If one side is false, return the other (OR identity)
-            if (lhs.kind === NODE_BOOL && !lhs.value) return rhs
-            if (rhs.kind === NODE_BOOL && !rhs.value) return lhs
 
             return node_binary(node.op, lhs, rhs)
         }
@@ -1190,4 +1190,21 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
         return needs_parens ? `(${result})` : result
     }
     }
+}
+
+export const result_display = (src: string, node: Node, vars: Vars): string => {
+    let out = node_display(src, node)
+    if (vars.size > 0 && node.kind === NODE_BOOL && node.value === true) {
+        out += ' & ('
+        let first = true
+        for (let [name, value] of vars) {
+            if (!first) {
+                out += ', '
+            }
+            first = false
+            out += `${name} = ${value ? 'true' : 'false'}`
+        }
+        out += ')'
+    }
+    return out
 }
