@@ -4,40 +4,45 @@
 */
 
 export const
-    TOKEN_INVALID    =  0,
-    TOKEN_EOF        =  1,
-    TOKEN_EOL        =  2,
-    TOKEN_QUESTION   =  3,
-    TOKEN_GREATER    =  4,
-    TOKEN_LESS       =  5,
-    TOKEN_GREATER_EQ =  6,
-    TOKEN_LESS_EQ    =  7,
-    TOKEN_NEG        =  8,
-    TOKEN_NOT_EQ     =  9,
-    TOKEN_OR         = 10,
-    TOKEN_AND        = 11,
-    TOKEN_EQ         = 12,
-    TOKEN_ADD        = 13,
-    TOKEN_SUB        = 14,
-    TOKEN_ADD_EQ     = 15,
-    TOKEN_SUB_EQ     = 16,
-    TOKEN_MUL        = 17,
-    TOKEN_DIV        = 18,
-    TOKEN_POW        = 19,
-    TOKEN_AT         = 20,
-    TOKEN_QUOTE      = 21,
-    TOKEN_PAREN_L    = 22,
-    TOKEN_PAREN_R    = 23,
-    TOKEN_BRACE_L    = 24,
-    TOKEN_BRACE_R    = 25,
-    TOKEN_COMMA      = 26,
-    TOKEN_TRUE       = 27,
-    TOKEN_FALSE      = 28,
-    TOKEN_STRING     = 29,
-    TOKEN_IDENT      = 30,
-    TOKEN_FIELD      = 31,
-    TOKEN_INT        = 32,
-    TOKEN_FLOAT      = 33
+    /* Special */
+    TOKEN_INVALID    =  0, // invalid token
+    TOKEN_EOF        =  1, // end of file
+    TOKEN_EOL        =  2, // end of line `\n`
+    /* Operators */
+    TOKEN_QUESTION   =  3, // `?`
+    TOKEN_GREATER    =  4, // `>`
+    TOKEN_LESS       =  5, // `<`
+    TOKEN_GREATER_EQ =  6, // `>=`
+    TOKEN_LESS_EQ    =  7, // `<=`
+    TOKEN_NEG        =  8, // `!`
+    TOKEN_NOT_EQ     =  9, // `!=`
+    TOKEN_OR         = 10, // `|`
+    TOKEN_AND        = 11, // `&`
+    TOKEN_EQ         = 12, // `=`
+    TOKEN_ADD        = 13, // `+`
+    TOKEN_SUB        = 14, // `-`
+    TOKEN_ADD_EQ     = 15, // `+=`
+    TOKEN_SUB_EQ     = 16, // `-=`
+    TOKEN_MUL        = 17, // `*`
+    TOKEN_DIV        = 18, // `/`
+    TOKEN_POW        = 19, // `^`
+    TOKEN_AT         = 21, // `@`
+    TOKEN_COMMA      = 22, // `,`
+    /* Punctuation */
+    TOKEN_QUOTE      = 23, // `"`
+    TOKEN_PAREN_L    = 24, // `(`
+    TOKEN_PAREN_R    = 25, // `)`
+    TOKEN_BRACE_L    = 26, // `{`
+    TOKEN_BRACE_R    = 27, // `}`
+    /* Keywords */
+    TOKEN_TRUE       = 28, // `true`
+    TOKEN_FALSE      = 29, // `false`
+    /* Literals */
+    TOKEN_STRING     = 30, // string literal `"foo"`
+    TOKEN_IDENT      = 31, // identifier `foo`
+    TOKEN_FIELD      = 32, // field selector `.foo` --- IGNORE ---
+    TOKEN_INT        = 33, // integer literal `123`
+    TOKEN_FLOAT      = 34  // floating-point literal `123.456`
 
 export const Token_Kind = {
     Invalid:    TOKEN_INVALID,
@@ -69,9 +74,9 @@ export const Token_Kind = {
     Comma:      TOKEN_COMMA,
     True:       TOKEN_TRUE,
     False:      TOKEN_FALSE,
-    Field:      TOKEN_FIELD,
     String:     TOKEN_STRING,
     Ident:      TOKEN_IDENT,
+    Field:      TOKEN_FIELD,
     Int:        TOKEN_INT,
     Float:      TOKEN_FLOAT,
 } as const
@@ -500,30 +505,35 @@ export const tokens_display = (src: string, tokens: Token[]): string => {
 */
 
 export const
-    EXPR_TOKEN   = 101,
-    EXPR_UNARY   = 102,
-    EXPR_BINARY  = 103,
-    EXPR_PAREN   = 104,
-    EXPR_INVALID = 105
+    EXPR_TOKEN    = 101,
+    EXPR_UNARY    = 102,
+    EXPR_BINARY   = 103,
+    EXPR_SELECTOR = 104,
+    EXPR_PAREN    = 105,
+    EXPR_INVALID  = 106
 
 export const Expr_Kind = {
-    Token:   EXPR_TOKEN,
-    Unary:   EXPR_UNARY,
-    Binary:  EXPR_BINARY,
-    Paren:   EXPR_PAREN,
-    Invalid: EXPR_INVALID,
+    Token:    EXPR_TOKEN,
+    Unary:    EXPR_UNARY,
+    Binary:   EXPR_BINARY,
+    Selector: EXPR_SELECTOR,
+    Paren:    EXPR_PAREN,
+    Invalid:  EXPR_INVALID,
 } as const
 
 export type Expr_Kind = typeof Expr_Kind[keyof typeof Expr_Kind]
 
 export const expr_kind_string = (kind: Expr_Kind): string => {
     switch (kind) {
-    case EXPR_TOKEN:   return "Token"
-    case EXPR_UNARY:   return "Unary"
-    case EXPR_BINARY:  return "Binary"
-    case EXPR_PAREN:   return "Paren"
-    case EXPR_INVALID: return "Invalid"
-    default:           return "Unknown"
+    case EXPR_TOKEN:    return "Token"
+    case EXPR_UNARY:    return "Unary"
+    case EXPR_BINARY:   return "Binary"
+    case EXPR_SELECTOR: return "Selector"
+    case EXPR_PAREN:    return "Paren"
+    case EXPR_INVALID:  return "Invalid"
+    default:
+        kind satisfies never // exhaustive check
+        return "Unknown"
     }
 }
 
@@ -532,6 +542,7 @@ export type Expr =
     | Expr_Unary
     | Expr_Binary
     | Expr_Paren
+    | Expr_Selector
     | Expr_Invalid
 
 export type Expr_Token = {
@@ -552,6 +563,12 @@ export type Expr_Binary = {
     rhs:  Expr
 }
 
+export type Expr_Selector = {
+    kind: typeof EXPR_SELECTOR
+    lhs:  Expr  // Ident(foo), At(@), Paren(...), etc.
+    rhs:  Token // Field(.foo)
+}
+
 export type Expr_Paren = {
     kind:  typeof EXPR_PAREN
     open:  Token        // '(' or '{'
@@ -566,23 +583,26 @@ export type Expr_Invalid = {
     reason: string
 }
 
-export const expr_binary = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
-    return {kind: EXPR_BINARY, op, lhs, rhs}
+export const expr_token = (tok: Token): Expr_Token => {
+    return {kind: EXPR_TOKEN, tok}
 }
 export const expr_unary = (op: Token, rhs: Expr): Expr_Unary => {
     return {kind: EXPR_UNARY, op, rhs}
 }
-export const expr_token = (tok: Token): Expr_Token => {
-    return {kind: EXPR_TOKEN, tok}
+export const expr_binary = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
+    return {kind: EXPR_BINARY, op, lhs, rhs}
 }
-export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
-    return {kind: EXPR_INVALID, tok, reason}
+export const expr_selector = (lhs: Expr, rhs: Token): Expr_Selector => {
+    return {kind: EXPR_SELECTOR, lhs, rhs}
 }
 export const expr_paren = (open: Token, body: Expr | null, close: Token): Expr_Paren => {
     return {kind: EXPR_PAREN, open, close, type: null, body: body}
 }
 export const expr_paren_typed = (open: Token, type: Token, body: Expr | null, close: Token): Expr_Paren => {
     return {kind: EXPR_PAREN, open, close, type, body}
+}
+export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
+    return {kind: EXPR_INVALID, tok, reason}
 }
 export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     let expr = expr_invalid(tok, reason)
@@ -602,6 +622,9 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
 
     case EXPR_BINARY:
         return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
+
+    case EXPR_SELECTOR:
+        return `${ind}Selector: ${token_display(src, expr.rhs)}\n${expr_display(src, expr.lhs, indent, depth+1)}`
 
     case EXPR_PAREN:
         let open_close_str =
@@ -623,7 +646,8 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
         return `${ind}Invalid: ${token_display(src, expr.tok)} (${expr.reason})`
 
     default:
-        return `${ind}Unknown`
+        expr satisfies never // exhaustive check
+        return `${ind}Unknown: ${(expr as any).kind}`
     }
 }
 
@@ -713,6 +737,12 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
     let lhs = _parse_expr_atom(p)
 
     for (;;) {
+        if (p.token.kind === TOKEN_FIELD) {
+            lhs = expr_selector(lhs, p.token)
+            parser_next_token(p)
+            continue
+        }
+
         let op = p.token
         if (op.kind === TOKEN_EOF) break
 

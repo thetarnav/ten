@@ -142,6 +142,10 @@ test.describe('parser', {concurrency: true}, () => {
     test_parser('-y',
         `Unary: Sub(-)\n`+
         `  Token: Ident(y)`)
+    test_parser('-+y',
+        `Unary: Sub(-)\n`+
+        `  Unary: Add(+)\n`+
+        `    Token: Ident(y)`)
     test_parser('-.y',
         `Unary: Sub(-)\n`+
         `  Token: Field(.y)`)
@@ -191,6 +195,13 @@ test.describe('parser', {concurrency: true}, () => {
         `  Binary: Pow(^)\n`+
         `    Token: Ident(b)\n`+
         `    Token: Ident(c)`)
+
+    // Selector
+    test_parser('obj.field + 12',
+        `Binary: Add(+)\n`+
+        `  Selector: Field(.field)\n`+
+        `    Token: Ident(obj)\n`+
+        `  Token: Int(12)`)
 
     // Complex expressions
     // (a + (b * (c ^ d))) - (e / f)
@@ -279,7 +290,7 @@ test.describe('parser', {concurrency: true}, () => {
             `      Token: Ident(c)\n`+
             `      Token: Ident(d)`)
 
-        for (let [type_str, type_tok] of [['Foo', 'Ident'], ['.foo', 'Field'], ['@', 'At']]) {
+        for (let [type_str, type_tok] of [['Foo', 'Ident'], ['@', 'At']]) {
             test_parser(`(${type_str}${l}a + b${r}, Bar${l}c + d${r})`,
                 `Paren: (...)\n`+
                 `  Binary: Comma(,)\n`+
