@@ -40,7 +40,7 @@ export const
     /* Literals */
     TOKEN_STRING     = 30, // string literal `"foo"`
     TOKEN_IDENT      = 31, // identifier `foo`
-    TOKEN_FIELD      = 32, // field selector `.foo` --- IGNORE ---
+    TOKEN_FIELD      = 32, // field selector `.foo`
     TOKEN_INT        = 33, // integer literal `123`
     TOKEN_FLOAT      = 34  // floating-point literal `123.456`
 
