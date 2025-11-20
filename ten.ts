@@ -734,6 +734,10 @@ export const parse_src = (src: string): [body: Expr, errors: Expr_Invalid[]] => 
 
     let p = parser_make(src)
 
+    if (p.token.kind === TOKEN_EOF) {
+        return [expr_paren(token_make(p.t, TOKEN_PAREN_L), null, token_make(p.t, TOKEN_PAREN_R)), p.errors]
+    }
+
     let body = _parse_expr(p)
 
     return [body, p.errors]
@@ -989,13 +993,17 @@ export const node_from_expr = (expr: Expr): Node | null => {
     case EXPR_PAREN: {
         if (expr.open.kind === TOKEN_BRACE_L) {
             // Scope {...}
-            if (!expr.body) return null
-            let body = node_from_expr(expr.body)
-            if (!body) return null
+            let body: Node | null
+            if (expr.body) {
+                body = node_from_expr(expr.body)
+                body ??= node_bool(true)
+            } else {
+                body = node_bool(true)
+            }
             return node_scope(body, new Map(), expr)
         }
         // Regular paren (...)
-        if (!expr.body) return null
+        if (!expr.body) return node_bool(true)
         return node_from_expr(expr.body)
     }
 

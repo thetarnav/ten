@@ -371,11 +371,11 @@ test.describe('parser', {concurrency: true}, () => {
 test.describe('reducer', {concurrency: true}, () => {
 
     // Empty
-    // test_reducer(``,     `()`)
-    // test_reducer(`()`,   `()`)
-    // test_reducer(`(())`, `()`)
-    // test_reducer(`{}`,   `()`)
-    // test_reducer(`{()}`, `()`)
+    test_reducer(``,     `true`)
+    test_reducer(`()`,   `true`)
+    test_reducer(`(())`, `true`)
+    test_reducer(`{}`,   `true`)
+    test_reducer(`{()}`, `true`)
 
     for (let scope_used of [false, true]) {
         let sl = scope_used ? '{' : ''
