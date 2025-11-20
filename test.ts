@@ -626,10 +626,14 @@ test.describe('reducer', {concurrency: true}, () => {
             `true`)
         test_reducer(`(a = a${and}b, b = false)${and}(a = true)`,
             `false`)
-        test_reducer(`(a = b ^ c, a = true, c = false, b = true)`,
+        test_reducer(`(a = b ^ c)${and}(a = true)${and}(c = false)${and}(b = true)`,
             `true`)
-        test_reducer(`(a = b ^ c, a = true, c = false, b = false)`,
+        test_reducer(`(a = b ^ c)${and}(a = true)${and}(c = false)${and}(b = false)`,
             `false`)
+        test_reducer(`(a = false)${and}(a + false = x)${and}(x = true)`,
+            `false`)
+        test_reducer(`(a = false)${and}(a + false = x)${and}(x = false)`,
+            `true`)
 
         for (let or of [' + ', ' | ']) {
 
