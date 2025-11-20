@@ -225,6 +225,16 @@ test.describe('parser', {concurrency: true}, () => {
         `    Token: Ident(a)\n`+
         `  Token: Ident(b)`)
 
+    // Top-level comma
+    test_parser(`a + b, c + d`,
+        `Binary: Comma(,)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(a)\n`+
+        `    Token: Ident(b)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(c)\n`+
+        `    Token: Ident(d)`)
+
     // Parenthesized expressions
     for (let open of [ten.TOKEN_PAREN_L, ten.TOKEN_BRACE_L]) {
         let [l, r] = open === ten.TOKEN_PAREN_L ? ['(', ')'] : ['{', '}']
