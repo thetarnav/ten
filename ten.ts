@@ -1215,9 +1215,8 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
     }
 
     case NODE_SCOPE: {
-        let out = node_display(src, node.body)
         if (node.vars.size > 0 && node.body.kind === NODE_BOOL && node.body.value === true) {
-            out += ' & {'
+            let out = '{'
             let first = true
             for (let [name, value] of node.vars) {
                 if (!first) {
@@ -1227,8 +1226,9 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
                 out += `${name} = ${value ? 'true' : 'false'}`
             }
             out += '}'
+            return out
         }
-        return out
+        return node_display(src, node.body)
     }
 
     default:
