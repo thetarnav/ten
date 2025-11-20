@@ -4,8 +4,8 @@
     "version": "0.0.0",
     "private": true,
     "scripts": {
-        "test": "node --test",
-        "test:watch": "node --watch --test"
+        "test": "node --test --test-reporter=dot",
+        "test:watch": "node --watch --test --test-reporter=dot"
     },
     "devDependencies": {
         "@types/node": "^24.10.1"
