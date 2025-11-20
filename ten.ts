@@ -906,7 +906,7 @@ export type Node_Scope = {
 }
 
 /** Variable assignments collected during reduction */
-export type Vars = Map<string, boolean>
+export type Vars = Map<string, Node>
 
 export const node_bool = (value: boolean, expr: Expr | null = null): Node_Bool => {
     return {kind: NODE_BOOL, value, expr}
@@ -1008,10 +1008,10 @@ const _apply_constraint = (
     vars:     Vars,
 ): Node => {
     let existing = vars.get(name)
-    if (existing != null && existing !== expected) {
+    if (existing != null && existing.kind === NODE_BOOL && existing.value !== expected) {
         return node_bool(false) // Conflict
     }
-    vars.set(name, expected)
+    vars.set(name, node_bool(expected))
     return node_bool(true)
 }
 
@@ -1069,11 +1069,7 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
     case NODE_VAR: {
         // Return the variable's value if known, otherwise keep as variable
         let name = token_string(src, node.tok)
-        let value = vars.get(name)
-        if (value != null) {
-            return node_bool(value)
-        }
-        return node
+        return vars.get(name) ?? node
     }
 
     case NODE_BINARY: {
@@ -1263,7 +1259,7 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
                     out += ', '
                 }
                 first = false
-                out += `${name} = ${value ? 'true' : 'false'}`
+                out += `${name} = ${node_display(src, value)}`
             }
             out += '}'
             return out
