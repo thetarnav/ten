@@ -903,7 +903,7 @@ export type Node_Binary = {
 
 export type Node_Selector = {
     kind:   typeof NODE_SELECTOR
-    lhs:    Token // Ident(foo)
+    lhs:    Node  // Var(foo) | Selector(...)
     rhs:    Token // Field(.foo)
     expr:   Expr | null
 }
@@ -927,7 +927,7 @@ export const node_var = (tok: Token, expr: Expr | null = null): Node_Var => {
 export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr: Expr | null = null): Node_Binary => {
     return {kind: NODE_BINARY, op, lhs, rhs, expr}
 }
-export const node_selector = (lhs: Token, rhs: Token, expr: Expr | null = null): Node_Selector => {
+export const node_selector = (lhs: Node, rhs: Token, expr: Expr | null = null): Node_Selector => {
     return {kind: NODE_SELECTOR, lhs, rhs, expr}
 }
 export const node_scope = (body: Node, vars: Vars = new Map(), expr: Expr | null = null): Node_Scope => {
@@ -984,11 +984,16 @@ export const node_from_expr = (expr: Expr): Node | null => {
     }
 
     case EXPR_SELECTOR:
-        // Only support .foo selectors on identifiers for now
-        if (expr.lhs.kind !== EXPR_TOKEN) return null
-        if (expr.lhs.tok.kind !== TOKEN_IDENT) return null
         if (expr.rhs.kind !== TOKEN_FIELD) return null
-        return node_selector(expr.lhs.tok, expr.rhs, expr)
+
+        // foo.bar
+        // foo.bar.baz...
+        let lhs = node_from_expr(expr.lhs)
+        if (!lhs) return null
+
+        if (lhs.kind !== NODE_VAR && lhs.kind !== NODE_SELECTOR) return null
+
+        return node_selector(lhs, expr.rhs, expr)
 
     case EXPR_PAREN: {
         if (expr.open.kind === TOKEN_BRACE_L) {
@@ -1035,10 +1040,9 @@ const node_equals = (a: Node, b: Node): boolean => {
                node_equals(a.rhs, (b as Node_Binary).rhs)
 
     case NODE_SELECTOR:
-        return a.lhs.pos === (b as Node_Selector).lhs.pos &&
-               a.lhs.kind === (b as Node_Selector).lhs.kind &&
-               a.rhs.pos === (b as Node_Selector).rhs.pos &&
-               a.rhs.kind === (b as Node_Selector).rhs.kind
+        return a.rhs.pos === (b as Node_Selector).rhs.pos &&
+               a.rhs.kind === (b as Node_Selector).rhs.kind &&
+               node_equals(a.lhs, (b as Node_Selector).lhs)
 
     case NODE_SCOPE: {
         if (!node_equals(a.body, (b as Node_Scope).body)) return false
@@ -1268,20 +1272,23 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
     }
 
     case NODE_SELECTOR:
-        assert(node.lhs.kind === TOKEN_IDENT, "Selector LHS must be Ident")
         assert(node.rhs.kind === TOKEN_FIELD, "Selector RHS must be Field")
 
-        let lhs_name = token_string(src, node.lhs)
-        let rhs_name = token_string(src, node.rhs).substring(1) // skip '.'
+        let lhs = reduce(node.lhs, src, vars)
 
-        let lhs_val = vars.get(lhs_name)
-        if (lhs_val == null) return node
-        if (lhs_val.kind !== NODE_SCOPE) return node_bool(false) // Invalid selector on non-scope
+        if (lhs.kind === NODE_SCOPE) {
+            let rhs_name = token_string(src, node.rhs).substring(1) // skip '.'
+            let val = lhs.vars.get(rhs_name)
+            if (val) {
+                return reduce(val, src, vars)
+            }
+        }
 
-        let rhs_val = lhs_val.vars.get(rhs_name)
-        if (rhs_val == null) return node
+        if (lhs !== node.lhs) {
+            return node_selector(lhs, node.rhs)
+        }
 
-        return rhs_val
+        return node
 
     case NODE_SCOPE:
         let body = reduce(node.body, src, node.vars)
@@ -1337,7 +1344,7 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
     }
 
     case NODE_SELECTOR: {
-        let lhs = token_string(src, node.lhs)
+        let lhs = _node_display(src, node.lhs, 0, false)
         let rhs = token_string(src, node.rhs)
         return lhs + rhs
     }
@@ -1346,7 +1353,9 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
         if (node.vars.size > 0 && node.body.kind === NODE_BOOL && node.body.value === true) {
             let out = '{'
             let first = true
-            for (let [name, value] of node.vars) {
+            let keys = Array.from(node.vars.keys()).sort()
+            for (let name of keys) {
+                let value = node.vars.get(name)!
                 if (!first) {
                     out += ', '
                 }
