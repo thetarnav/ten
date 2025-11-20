@@ -837,27 +837,30 @@ const _parse_expr_atom = (p: Parser): Expr => {
 */
 
 export const
-    NODE_BOOL   = 201,
-    NODE_VAR    = 202,
-    NODE_BINARY = 203,
-    NODE_SCOPE  = 204
+    NODE_BOOL     = 201,
+    NODE_VAR      = 202,
+    NODE_BINARY   = 203,
+    NODE_SELECTOR = 204,
+    NODE_SCOPE    = 205
 
 export const Node_Kind = {
-    Bool:   NODE_BOOL,
-    Var:    NODE_VAR,
-    Binary: NODE_BINARY,
-    Scope:  NODE_SCOPE,
+    Bool:     NODE_BOOL,
+    Var:      NODE_VAR,
+    Binary:   NODE_BINARY,
+    Selector: NODE_SELECTOR,
+    Scope:    NODE_SCOPE,
 } as const
 
 export type Node_Kind = typeof Node_Kind[keyof typeof Node_Kind]
 
 export const node_kind_string = (kind: Node_Kind): string => {
     switch (kind) {
-    case NODE_BOOL:   return "Bool"
-    case NODE_VAR:    return "Var"
-    case NODE_BINARY: return "Binary"
-    case NODE_SCOPE:  return "Scope"
-    default:          return "Unknown"
+    case NODE_BOOL:     return "Bool"
+    case NODE_VAR:      return "Var"
+    case NODE_BINARY:   return "Binary"
+    case NODE_SELECTOR: return "Selector"
+    case NODE_SCOPE:    return "Scope"
+    default:            return "Unknown"
     }
 }
 
@@ -865,6 +868,7 @@ export type Node =
     | Node_Bool
     | Node_Var
     | Node_Binary
+    | Node_Selector
     | Node_Scope
 
 export type Node_Bool = {
@@ -875,7 +879,7 @@ export type Node_Bool = {
 
 export type Node_Var = {
     kind:   typeof NODE_VAR
-    tok:    Token
+    tok:    Token // Ident(foo)
     expr:   Expr | null
 }
 
@@ -884,6 +888,13 @@ export type Node_Binary = {
     op:     Token_Kind
     lhs:    Node
     rhs:    Node
+    expr:   Expr | null
+}
+
+export type Node_Selector = {
+    kind:   typeof NODE_SELECTOR
+    lhs:    Token // Ident(foo)
+    rhs:    Token // Field(.foo)
     expr:   Expr | null
 }
 
@@ -905,6 +916,9 @@ export const node_var = (tok: Token, expr: Expr | null = null): Node_Var => {
 }
 export const node_binary = (op: Token_Kind, lhs: Node, rhs: Node, expr: Expr | null = null): Node_Binary => {
     return {kind: NODE_BINARY, op, lhs, rhs, expr}
+}
+export const node_selector = (lhs: Token, rhs: Token, expr: Expr | null = null): Node_Selector => {
+    return {kind: NODE_SELECTOR, lhs, rhs, expr}
 }
 export const node_scope = (body: Node, vars: Vars = new Map(), expr: Expr | null = null): Node_Scope => {
     return {kind: NODE_SCOPE, body, vars, expr}
@@ -958,6 +972,13 @@ export const node_from_expr = (expr: Expr): Node | null => {
         }
         return null
     }
+
+    case EXPR_SELECTOR:
+        // Only support .foo selectors on identifiers for now
+        if (expr.lhs.kind !== EXPR_TOKEN) return null
+        if (expr.lhs.tok.kind !== TOKEN_IDENT) return null
+        if (expr.rhs.kind !== TOKEN_FIELD) return null
+        return node_selector(expr.lhs.tok, expr.rhs, expr)
 
     case EXPR_PAREN: {
         if (expr.open.kind === TOKEN_BRACE_L) {
@@ -1165,6 +1186,19 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
         return node_binary(node.op, lhs, rhs)
     }
 
+    case NODE_SELECTOR:
+        console.assert(node.lhs.kind === TOKEN_IDENT, "Selector LHS must be Ident")
+        console.assert(node.rhs.kind === TOKEN_FIELD, "Selector RHS must be Field")
+        let lhs_name = token_string(src, node.lhs)
+        let rhs_name = token_string(src, node.rhs).substring(1) // skip '.'
+
+        let lhs_val = vars.get(lhs_name)
+        // ??? lhs_val should be a node (Node_Scope)
+
+        // let rhs_val = vars.get(lhs_var.vars)
+
+        return node
+
     case NODE_SCOPE:
         return node_scope(reduce(node.body, src, node.vars), node.vars)
 
@@ -1214,6 +1248,12 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
         return needs_parens ? `(${result})` : result
     }
 
+    case NODE_SELECTOR: {
+        let lhs = token_string(src, node.lhs)
+        let rhs = token_string(src, node.rhs)
+        return lhs + rhs
+    }
+
     case NODE_SCOPE: {
         if (node.vars.size > 0 && node.body.kind === NODE_BOOL && node.body.value === true) {
             let out = '{'
@@ -1232,6 +1272,7 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
     }
 
     default:
+        node satisfies never // exhaustive check
         console.error("Unknown node kind in node_display:", node)
         return ''
     }
