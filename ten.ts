@@ -1150,16 +1150,44 @@ export const reduce = (node: Node, src: string, vars: Map<string, boolean> = new
 }
 
 export const node_display = (src: string, node: Node, indent = '\t', depth = 0): string => {
-    let ind = indent.repeat(depth)
+    return _node_display(src, node, 0, false)
+}
 
+const _node_display = (src: string, node: Node, parent_prec: number, is_right: boolean): string => {
     switch (node.kind) {
     case NODE_BOOL:
-        return `${ind}Bool: ${node.value}`
+        return node.value ? 'true' : 'false'
 
     case NODE_VAR:
-        return `${ind}Var: ${token_string(src, node.tok)}`
+        return token_string(src, node.tok)
 
-    case NODE_BINARY:
-        return `${ind}Binary: ${token_kind_string(node.op)}\n${node_display(src, node.lhs, indent, depth+1)}\n${node_display(src, node.rhs, indent, depth+1)}`
+    case NODE_BINARY: {
+        let prec = token_kind_precedence(node.op)
+        let needs_parens = prec < parent_prec || (prec === parent_prec && (
+            (is_right && node.op !== TOKEN_POW) ||
+            (!is_right && node.op === TOKEN_POW))
+        )
+
+        let lhs = _node_display(src, node.lhs, prec, false)
+        let rhs = _node_display(src, node.rhs, prec, true)
+
+        let op: string
+        switch (node.op) {
+        case TOKEN_EQ:     op = ` = `  ;break
+        case TOKEN_NOT_EQ: op = ` != ` ;break
+        case TOKEN_ADD:    op = ` + `  ;break
+        case TOKEN_SUB:    op = ` - `  ;break
+        case TOKEN_MUL:    op = ` * `  ;break
+        case TOKEN_DIV:    op = ` / `  ;break
+        case TOKEN_POW:    op = ` ^ `  ;break
+        case TOKEN_AND:    op = ` & `  ;break
+        case TOKEN_OR:     op = ` | `  ;break
+        case TOKEN_COMMA:  op = `, `   ;break
+        default:           op = ` ${token_kind_string(node.op)} ` ;break
+        }
+
+        let result = `${lhs}${op}${rhs}`
+        return needs_parens ? `(${result})` : result
+    }
     }
 }
