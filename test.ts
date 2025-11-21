@@ -504,6 +504,10 @@ test.describe('reducer', {concurrency: true}, () => {
             `{a = true}`)
         test_reducer(`${sl}a = true, a = false${sr}`,
             `false`)
+        test_reducer(`${sl}a = true, a = -false${sr}`,
+            `{a = true}`)
+        test_reducer(`${sl}a = true, b = -a${sr}`,
+            `{a = true, b = false}`)
 
         // Variables with != operator
         test_reducer(`${sl}a != true${sr}`,
