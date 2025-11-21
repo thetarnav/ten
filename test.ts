@@ -768,5 +768,11 @@ test.describe('reducer', {concurrency: true}, () => {
             `false`)
         test_reducer(`${sl}foo.a != foo.b, foo = {a != b}${sr}`,
             `{foo = {a = b ^ true, b = b}}`)
+
+        // Scope Operators & Unification
+        test_reducer(`${sl}a = {x=true}, b = {x=true}, a = b${sr}`,
+            `{a = {x = true}, b = {x = true}}`)
+        test_reducer(`${sl}a = {x=true}, b = {x=false}, a = b${sr}`,
+            `false`)
     }
 })
