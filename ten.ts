@@ -1219,7 +1219,7 @@ const _handle_lhs_rhs = (op: Token_Kind, a: Node, b: Node, src: string, vars: Va
     return null
 }
 
-export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited: Set<string> = new Set(), is_nested: boolean = false): Node => {
+export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited: Set<string> = new Set()): Node => {
     switch (node.kind) {
     case NODE_BOOL:
         return node
@@ -1232,7 +1232,7 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         let val = vars.get(name)
         if (val) {
             visited.add(name)
-            let res = reduce(val, src, vars, visited, is_nested)
+            let res = reduce(val, src, vars, visited)
             visited.delete(name)
             return res
         }
@@ -1248,8 +1248,8 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
             let lhs_vars = new Map(vars)
             let rhs_vars = new Map(vars)
 
-            let lhs = reduce(node.lhs, src, lhs_vars, visited, is_nested)
-            let rhs = reduce(node.rhs, src, rhs_vars, visited, is_nested)
+            let lhs = reduce(node.lhs, src, lhs_vars, visited)
+            let rhs = reduce(node.rhs, src, rhs_vars, visited)
 
             // If one side is false, return the other (OR identity)
             if (lhs.kind === NODE_BOOL && !lhs.value) {
@@ -1271,12 +1271,12 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         case TOKEN_MUL:
         case TOKEN_AND: {
             // Special handling for operators that evaluate both sides (like AND/conjunction):
-            let lhs = reduce(node.lhs, src, vars, visited, is_nested)
-            let rhs = reduce(node.rhs, src, vars, visited, is_nested)
+            let lhs = reduce(node.lhs, src, vars, visited)
+            let rhs = reduce(node.rhs, src, vars, visited)
 
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
-            lhs = reduce(node.lhs, src, vars, visited, is_nested)
+            lhs = reduce(node.lhs, src, vars, visited)
 
             // After re-reduction, check for var-bool simplifications
             let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
@@ -1292,8 +1292,8 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         }
         }
 
-        let lhs = reduce(node.lhs, src, vars, visited, is_nested)
-        let rhs = reduce(node.rhs, src, vars, visited, is_nested)
+        let lhs = reduce(node.lhs, src, vars, visited)
+        let rhs = reduce(node.rhs, src, vars, visited)
 
         // Try both directions for var-bool operations
         let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
@@ -1367,13 +1367,13 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
     case NODE_SELECTOR:
         assert(node.rhs.kind === TOKEN_FIELD, "Selector RHS must be Field")
 
-        let lhs = reduce(node.lhs, src, vars, visited, is_nested)
+        let lhs = reduce(node.lhs, src, vars, visited)
 
         if (lhs.kind === NODE_SCOPE) {
             let rhs_name = token_string(src, node.rhs).substring(1) // skip '.'
             let val = lhs.vars.get(rhs_name)
             if (val) {
-                return reduce(val, src, vars, visited, is_nested)
+                return reduce(val, src, vars, visited)
             }
             return node_bool(false)
         }
@@ -1385,7 +1385,7 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         return node
 
     case NODE_SCOPE:
-        let body = reduce(node.body, src, node.vars, visited, false)
+        let body = reduce(node.body, src, node.vars, visited)
         if (body !== node.body) {
             return node_scope(body, node.vars)
         }
@@ -1450,7 +1450,7 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
             let keys = Array.from(node.vars.keys()).sort()
             for (let name of keys) {
                 let value = node.vars.get(name)!
-                let resolved = reduce(value, src, node.vars, undefined, false)
+                let resolved = reduce(value, src, node.vars, undefined)
                 if (!first) {
                     out += ', '
                 }
