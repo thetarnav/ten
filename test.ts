@@ -478,6 +478,8 @@ test.describe('reducer', {concurrency: true}, () => {
             `false`)
         test_reducer(`${sl}false = true${sr}`,
             `false`)
+        test_reducer(`${sl}false = !true${sr}`,
+            `true`)
 
         // Boolean inequality (!=)
         test_reducer(`${sl}true != true${sr}`,
@@ -518,6 +520,11 @@ test.describe('reducer', {concurrency: true}, () => {
             `{a = true, b = false}`)
         test_reducer(`${sl}a = true, b = true, a != b${sr}`,
             `false`)
+
+        test_reducer(`${sl}a = !b, a = true, b = true${sr}`,
+            `false`)
+        test_reducer(`${sl}!a = !b, a = true, b = true${sr}`,
+            `{a = true, b = true}`)
 
         // Variables with OR operations
         test_reducer(`${sl}a + false${sr}`,
