@@ -497,7 +497,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}false = b${sr}`,
             `{b = false}`)
         test_reducer(`${sl}x = y${sr}`,
-            `true`)
+            `{x = y}`)
         test_reducer(`${sl}x = x${sr}`,
             `true`)
         test_reducer(`${sl}a = true, a = true${sr}`,
@@ -507,6 +507,8 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}a = true, a = -false${sr}`,
             `{a = true}`)
         test_reducer(`${sl}a = true, b = -a${sr}`,
+            `{a = true, b = false}`)
+        test_reducer(`${sl}a = true, b = a - false${sr}`,
             `{a = true, b = false}`)
 
         // Variables with != operator
@@ -529,6 +531,20 @@ test.describe('reducer', {concurrency: true}, () => {
             `false`)
         test_reducer(`${sl}!a = !b, a = true, b = true${sr}`,
             `{a = true, b = true}`)
+
+        test_reducer(`${sl}false - a = !a, a - false = !a${sr}`,
+            `true`)
+        test_reducer(`${sl}false - a = a, a - false = a${sr}`,
+            `false`)
+
+        test_reducer(`${sl}a = b, a != b${sr}`,
+            `false`)
+        test_reducer(`${sl}a != b, a = b${sr}`,
+            `false`)
+        test_reducer(`${sl}a = b, a = !b${sr}`,
+            `false`)
+        test_reducer(`${sl}a = !b, a = b${sr}`,
+            `false`)
 
         // Variables with OR operations
         test_reducer(`${sl}a + false${sr}`,

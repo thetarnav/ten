@@ -1021,7 +1021,7 @@ export const node_from_expr = (expr: Expr): Node | null => {
 }
 export {node_from_expr as expr_to_node}
 
-const node_equals = (a: Node, b: Node): boolean => {
+const node_equals = (a: Node, b: Node, src: string): boolean => {
     if (a === b) return true
     if (a.kind !== b.kind) return false
 
@@ -1030,22 +1030,21 @@ const node_equals = (a: Node, b: Node): boolean => {
         return a.value === (b as Node_Bool).value
 
     case NODE_VAR:
-        if (a.tok === (b as Node_Var).tok) return true
-        return a.tok.pos === (b as Node_Var).tok.pos &&
-               a.tok.kind === (b as Node_Var).tok.kind
+        // if (a.tok === (b as Node_Var).tok) return true
+        return token_string(src, a.tok) === token_string(src, (b as Node_Var).tok)
 
     case NODE_BINARY:
         return a.op === (b as Node_Binary).op &&
-               node_equals(a.lhs, (b as Node_Binary).lhs) &&
-               node_equals(a.rhs, (b as Node_Binary).rhs)
+               node_equals(a.lhs, (b as Node_Binary).lhs, src) &&
+               node_equals(a.rhs, (b as Node_Binary).rhs, src)
 
     case NODE_SELECTOR:
         return a.rhs.pos === (b as Node_Selector).rhs.pos &&
                a.rhs.kind === (b as Node_Selector).rhs.kind &&
-               node_equals(a.lhs, (b as Node_Selector).lhs)
+               node_equals(a.lhs, (b as Node_Selector).lhs, src)
 
     case NODE_SCOPE: {
-        if (!node_equals(a.body, (b as Node_Scope).body)) return false
+        if (!node_equals(a.body, (b as Node_Scope).body, src)) return false
 
         let a_vars = a.vars
         let b_vars = (b as Node_Scope).vars
@@ -1055,7 +1054,11 @@ const node_equals = (a: Node, b: Node): boolean => {
             for (let [k, v_a] of a_vars) {
                 let v_b = b_vars.get(k)
                 if (v_b == null) return false
-                if (!node_equals(v_a, v_b)) return false
+
+                let res_a = reduce(v_a, src, a_vars)
+                let res_b = reduce(v_b, src, b_vars)
+
+                if (!node_equals(res_a, res_b, src)) return false
             }
         }
 
@@ -1082,6 +1085,41 @@ const _apply_constraint = (
 
 // Helper to handle binary operations with one var and one bool symmetrically
 const _handle_lhs_rhs = (op: Token_Kind, a: Node, b: Node, src: string, vars: Vars): Node | null => {
+
+    if (a.kind === NODE_VAR && op === TOKEN_EQ) {
+        if (node_equals(a, b, src)) return node_bool(true)
+
+        // Check for b = !a (contradiction)
+        if (b.kind === NODE_BINARY) {
+            let is_negation = false
+            // SUB (XNOR): false - a = !a, a - false = !a
+            if (b.op === TOKEN_SUB) {
+                if (b.lhs.kind === NODE_BOOL && b.lhs.value === false && node_equals(a, b.rhs, src)) is_negation = true
+                if (b.rhs.kind === NODE_BOOL && b.rhs.value === false && node_equals(a, b.lhs, src)) is_negation = true
+            }
+            // POW (XOR): true ^ a = !a, a ^ true = !a
+            if (b.op === TOKEN_POW) {
+                if (b.lhs.kind === NODE_BOOL && b.lhs.value === true && node_equals(a, b.rhs, src)) is_negation = true
+                if (b.rhs.kind === NODE_BOOL && b.rhs.value === true && node_equals(a, b.lhs, src)) is_negation = true
+            }
+
+            if (is_negation) return node_bool(false)
+        }
+
+        let var_name = token_string(src, a.tok)
+
+        if (b.kind === NODE_VAR) {
+            let b_name = token_string(src, b.tok)
+            if (var_name === b_name) return node_bool(true)
+        }
+
+        let existing = vars.get(var_name)
+        if (existing) {
+            return node_bool(node_equals(existing, b, src))
+        }
+        vars.set(var_name, b)
+        return node_bool(true)
+    }
 
     if (a.kind === NODE_BOOL && b.kind === NODE_SCOPE) {
         return node_bool(false)
@@ -1135,7 +1173,7 @@ const _handle_lhs_rhs = (op: Token_Kind, a: Node, b: Node, src: string, vars: Va
     return null
 }
 
-export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node => {
+export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited: Set<string> = new Set()): Node => {
     switch (node.kind) {
     case NODE_BOOL:
         return node
@@ -1143,7 +1181,16 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
     case NODE_VAR: {
         // Return the variable's value if known, otherwise keep as variable
         let name = token_string(src, node.tok)
-        return vars.get(name) ?? node
+        if (visited.has(name)) return node
+
+        let val = vars.get(name)
+        if (val) {
+            visited.add(name)
+            let res = reduce(val, src, vars, visited)
+            visited.delete(name)
+            return res
+        }
+        return node
     }
 
     case NODE_BINARY: {
@@ -1155,8 +1202,8 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
             let lhs_vars = new Map(vars)
             let rhs_vars = new Map(vars)
 
-            let lhs = reduce(node.lhs, src, lhs_vars)
-            let rhs = reduce(node.rhs, src, rhs_vars)
+            let lhs = reduce(node.lhs, src, lhs_vars, visited)
+            let rhs = reduce(node.rhs, src, rhs_vars, visited)
 
             // If one side is false, return the other (OR identity)
             if (lhs.kind === NODE_BOOL && !lhs.value) {
@@ -1178,12 +1225,12 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
         case TOKEN_MUL:
         case TOKEN_AND: {
             // Special handling for operators that evaluate both sides (like AND/conjunction):
-            let lhs = reduce(node.lhs, src, vars)
-            let rhs = reduce(node.rhs, src, vars)
+            let lhs = reduce(node.lhs, src, vars, visited)
+            let rhs = reduce(node.rhs, src, vars, visited)
 
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
-            lhs = reduce(node.lhs, src, vars)
+            lhs = reduce(node.lhs, src, vars, visited)
 
             // After re-reduction, check for var-bool simplifications
             let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
@@ -1199,13 +1246,20 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
         }
         }
 
-        let lhs = reduce(node.lhs, src, vars)
-        let rhs = reduce(node.rhs, src, vars)
+        let lhs = reduce(node.lhs, src, vars, visited)
+        let rhs = reduce(node.rhs, src, vars, visited)
 
         // Try both directions for var-bool operations
         let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
                   || _handle_lhs_rhs(node.op, rhs, lhs, src, vars)
         if (result != null) return result
+
+        if (node.op === TOKEN_EQ) {
+            if (node_equals(lhs, rhs, src)) return node_bool(true)
+        }
+        if (node.op === TOKEN_NOT_EQ) {
+            if (node_equals(lhs, rhs, src)) return node_bool(false)
+        }
 
         // Handle var-var operations
         if (lhs.kind === NODE_VAR &&
@@ -1218,19 +1272,12 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
             let rhs_val = vars.get(rhs_name)
 
             switch (node.op) {
-            case TOKEN_EQ:
-                // a = b -> both variables must have same value
-                if (lhs_val != null && rhs_val != null) {
-                    return node_bool(lhs_val === rhs_val)
-                }
-                // If only one or neither is known, return true (optimistically satisfiable)
-                // The comma operator's re-reduction will handle constraint propagation
-                return node_bool(true)
-
             case TOKEN_NOT_EQ:
                 // a != b -> variables must have different values
+                if (lhs_name === rhs_name) return node_bool(false)
+
                 if (lhs_val != null && rhs_val != null) {
-                    return node_bool(lhs_val !== rhs_val)
+                    return node_bool(!node_equals(lhs_val, rhs_val, src))
                 }
                 // If only one is known, constraint can be satisfied
                 return node_bool(true)
@@ -1258,13 +1305,13 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
         ) {
             switch (node.op) {
             // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
-            case TOKEN_SUB:    return node_bool(node_equals(lhs, rhs))
+            case TOKEN_SUB:    return node_bool(node_equals(lhs, rhs, src))
             // Pow is XOR
-            case TOKEN_POW:    return node_bool(!node_equals(lhs, rhs))
+            case TOKEN_POW:    return node_bool(!node_equals(lhs, rhs, src))
             // Eq is equality
-            case TOKEN_EQ:     return node_bool(node_equals(lhs, rhs))
+            case TOKEN_EQ:     return node_bool(node_equals(lhs, rhs, src))
             // Not_Eq is inequality
-            case TOKEN_NOT_EQ: return node_bool(!node_equals(lhs, rhs))
+            case TOKEN_NOT_EQ: return node_bool(!node_equals(lhs, rhs, src))
             }
         }
 
@@ -1274,13 +1321,13 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
     case NODE_SELECTOR:
         assert(node.rhs.kind === TOKEN_FIELD, "Selector RHS must be Field")
 
-        let lhs = reduce(node.lhs, src, vars)
+        let lhs = reduce(node.lhs, src, vars, visited)
 
         if (lhs.kind === NODE_SCOPE) {
             let rhs_name = token_string(src, node.rhs).substring(1) // skip '.'
             let val = lhs.vars.get(rhs_name)
             if (val) {
-                return reduce(val, src, vars)
+                return reduce(val, src, vars, visited)
             }
             return node_bool(false)
         }
@@ -1357,11 +1404,12 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
             let keys = Array.from(node.vars.keys()).sort()
             for (let name of keys) {
                 let value = node.vars.get(name)!
+                let resolved = reduce(value, src, node.vars)
                 if (!first) {
                     out += ', '
                 }
                 first = false
-                out += `${name} = ${node_display(src, value)}`
+                out += `${name} = ${node_display(src, resolved)}`
             }
             out += '}'
             return out
