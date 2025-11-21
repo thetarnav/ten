@@ -1115,10 +1115,56 @@ const _handle_lhs_rhs = (op: Token_Kind, a: Node, b: Node, src: string, vars: Va
 
         let existing = vars.get(var_name)
         if (existing) {
-            return node_bool(node_equals(existing, b, src))
+            if (existing.kind === NODE_VAR && token_string(src, existing.tok) === var_name) {
+                vars.set(var_name, b)
+                // Fall through to add b -> b if needed
+            } else {
+                return node_bool(node_equals(existing, b, src))
+            }
+        } else {
+            vars.set(var_name, b)
         }
-        vars.set(var_name, b)
+
+        if (b.kind === NODE_VAR) {
+            let b_name = token_string(src, b.tok)
+            if (!vars.has(b_name)) {
+                vars.set(b_name, b)
+            }
+        }
         return node_bool(true)
+    }
+
+    if (a.kind === NODE_VAR && op === TOKEN_NOT_EQ) {
+        if (node_equals(a, b, src)) return node_bool(false)
+
+        if (b.kind === NODE_BINARY) {
+            let is_negation = false
+            // SUB (XNOR): false - a = !a, a - false = !a
+            if (b.op === TOKEN_SUB) {
+                if (b.lhs.kind === NODE_BOOL && b.lhs.value === false && node_equals(a, b.rhs, src)) is_negation = true
+                if (b.rhs.kind === NODE_BOOL && b.rhs.value === false && node_equals(a, b.lhs, src)) is_negation = true
+            }
+            // POW (XOR): true ^ a = !a, a ^ true = !a
+            if (b.op === TOKEN_POW) {
+                if (b.lhs.kind === NODE_BOOL && b.lhs.value === true && node_equals(a, b.rhs, src)) is_negation = true
+                if (b.rhs.kind === NODE_BOOL && b.rhs.value === true && node_equals(a, b.lhs, src)) is_negation = true
+            }
+
+            if (is_negation) return node_bool(true)
+        }
+
+        if (b.kind === NODE_VAR) {
+            let var_name = token_string(src, a.tok)
+            let b_name = token_string(src, b.tok)
+
+            let not_b = node_binary(TOKEN_POW, node_bool(true), b)
+
+            vars.set(var_name, not_b)
+            if (!vars.has(b_name)) {
+                vars.set(b_name, b)
+            }
+            return node_bool(true)
+        }
     }
 
     if (a.kind === NODE_BOOL && b.kind === NODE_SCOPE) {
@@ -1173,7 +1219,7 @@ const _handle_lhs_rhs = (op: Token_Kind, a: Node, b: Node, src: string, vars: Va
     return null
 }
 
-export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited: Set<string> = new Set()): Node => {
+export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited: Set<string> = new Set(), is_nested: boolean = false): Node => {
     switch (node.kind) {
     case NODE_BOOL:
         return node
@@ -1186,7 +1232,7 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         let val = vars.get(name)
         if (val) {
             visited.add(name)
-            let res = reduce(val, src, vars, visited)
+            let res = reduce(val, src, vars, visited, is_nested)
             visited.delete(name)
             return res
         }
@@ -1202,8 +1248,8 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
             let lhs_vars = new Map(vars)
             let rhs_vars = new Map(vars)
 
-            let lhs = reduce(node.lhs, src, lhs_vars, visited)
-            let rhs = reduce(node.rhs, src, rhs_vars, visited)
+            let lhs = reduce(node.lhs, src, lhs_vars, visited, is_nested)
+            let rhs = reduce(node.rhs, src, rhs_vars, visited, is_nested)
 
             // If one side is false, return the other (OR identity)
             if (lhs.kind === NODE_BOOL && !lhs.value) {
@@ -1225,12 +1271,12 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         case TOKEN_MUL:
         case TOKEN_AND: {
             // Special handling for operators that evaluate both sides (like AND/conjunction):
-            let lhs = reduce(node.lhs, src, vars, visited)
-            let rhs = reduce(node.rhs, src, vars, visited)
+            let lhs = reduce(node.lhs, src, vars, visited, is_nested)
+            let rhs = reduce(node.rhs, src, vars, visited, is_nested)
 
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
-            lhs = reduce(node.lhs, src, vars, visited)
+            lhs = reduce(node.lhs, src, vars, visited, is_nested)
 
             // After re-reduction, check for var-bool simplifications
             let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
@@ -1246,8 +1292,8 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         }
         }
 
-        let lhs = reduce(node.lhs, src, vars, visited)
-        let rhs = reduce(node.rhs, src, vars, visited)
+        let lhs = reduce(node.lhs, src, vars, visited, is_nested)
+        let rhs = reduce(node.rhs, src, vars, visited, is_nested)
 
         // Try both directions for var-bool operations
         let result = _handle_lhs_rhs(node.op, lhs, rhs, src, vars)
@@ -1321,13 +1367,13 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
     case NODE_SELECTOR:
         assert(node.rhs.kind === TOKEN_FIELD, "Selector RHS must be Field")
 
-        let lhs = reduce(node.lhs, src, vars, visited)
+        let lhs = reduce(node.lhs, src, vars, visited, is_nested)
 
         if (lhs.kind === NODE_SCOPE) {
             let rhs_name = token_string(src, node.rhs).substring(1) // skip '.'
             let val = lhs.vars.get(rhs_name)
             if (val) {
-                return reduce(val, src, vars, visited)
+                return reduce(val, src, vars, visited, is_nested)
             }
             return node_bool(false)
         }
@@ -1339,7 +1385,7 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map(), visited:
         return node
 
     case NODE_SCOPE:
-        let body = reduce(node.body, src, node.vars)
+        let body = reduce(node.body, src, node.vars, visited, false)
         if (body !== node.body) {
             return node_scope(body, node.vars)
         }
@@ -1404,7 +1450,7 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
             let keys = Array.from(node.vars.keys()).sort()
             for (let name of keys) {
                 let value = node.vars.get(name)!
-                let resolved = reduce(value, src, node.vars)
+                let resolved = reduce(value, src, node.vars, undefined, false)
                 if (!first) {
                     out += ', '
                 }
