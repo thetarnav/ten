@@ -1282,6 +1282,7 @@ export const reduce = (node: Node, src: string, vars: Vars = new Map()): Node =>
             if (val) {
                 return reduce(val, src, vars)
             }
+            return node_bool(false)
         }
 
         if (lhs !== node.lhs) {
