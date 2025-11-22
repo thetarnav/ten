@@ -1444,22 +1444,17 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
     }
 
     case NODE_SCOPE: {
-        if (node.vars.size > 0 && node.body.kind === NODE_BOOL && node.body.value === true) {
-            let out = '{'
-            let first = true
-            let keys = Array.from(node.vars.keys()).sort()
-            for (let name of keys) {
-                let value = node.vars.get(name)!
-                let resolved = reduce(value, src, node.vars, undefined)
-                if (!first) {
-                    out += ', '
-                }
-                first = false
-                out += `${name} = ${node_display(src, resolved)}`
+        if (node.vars.size > 0) {
+            // {VARS}
+            if (node.body.kind === NODE_BOOL && node.body.value === true) {
+                return vars_display(src, node.vars)
             }
-            out += '}'
-            return out
+            // BODY & {VARS}
+            if (node.body.kind !== NODE_BOOL) {
+                return `${node_display(src, node.body)} & ${vars_display(src, node.vars)}`
+            }
         }
+        // BODY
         return node_display(src, node.body)
     }
 
@@ -1468,6 +1463,23 @@ const _node_display = (src: string, node: Node, parent_prec: number, is_right: b
         console.error("Unknown node kind in node_display:", node)
         return ''
     }
+}
+
+export const vars_display = (src: string, vars: Vars): string => {
+    let out = '{'
+    let first = true
+    let keys = Array.from(vars.keys()).sort()
+    for (let name of keys) {
+        let value = vars.get(name)!
+        let resolved = reduce(value, src, vars, undefined)
+        if (!first) {
+            out += ', '
+        }
+        first = false
+        out += `${name} = ${node_display(src, resolved)}`
+    }
+    out += '}'
+    return out
 }
 
 export const result_display = (src: string, node: Node, vars: Vars): string => {
