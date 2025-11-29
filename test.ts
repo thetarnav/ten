@@ -24,7 +24,7 @@ function expect(
 }
 
 function test_tokenizer(input: string, stringified: string) {
-    test.test(input, () => {
+    test.test('`'+input+'`', () => {
 
         let t = ten.tokenizer_make(input)
         let tokens: ten.Token[] = []
@@ -40,7 +40,7 @@ function test_tokenizer(input: string, stringified: string) {
 }
 
 function test_parser(input: string, expected: string) {
-    test.test(input, () => {
+    test.test('`'+input+'`', () => {
 
         let [result, errors] = ten.parse_src(input)
         let result_str = ten.expr_display(input, result, '  ')
@@ -53,21 +53,19 @@ function test_parser(input: string, expected: string) {
 }
 
 function test_reducer(input: string, expected: string) {
-    test.test(input, () => {
+    test.test('`'+input+'`', () => {
 
         let [expr, errors] = ten.parse_src(input)
         if (errors.length !== 0) {
             fail(`Parse errors: ${JSON.stringify(errors)}`)
         }
 
-        let node = ten.node_from_expr(expr)
-        if (node == null) {
-            fail(`Failed to convert expr to node`)
-        }
+        let world = ten.world_make()
 
-        let vars: ten.Vars = new Map()
-        let reduced = ten.reduce(node, input, vars)
-        let result_str = ten.result_display(input, reduced, vars)
+        ten.world_add_expr(world, expr, input)
+        ten.world_reduce(world)
+
+        let result_str = ten.world_display(world)
         expect(result_str === expected, "Reducer result mismatch", expected, result_str)
     })
 }
@@ -499,7 +497,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}x = y${sr}`,
             `{x = y, y = y}`)
         test_reducer(`${sl}x = x${sr}`,
-            `true`)
+            `{x = x}`)
         test_reducer(`${sl}a = true, a = true${sr}`,
             `{a = true}`)
         test_reducer(`${sl}a = true, a = false${sr}`,
@@ -533,7 +531,7 @@ test.describe('reducer', {concurrency: true}, () => {
             `{a = true, b = true}`)
 
         test_reducer(`${sl}false - a = !a, a - false = !a${sr}`,
-            `true`)
+            `{a = a}`)
         test_reducer(`${sl}false - a = a, a - false = a${sr}`,
             `false`)
 
@@ -552,7 +550,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}false | a${sr}`,
             `a`)
         test_reducer(`${sl}a + true${sr}`,
-            `true`)
+            `{a = a}`)
 
         // Variables with AND operations
         test_reducer(`${sl}a * true${sr}`,
@@ -745,7 +743,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}foo = {}, foo.a = false${sr}`,
             `{foo = true}`)
         test_reducer(`${sl}foo = {a = true}, bar = {b = true}, bar.b = foo.a${sr}`,
-            `{bar = {b = true}, foo = {a = true}}`)
+            `{foo = {a = true}, bar = {b = true}}`)
         test_reducer(`${sl}foo = {a = true}, bar = {b = true}, bar.b != foo.a${sr}`,
             `false`)
 
