@@ -5,7 +5,8 @@
     "private": true,
     "scripts": {
         "test": "node --test --test-reporter=dot",
-        "test:watch": "node --watch --test --test-reporter=dot"
+        "test:watch": "node --watch --test --test-reporter=dot",
+        "typecheck": "npx -p typescript tsc"
     },
     "devDependencies": {
         "@types/node": "^24.10.1"

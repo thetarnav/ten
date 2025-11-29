@@ -18,5 +18,10 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Check types
+        run: npm run typecheck
+
       - name: Run Tests
-        run: npm test
+        # Will run tests even if above step failed
+        if: success() || failure()
+        run: npm run test

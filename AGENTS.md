@@ -9,6 +9,7 @@
 ## Build, Test, and Development Commands
 - `npm test`: Run tests.
 - `npm run test:watch`: Re-run tests on file changes.
+- `npm run typecheck`: Report type errors.
 - `./run.ts -i 'true + false'`: Execute a Ten expression from the CLI (also accepts stdin).
 - `node run.ts --help` is not implemented; keep CLI flags minimal and documented in `readme.md`.
 
