@@ -1885,18 +1885,44 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
     case NODE_SCOPE: {
         let vars = world.vars.get(node.id)
         let body = world_get_node_by_id(node.body)!
-        if (vars != null && vars.size > 0 && body.kind !== NODE_SELECTOR) {
-            // {VARS}
-            if (body.kind === NODE_BOOL && body.value === true) {
-                return vars_display(world, node.id, vars, visited)
-            }
-            // BODY & {VARS}
-            if (body.kind !== NODE_BOOL) {
-                return `${_node_display(world, node.body, 0, false, visited)} & ${vars_display(world, node.id, vars, visited)}`
-            }
+        let out = ''
+
+        if (body.kind === NODE_BOOL && body.value === false) {
+            return 'false'
         }
-        // BODY
-        return _node_display(world, node.body, 0, false, visited)
+
+        if (vars != null && vars.size > 0 && body.kind !== NODE_SELECTOR) {
+            let first = true
+            let keys  = Array.from(vars.keys()).sort()
+            let scope = world_get_node_scope(world, node.id)
+            for (let ident of keys) {
+                let selector = world_get_node_selector(world, scope, ident)
+                let value = vars.get(ident)
+                if (!first) {
+                    out += ', '
+                }
+                first = false
+                let lhs = ident_string(ident)!
+                let rhs: string
+                if (value == null || visited.has(selector)) {
+                    rhs = lhs
+                } else {
+                    rhs = _node_display(world, value, 0, false, visited)
+                }
+                out += `${lhs} = ${rhs}`
+            }
+
+            if (body.kind === NODE_BOOL && body.value === true) {
+                return `{${out}}`
+            }
+        } else {
+            return _node_display(world, node.body, 0, false, visited)
+        }
+
+        out += ', '
+        out += _node_display(world, node.body, 0, false, visited)
+
+        return `{${out}}`
     }
 
     default:
