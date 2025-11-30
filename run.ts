@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import * as util    from 'node:util'
 import * as process from 'node:process'

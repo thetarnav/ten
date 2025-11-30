@@ -13,15 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 24
-          cache: npm
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
 
       - name: Check types
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: Run Tests
         # Will run tests even if above step failed
         if: success() || failure()
-        run: npm run test
+        run: bun test ./test.ts
