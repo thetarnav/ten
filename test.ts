@@ -60,12 +60,12 @@ function test_reducer(input: string, expected: string) {
             fail(`Parse errors: ${JSON.stringify(errors)}`)
         }
 
-        let world = ten.world_make()
+        let ctx = ten.context_make()
 
-        ten.world_add_expr(world, expr, input)
-        ten.world_reduce(world)
+        ten.add_expr(ctx, expr, input)
+        ten.reduce(ctx)
 
-        let result_str = ten.world_display(world)
+        let result_str = ten.display(ctx)
         expect(result_str === expected, "Reducer result mismatch", expected, result_str)
     })
 }

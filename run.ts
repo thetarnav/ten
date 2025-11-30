@@ -47,15 +47,11 @@ const main = async () => {
         process.exit(1)
     }
 
-    let node = ten.node_from_expr(expr)
-    if (!node) {
-        console.error('Error: Could not convert expression to node')
-        process.exit(1)
-    }
+    let ctx = ten.context_make()
+    ten.add_expr(ctx, expr, input)
+    ten.reduce(ctx)
 
-    let vars: ten.Vars = new Map()
-    let result = ten.reduce(node, input, vars)
-    console.log(ten.result_display(input, result, vars))
+    console.log(ten.display(ctx))
 }
 
 main().catch(err => {
