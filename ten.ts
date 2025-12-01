@@ -852,7 +852,8 @@ const _parse_expr_atom = (p: Parser): Expr => {
 export const
     NODE_ANY        = 200,
     NODE_NEVER      = 201,
-    NODE_BOOL       = 202,
+    NODE_NEG        = 202,
+    NODE_BOOL       = 203,
     NODE_BINARY     = 204,
     NODE_SELECTOR   = 205,
     NODE_SCOPE      = 206,
@@ -865,6 +866,7 @@ export const
 export const Node_Kind = {
     Any:      NODE_ANY,
     Never:    NODE_NEVER,
+    Neg:      NODE_NEG,
     Bool:     NODE_BOOL,
     Binary:   NODE_BINARY,
     Selector: NODE_SELECTOR,
@@ -877,6 +879,7 @@ export const node_kind_string = (kind: Node_Kind): string => {
     switch (kind) {
     case NODE_ANY:      return "Any"
     case NODE_NEVER:    return "Never"
+    case NODE_NEG:      return "Neg"
     case NODE_BOOL:     return "Bool"
     case NODE_BINARY:   return "Binary"
     case NODE_SELECTOR: return "Selector"
@@ -890,6 +893,7 @@ export const node_kind_string = (kind: Node_Kind): string => {
 export type Node =
     | Node_Any
     | Node_Never
+    | Node_Neg
     | Node_Bool
     | Node_Binary
     | Node_Selector
@@ -906,6 +910,13 @@ export class Node_Never {
     kind = NODE_NEVER as typeof NODE_NEVER
     /* Added to instance: */
     expr = null       as Expr | null
+}
+export class Node_Neg {
+    /* Used to make the key: */
+    kind = NODE_NEG  as typeof NODE_NEG
+    rhs: Node_Id = NODE_ID_NONE
+    /* Added to instance: */
+    expr = null         as Expr | null
 }
 export class Node_Bool {
     /* Used to make the key: */
@@ -1031,6 +1042,11 @@ export const node_bool_encode = (value: boolean): Node_Key => {
     key += (+value) * MAX_ID * MAX_ID * NODE_ENUM_RANGE
     return key as Node_Key
 }
+export const node_neg_encode = (rhs: Node_Id) => {
+    let key = NODE_NEG - NODE_ENUM_START
+    key += rhs * NODE_ENUM_RANGE
+    return key as Node_Key
+}
 export const node_binary_encode = (op: Token_Kind, lhs: Node_Id, rhs: Node_Id): Node_Key => {
     let key = NODE_BINARY - NODE_ENUM_START
     key += (op - TOKEN_ENUM_START) * MAX_ID * MAX_ID * NODE_ENUM_RANGE
@@ -1054,17 +1070,20 @@ export const node_encode = (node: Node): Node_Key => {
     switch (node.kind) {
     case NODE_ANY:      return node_any_encode()
     case NODE_NEVER:    return node_never_encode()
+    case NODE_NEG:      return node_neg_encode(node.rhs)
     case NODE_BOOL:     return node_bool_encode(node.value)
     case NODE_BINARY:   return node_binary_encode(node.op, node.lhs, node.rhs)
     case NODE_SELECTOR: return node_selector_encode(node.lhs, node.rhs)
     case NODE_SCOPE:    return node_scope_encode(node.id)
-    default:            return node_any_encode()
+    default:
+        node satisfies never // exhaustive check
+        return node_any_encode()
     }
 }
 
 export const node_decode = (_key: Node_Key): Node => {
 
-    let kind = (_key % NODE_ENUM_RANGE) + NODE_ENUM_START
+    let kind = ((_key % NODE_ENUM_RANGE) + NODE_ENUM_START) as Node_Kind
     let key = Math.floor(_key / NODE_ENUM_RANGE)
 
     switch (kind) {
@@ -1078,6 +1097,14 @@ export const node_decode = (_key: Node_Key): Node => {
         // after dividing by NODE_ENUM_RANGE, top slot is value * MAX_ID^2
         let top = Math.floor(key / (MAX_ID * MAX_ID))
         node.value = top !== 0
+        return node
+    }
+    case NODE_NEG: {
+        let node = new Node_Neg()
+
+        node.rhs = (key % MAX_ID) as Node_Id
+        key = Math.floor(key / MAX_ID)
+
         return node
     }
     case NODE_BINARY: {
@@ -1117,6 +1144,7 @@ export const node_decode = (_key: Node_Key): Node => {
         return node
     }
     default:
+        kind satisfies never // exhaustive check
         return new Node_Any()
     }
 }
@@ -1203,6 +1231,10 @@ export const get_node_bool = (ctx: Context, value: boolean, expr: Expr | null = 
     let key = node_bool_encode(value)
     return store_node_key(ctx, key, expr)
 }
+export const get_node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
+    let key = node_neg_encode(rhs)
+    return store_node_key(ctx, key, expr)
+}
 export const get_node_binary = (ctx: Context, op: Token_Kind, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
     let key = node_binary_encode(op, lhs, rhs)
     return store_node_key(ctx, key, expr)
@@ -1273,8 +1305,8 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
         case TOKEN_ADD: return get_node_binary(ctx, TOKEN_ADD, lhs, rhs, expr)
         // `-x` -> `false - x` -> `NOT x` (XNOR negation)
         case TOKEN_SUB: return get_node_binary(ctx, TOKEN_SUB, lhs, rhs, expr)
-        // `!x` -> `false - x` -> `NOT x` (XNOR negation)
-        case TOKEN_NEG: return get_node_binary(ctx, TOKEN_SUB, lhs, rhs, expr)
+        // `!x`
+        case TOKEN_NEG: return get_node_neg(ctx, rhs, expr)
         }
 
         return null
@@ -1668,6 +1700,16 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         }
         return node_id
 
+    case NODE_NEG:
+        let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
+        let rhs = get_node_by_id(ctx, rhs_id)!
+        switch (rhs.kind) {
+        case NODE_ANY:   return get_node_never(ctx)
+        case NODE_NEVER: return get_node_any(ctx)
+        case NODE_BOOL:  return get_node_bool(ctx, !rhs.value)
+        default:         return node_id
+        }
+
     case NODE_BINARY: {
         switch (node.op) {
         case TOKEN_ADD:
@@ -1836,6 +1878,10 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
 
     case NODE_BOOL:
         return node.value ? 'true' : 'false'
+
+    case NODE_NEG:
+        let rhs = _node_display(ctx, world, node.rhs, 0, true, visited)
+        return '!'+rhs
 
     case NODE_BINARY: {
         let prec = token_kind_precedence(node.op)
