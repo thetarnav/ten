@@ -2,14 +2,15 @@
 
 ## Project Structure & Module Organization
 - `ten.ts`: Core language implementation (tokenizer, parser, reducer, display helpers).
-- `run.ts`: CLI entry point; parses `-i/--input` or stdin and prints evaluation results (Bun shebang).
-- `test.ts`: Test suite (node:test) executed via Bun.
-- Root configs: `package.json` (scripts), `tsconfig.json` (TypeScript/Bun), `readme.md` (quick usage). Keep sources in the root unless adding clear subfolders (e.g., `examples/`, `bench/`, `docs/`).
+- `run.ts`: CLI entry point; parses `-i/--input` or stdin and prints evaluation results (Node shebang).
+- `test.ts`: Test suite (node:test) executed via Node.
+- Root configs: `package.json` (scripts), `tsconfig.json` (TypeScript), `readme.md` (quick usage). Keep sources in the root unless adding clear subfolders (e.g., `examples/`, `bench/`, `docs/`).
 
 ## Build, Test, and Development Commands
-- `bun install`: Install dependencies (requires Bun >= 1.3 installed system-wide).
-- `bun run test`: Run tests.
-- `bun run typecheck`: Report type errors.
+- `pnpm install`: Install dependencies (requires pnpm installed system-wide).
+- `pnpm test`: Run tests.
+- `pnpm run test:watch`: Re-run tests on file changes.
+- `pnpm run typecheck`: Report type errors.
 - `./run.ts -i 'true + false'`: Execute a Ten expression from the CLI (also accepts stdin).
 - CLI help flag remains unimplemented; keep CLI flags minimal and document in `readme.md`.
 

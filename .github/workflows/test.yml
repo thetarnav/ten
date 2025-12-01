@@ -13,17 +13,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
         with:
-          bun-version: latest
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: bun install
+        run: pnpm install
 
       - name: Check types
-        run: bun run typecheck
+        run: pnpm run typecheck
 
       - name: Run Tests
         # Will run tests even if above step failed
         if: success() || failure()
-        run: bun test ./test.ts
+        run: pnpm test
