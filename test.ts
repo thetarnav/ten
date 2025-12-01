@@ -590,7 +590,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}x = y${sr}`,
             `{x = y, y = y}`)
         test_reducer(`${sl}x = x${sr}`,
-            `()`)
+            `{x = x}`)
         test_reducer(`${sl}a = true, a = true${sr}`,
             `{a = true}`)
         test_reducer(`${sl}a = true, a = false${sr}`,
