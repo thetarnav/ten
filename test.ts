@@ -408,23 +408,23 @@ test.describe('reducer', {concurrency: true}, () => {
 
     // Equality and inequality with any and never
     test_reducer(`() = ()`,
-        `true`)
+        `()`)
     test_reducer(`!() = !()`,
-        `true`)
+        `()`)
     test_reducer(`() = !()`,
-        `false`)
+        `!()`)
     test_reducer(`{} = {}`,
-        `true`)
+        `()`)
     test_reducer(`!{} = !{}`,
-        `true`)
+        `()`)
     test_reducer(`{} = !{}`,
-        `false`)
+        `!()`)
     test_reducer(`{} = ()`,
-        `true`)
+        `()`)
     test_reducer(`!{} = !()`,
-        `true`)
+        `()`)
     test_reducer(`{} = !()`,
-        `false`)
+        `!()`)
 
     // Boolean | arithmetic operations on any and never — fail for now
     test_reducer(`-()`,
@@ -710,7 +710,7 @@ test.describe('reducer', {concurrency: true}, () => {
 
             // Operations with variable constraints
             test_reducer(`${sl}(a = b)${and}(b = false)${and}(a + true)${sr}`,
-                `{a = false, b = false}`)
+                `{a = false, b = false, true}`)
             test_reducer(`${sl}(a = b)${and}(b = true)${and}(a${and}false)${sr}`,
                 `!()`)
             test_reducer(`${sl}(a = b)${and}(b = false)${and}(a ^ true)${sr}`,
@@ -830,7 +830,11 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}foo = {}, foo.a = true${sr}`,
             `!()`)
         test_reducer(`${sl}foo = {}, foo.a = false${sr}`,
-            `{foo = true}`)
+            `!()`)
+        test_reducer(`${sl}foo = {}, foo.a = ()${sr}`,
+            `!()`)
+        test_reducer(`${sl}foo = {}, foo.a = !()${sr}`,
+            `{foo = ()}`)
         test_reducer(`${sl}foo = {a = true}, bar = {b = true}, bar.b = foo.a${sr}`,
             `{foo = {a = true}, bar = {b = true}}`)
         test_reducer(`${sl}foo = {a = true}, bar = {b = true}, bar.b != foo.a${sr}`,
