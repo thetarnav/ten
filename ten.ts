@@ -1620,6 +1620,54 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
     case NODE_BOOL:
         return node_id
 
+    case NODE_SELECTOR:
+        if (visited.has(node_id)) return node_id
+
+        // Return the variable's value if known, otherwise keep as variable
+
+        let lhs = get_node_by_id(ctx, node.lhs)!
+        let selector = node_id
+
+        if (lhs.kind === NODE_SELECTOR) {
+            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
+            lhs = get_node_by_id(ctx, lhs_id)!
+
+            if (lhs.kind === NODE_SCOPE) {
+                selector = get_node_selector(ctx, lhs_id, node.rhs)
+            } else if (lhs.kind !== NODE_SELECTOR) {
+                return get_node_bool(ctx, false)
+            }
+        }
+
+        if (lhs.kind === NODE_SCOPE) {
+            if (!selector_exists(ctx, world, selector)) {
+                // Variable not defined in this scope
+                return get_node_bool(ctx, false)
+            }
+
+            let val = selector_get_var(ctx, world, selector)
+            if (val != null) {
+                visited.add(selector)
+                let res = node_reduce(val, world, scope_id, visited)
+                visited.delete(selector)
+                return res
+            }
+        }
+
+        return selector
+
+    case NODE_SCOPE:
+        node.body = node_reduce(node.body, world, node.id, visited)
+        let vars = world.vars.get(node.id)
+        if (vars == null || vars.size === 0) {
+            return node.body
+        }
+        for (let [ident, val_id] of vars) if (val_id != null) {
+            let reduced = node_reduce(val_id, world, node.id, visited)
+            vars.set(ident, reduced)
+        }
+        return node_id
+
     case NODE_BINARY: {
         switch (node.op) {
         case TOKEN_ADD:
@@ -1764,55 +1812,8 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         return get_node_binary(ctx, node.op, lhs, rhs)
     }
 
-    case NODE_SELECTOR:
-        if (visited.has(node_id)) return node_id
-
-        // Return the variable's value if known, otherwise keep as variable
-
-        let lhs = get_node_by_id(ctx, node.lhs)!
-        let selector = node_id
-
-        if (lhs.kind === NODE_SELECTOR) {
-            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
-            lhs = get_node_by_id(ctx, lhs_id)!
-
-            if (lhs.kind === NODE_SCOPE) {
-                selector = get_node_selector(ctx, lhs_id, node.rhs)
-            } else if (lhs.kind !== NODE_SELECTOR) {
-                return get_node_bool(ctx, false)
-            }
-        }
-
-        if (lhs.kind === NODE_SCOPE) {
-            if (!selector_exists(ctx, world, selector)) {
-                // Variable not defined in this scope
-                return get_node_bool(ctx, false)
-            }
-
-            let val = selector_get_var(ctx, world, selector)
-            if (val != null) {
-                visited.add(selector)
-                let res = node_reduce(val, world, scope_id, visited)
-                visited.delete(selector)
-                return res
-            }
-        }
-
-        return selector
-
-    case NODE_SCOPE:
-        node.body = node_reduce(node.body, world, node.id, visited)
-        let vars = world.vars.get(node.id)
-        if (vars == null || vars.size === 0) {
-            return node.body
-        }
-        for (let [ident, val_id] of vars) if (val_id != null) {
-            let reduced = node_reduce(val_id, world, node.id, visited)
-            vars.set(ident, reduced)
-        }
-        return node_id
-
     default:
+        node satisfies never // exhaustive check
         return node_id
     }
 }
