@@ -1227,6 +1227,9 @@ export const get_node_never = (ctx: Context, expr: Expr | null = null): Node_Id 
     let key = node_never_encode()
     return store_node_key(ctx, key, expr)
 }
+export const get_node_any_or_never = (ctx: Context, condition: boolean, expr: Expr | null = null): Node_Id => {
+    return condition ? get_node_any(ctx) : get_node_never(ctx)
+}
 export const get_node_bool = (ctx: Context, value: boolean, expr: Expr | null = null): Node_Id => {
     let key = node_bool_encode(value)
     return store_node_key(ctx, key, expr)
@@ -1489,153 +1492,56 @@ const selector_set_var = (
     vars.set(selector.rhs, value_id)
 }
 
-const _apply_constraint = (
-    selector: Node_Id,
-    expected: boolean,
-    ctx:      Context,
-    world:    World,
-): Node_Id => {
-
-    let val_id = selector_get_var(ctx, world, selector)
-    if (val_id != null) {
-        let val = get_node_by_id(ctx, val_id)!
-        if (val.kind === NODE_BOOL && val.value !== expected) {
-            return get_node_never(ctx)
-        }
-    }
-
-    selector_set_var(ctx, world, selector, get_node_bool(ctx, expected))
-    return get_node_any(ctx)
-}
-
-// Helper to handle binary operations with one var and one bool symmetrically
-const _handle_lhs_rhs = (ctx: Context, world: World, op: Token_Kind, a_id: Node_Id, b_id: Node_Id): Node_Id | null => {
-
-    let a = get_node_by_id(ctx, a_id)!
-    let b = get_node_by_id(ctx, b_id)!
-
-    if (a.kind === NODE_SELECTOR && op === TOKEN_EQ) {
-        if (node_equals(ctx, world, a_id, b_id)) return get_node_any(ctx)
-
-        // Check for b = !a (contradiction)
-        if (b.kind === NODE_BINARY) {
-            let lhs = get_node_by_id(ctx, b.lhs)!
-            let rhs = get_node_by_id(ctx, b.rhs)!
-            let is_negation = false
-            // SUB (XNOR): false - a = !a, a - false = !a
-            if (b.op === TOKEN_SUB) {
-                if (lhs.kind === NODE_BOOL && lhs.value === false && node_equals(ctx, world, a_id, b.rhs)) is_negation = true
-                if (rhs.kind === NODE_BOOL && rhs.value === false && node_equals(ctx, world, a_id, b.lhs)) is_negation = true
-            }
-            // POW (XOR): true ^ a = !a, a ^ true = !a
-            if (b.op === TOKEN_POW) {
-                if (lhs.kind === NODE_BOOL && lhs.value === true && node_equals(ctx, world, a_id, b.rhs)) is_negation = true
-                if (rhs.kind === NODE_BOOL && rhs.value === true && node_equals(ctx, world, a_id, b.lhs)) is_negation = true
-            }
-
-            if (is_negation) return get_node_never(ctx)
-        }
-
-        let val_id = selector_get_var(ctx, world, a_id)
-        if (val_id != null && !node_equals(ctx, world, a_id, val_id)) {
-            return node_equals(ctx, world, val_id, b_id) ? get_node_any(ctx) : get_node_never(ctx)
-        }
-
-        selector_set_var(ctx, world, a_id, b_id)
-
-        // b -> b
-        if (b.kind === NODE_SELECTOR && !selector_has_val(ctx, world, b_id)) {
-            selector_set_var(ctx, world, b_id, b_id)
-        }
-
-        return get_node_any(ctx)
-    }
-
-    if (a.kind === NODE_SELECTOR && op === TOKEN_NOT_EQ) {
-        if (node_equals(ctx, world, a_id, b_id)) return get_node_never(ctx)
-
-        if (b.kind === NODE_BINARY) {
-            let lhs = get_node_by_id(ctx, b.lhs)!
-            let rhs = get_node_by_id(ctx, b.rhs)!
-            let is_negation = false
-            // SUB (XNOR): false - a = !a, a - false = !a
-            if (b.op === TOKEN_SUB) {
-                if (lhs.kind === NODE_BOOL && lhs.value === false && node_equals(ctx, world, a_id, b.rhs)) is_negation = true
-                if (rhs.kind === NODE_BOOL && rhs.value === false && node_equals(ctx, world, a_id, b.lhs)) is_negation = true
-            }
-            // POW (XOR): true ^ a = !a, a ^ true = !a
-            if (b.op === TOKEN_POW) {
-                if (lhs.kind === NODE_BOOL && lhs.value === true && node_equals(ctx, world, a_id, b.rhs)) is_negation = true
-                if (rhs.kind === NODE_BOOL && rhs.value === true && node_equals(ctx, world, a_id, b.lhs)) is_negation = true
-            }
-
-            if (is_negation) return get_node_any(ctx)
-        }
-
-        if (b.kind === NODE_SELECTOR) {
-            let not_b = get_node_binary(ctx, TOKEN_POW, get_node_bool(ctx, true), b_id)
-            selector_set_var(ctx, world, a_id, not_b)
-
-            if (!selector_has_val(ctx, world, b_id)) {
-                selector_set_var(ctx, world, b_id, b_id)
-            }
-
-            return get_node_any(ctx)
-        }
-    }
-
-    if (a.kind === NODE_BOOL && b.kind === NODE_SCOPE) {
-        return get_node_never(ctx)
-    }
-
-    if (a.kind === NODE_SELECTOR && b.kind === NODE_BOOL) {
-        switch (op) {
-        case TOKEN_EQ:
-            // a = true -> a must be true
-            return _apply_constraint(a_id, b.value, ctx, world)
-
-        case TOKEN_NOT_EQ:
-            // a != true -> a must be false
-            return _apply_constraint(a_id, !b.value, ctx, world)
-
-        case TOKEN_ADD:
-        case TOKEN_OR:
-            // a + false = a (OR identity)
-            if (b.value === false) return a_id
-            // a + true = true (OR absorption)
-            return get_node_bool(ctx, true)
-
-        case TOKEN_MUL:
-        case TOKEN_AND:
-            // a * true = a (AND identity)
-            if (b.value === true) return a_id
-            // a * false = false (AND absorption)
-            return get_node_bool(ctx, false)
-
-        case TOKEN_SUB:
-            // a - b = a XNOR b, keep as operation
-            return get_node_binary(ctx, op, a_id, b_id)
-
-        case TOKEN_POW:
-            // a ^ false = a (XOR identity)
-            if (b.value === false) return a_id
-            // a ^ true = NOT a, keep as operation
-            return get_node_binary(ctx, op, a_id, b_id)
-        }
-    }
-
-    if (a.kind === NODE_SELECTOR && b.kind === NODE_SCOPE && op === TOKEN_EQ) {
-        selector_set_var(ctx, world, a_id, b_id)
-        return get_node_bool(ctx, true)
-    }
-
-    return null
-}
-
 export const reduce = (ctx: Context) => {
     for (let world of ctx.worlds) {
         let scope_id = get_node_scope(ctx, world.scope)
         node_reduce(scope_id, world, world.scope)
+    }
+}
+
+const bool_binary_reduce = (op: Token_Kind, lhs_id: Node_Id, rhs_id: Node_Id, world: World, scope_id: Scope_Id, visited: Set<Node_Id> = new Set()): Node_Id | null => {
+    switch (op) {
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+    case TOKEN_MUL:
+    case TOKEN_POW:
+        break
+    default:
+        return null
+    }
+
+    let ctx = world.ctx
+
+    lhs_id = node_reduce(lhs_id, world, scope_id, visited)
+    rhs_id = node_reduce(rhs_id, world, scope_id, visited)
+
+    let lhs = get_node_by_id(ctx, lhs_id)!
+    let rhs = get_node_by_id(ctx, rhs_id)!
+
+    // * Require both sides to be bools for now
+    // TODO: for vars it should split worlds {x: bool, res = true} | {res = !()}
+    if (lhs.kind !== NODE_BOOL) {
+        if (lhs.kind === NODE_SELECTOR) {
+            return null // Cannot resolve now
+        }
+        return get_node_never(ctx) // Boolean operation on non-boolean
+    }
+    if (rhs.kind !== NODE_BOOL) {
+        if (rhs.kind === NODE_SELECTOR) {
+            return null // Cannot resolve now
+        }
+        return get_node_never(ctx) // Boolean operation on non-boolean
+    }
+
+    switch (op) {
+    // a + b
+    case TOKEN_ADD: return get_node_bool(ctx, lhs.value || rhs.value)
+    // a * b
+    case TOKEN_MUL: return get_node_bool(ctx, lhs.value && rhs.value)
+    // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
+    case TOKEN_SUB: return get_node_bool(ctx, lhs.value === rhs.value)
+    // Pow is XOR
+    case TOKEN_POW: return get_node_bool(ctx, lhs.value !== rhs.value)
     }
 }
 
@@ -1667,14 +1573,14 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             if (lhs.kind === NODE_SCOPE) {
                 selector = get_node_selector(ctx, lhs_id, node.rhs)
             } else if (lhs.kind !== NODE_SELECTOR) {
-                return get_node_bool(ctx, false)
+                return get_node_never(ctx)
             }
         }
 
         if (lhs.kind === NODE_SCOPE) {
             if (!selector_exists(ctx, world, selector)) {
                 // Variable not defined in this scope
-                return get_node_bool(ctx, false)
+                return get_node_never(ctx)
             }
 
             let val = selector_get_var(ctx, world, selector)
@@ -1707,12 +1613,69 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         case NODE_ANY:   return get_node_never(ctx)
         case NODE_NEVER: return get_node_any(ctx)
         case NODE_BOOL:  return get_node_bool(ctx, !rhs.value)
-        default:         return node_id
+        default:         return get_node_neg(ctx, rhs_id)
         }
 
     case NODE_BINARY: {
+
+        let res: Node_Id | null = null
+
+        res = bool_binary_reduce(node.op, node.lhs, node.rhs, world, scope_id, visited)
+        if (res != null) return res
+
+        /* Equality */
         switch (node.op) {
-        case TOKEN_ADD:
+        case TOKEN_EQ: {
+            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
+            let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
+
+            if (lhs_id === rhs_id) return get_node_any(ctx)
+
+            let lhs = get_node_by_id(ctx, lhs_id)!
+            let rhs = get_node_by_id(ctx, rhs_id)!
+
+            if (lhs.kind === NODE_SELECTOR) {
+                let val_id = selector_get_var(ctx, world, lhs_id)
+                if (val_id != null) {
+                    // return get_node_any_or_never(ctx, node_equals(ctx, world, rhs_id, val_id))
+                    return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+                }
+
+                selector_set_var(ctx, world, lhs_id, rhs_id)
+                return get_node_any(ctx)
+            }
+            if (rhs.kind === NODE_SELECTOR) {
+                let val_id = selector_get_var(ctx, world, rhs_id)
+                if (val_id != null) {
+                    // return get_node_any_or_never(ctx, node_equals(ctx, world, lhs_id, val_id))
+                    return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+                }
+
+                selector_set_var(ctx, world, rhs_id, lhs_id)
+                return get_node_any(ctx)
+            }
+
+            return get_node_any_or_never(ctx, node_equals(ctx, world, lhs_id, rhs_id))
+        }
+        case TOKEN_NOT_EQ: {
+            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
+            let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
+
+            if (lhs_id === rhs_id) return get_node_never(ctx)
+
+            let lhs = get_node_by_id(ctx, lhs_id)!
+            let rhs = get_node_by_id(ctx, rhs_id)!
+
+            if (lhs.kind === NODE_SELECTOR || rhs.kind === NODE_SELECTOR) {
+                return get_node_binary(ctx, TOKEN_NOT_EQ, lhs_id, rhs_id)
+            }
+
+            return get_node_any_or_never(ctx, !node_equals(ctx, world, lhs_id, rhs_id))
+        }
+        }
+
+        /* Logical */
+        switch (node.op) {
         case TOKEN_OR: {
             // For OR/disjunction operators, each side needs its own variable scope
             // since they represent alternative realities
@@ -1744,7 +1707,6 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             return get_node_binary(ctx, node.op, lhs_id, rhs_id)
         }
         case TOKEN_COMMA:
-        case TOKEN_MUL:
         case TOKEN_AND: {
             // Special handling for operators that evaluate both sides (like AND/conjunction):
             let lhs = node_reduce(node.lhs, world, scope_id, visited)
@@ -1753,10 +1715,6 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
             lhs = node_reduce(node.lhs, world, scope_id, visited)
-            // After re-reduction, check for var-bool simplifications
-            let result = _handle_lhs_rhs(ctx, world, node.op, lhs, rhs)
-                      || _handle_lhs_rhs(ctx, world, node.op, rhs, lhs)
-            if (result != null) return result
 
             // If both sides are booleans, AND them
             let lhs_node = get_node_by_id(ctx, lhs)!
@@ -1775,83 +1733,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         }
         }
 
-        let lhs = node_reduce(node.lhs, world, scope_id, visited)
-        let rhs = node_reduce(node.rhs, world, scope_id, visited)
-
-        // Try both directions for var-bool operations
-        let result = _handle_lhs_rhs(ctx, world, node.op, lhs, rhs)
-                  || _handle_lhs_rhs(ctx, world, node.op, rhs, lhs)
-        if (result != null) return result
-
-        let lhs_node = get_node_by_id(ctx, lhs)!
-        let rhs_node = get_node_by_id(ctx, rhs)!
-
-        if (node.op === TOKEN_EQ) {
-            if (node_equals(ctx, world, lhs, rhs)) return get_node_any(ctx)
-        }
-        if (node.op === TOKEN_NOT_EQ) {
-            if (node_equals(ctx, world, lhs, rhs)) return get_node_never(ctx)
-        }
-
-        // Handle var-var operations
-        if (lhs_node.kind === NODE_SELECTOR &&
-            rhs_node.kind === NODE_SELECTOR
-        ) {
-            let lhs_val = selector_get_var(ctx, world, lhs)
-            let rhs_val = selector_get_var(ctx, world, rhs)
-
-            switch (node.op) {
-            case TOKEN_NOT_EQ:
-                // a != b -> variables must have different values
-                if (lhs === rhs) return get_node_never(ctx)
-
-                if (lhs_val != null && rhs_val != null) {
-                    return node_equals(ctx, world, lhs_val, rhs_val) ? get_node_never(ctx) : get_node_any(ctx)
-                }
-                // If only one is known, constraint can be satisfied
-                return get_node_any(ctx)
-            }
-        }
-
-        if (node.op === TOKEN_SUB) {
-            if (lhs_node.kind === NODE_BOOL && !lhs_node.value) {
-                if (rhs_node.kind === NODE_ANY) return get_node_never(ctx)
-                if (rhs_node.kind === NODE_NEVER) return get_node_any(ctx)
-            }
-        }
-
-        // Boolean operations (both sides are concrete booleans)
-        if (lhs_node.kind === NODE_BOOL &&
-            rhs_node.kind === NODE_BOOL
-        ) {
-            switch (node.op) {
-            // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
-            case TOKEN_SUB:    return get_node_bool(ctx, lhs_node.value === rhs_node.value)
-            // Pow is XOR
-            case TOKEN_POW:    return get_node_bool(ctx, lhs_node.value !== rhs_node.value)
-            // Eq is equality
-            case TOKEN_EQ:     return lhs_node.value === rhs_node.value ? get_node_any(ctx) : get_node_never(ctx)
-            // Not_Eq is inequality
-            case TOKEN_NOT_EQ: return lhs_node.value !== rhs_node.value ? get_node_any(ctx) : get_node_never(ctx)
-            }
-        }
-
-        if (lhs_node.kind === NODE_SCOPE &&
-            rhs_node.kind === NODE_SCOPE
-        ) {
-            switch (node.op) {
-            // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
-            case TOKEN_SUB:    return get_node_bool(ctx, node_equals(ctx, world, lhs, rhs))
-            // Pow is XOR
-            case TOKEN_POW:    return get_node_bool(ctx, !node_equals(ctx, world, lhs, rhs))
-            // Eq is equality
-            case TOKEN_EQ:     return node_equals(ctx, world, lhs, rhs) ? get_node_any(ctx) : get_node_never(ctx)
-            // Not_Eq is inequality
-            case TOKEN_NOT_EQ: return !node_equals(ctx, world, lhs, rhs) ? get_node_any(ctx) : get_node_never(ctx)
-            }
-        }
-
-        return get_node_binary(ctx, node.op, lhs, rhs)
+        return node_id
     }
 
     default:
