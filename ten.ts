@@ -1613,6 +1613,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         case NODE_ANY:   return get_node_never(ctx)
         case NODE_NEVER: return get_node_any(ctx)
         case NODE_BOOL:  return get_node_bool(ctx, !rhs.value)
+        case NODE_NEG:   return rhs.rhs
         default:         return get_node_neg(ctx, rhs_id)
         }
 
@@ -1700,6 +1701,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             if (lhs.kind === NODE_ANY) return get_node_any(ctx)
             if (rhs.kind === NODE_ANY) return get_node_any(ctx)
 
+            // true | true  ->  true
             if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL) {
                 if (lhs.value === rhs.value) return get_node_bool(ctx, lhs.value)
             }
@@ -1724,6 +1726,9 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             }
             if (lhs_node.kind === NODE_ANY) return rhs
             if (rhs_node.kind === NODE_ANY) return lhs
+
+            // true & false  ->  !()
+            // true & true   ->  true
             if (lhs_node.kind === NODE_BOOL && rhs_node.kind === NODE_BOOL) {
                 if (lhs_node.value === rhs_node.value) return get_node_bool(ctx, lhs_node.value)
                 return get_node_never(ctx)
@@ -1823,7 +1828,21 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
             return 'false'
         }
 
-        if (vars != null && vars.size > 0 && body.kind !== NODE_SELECTOR) {
+        // ???? not sure
+        // {a = true, b} should still be a scope
+        // should scopes even "return" anyting?
+        if (body.kind === NODE_SELECTOR) {
+            if (!selector_exists(ctx, world, node.body)) {
+                return '!()'
+            }
+            let val = selector_get_var(ctx, world, node.body)
+            if (val != null) {
+                return _node_display(ctx, world, val, 0, false, visited)
+            }
+            return '()'
+        }
+
+        if (vars != null && vars.size > 0) {
             let first = true
             let keys_regular: Ident_Id[] = []
             let keys_scopes: Ident_Id[] = []
@@ -1855,7 +1874,7 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
                 out += `${lhs} = ${rhs}`
             }
 
-            if ((body.kind === NODE_BOOL && body.value === true) || body.kind === NODE_ANY) {
+            if (body.kind === NODE_ANY) {
                 return `{${out}}`
             }
         } else {

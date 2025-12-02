@@ -718,7 +718,7 @@ test.describe('reducer', {concurrency: true}, () => {
             test_reducer(`${sl}(a = b)${and}(b = true)${and}(a${and}false)${sr}`,
                 `!()`)
             test_reducer(`${sl}(a = b)${and}(b = false)${and}(a ^ true)${sr}`,
-                `{a = false, b = false}`)
+                `{a = false, b = false, true}`)
 
             // Multiple constraints on same variable
             test_reducer(`${sl}(a = true)${and}(a = true)${and}(a = true)${sr}`,
@@ -736,15 +736,15 @@ test.describe('reducer', {concurrency: true}, () => {
             test_reducer(`${sl}(a${and}b)${and}(a = true)${and}(b = false)${sr}`,
                 `!()`)
             test_reducer(`${sl}(a${and}b)${and}(a = true)${and}(b = true)${sr}`,
-                `{a = true, b = true}`)
+                `{a = true, b = true, true}`)
 
             // Variable xor
             test_reducer(`${sl}(a ^ b)${and}(a = false)${and}(b = false)${sr}`,
                 `false`)
             test_reducer(`${sl}(a ^ b)${and}(a = false)${and}(b = true)${sr}`,
-                `{a = false, b = true}`)
+                `{a = false, b = true, true}`)
             test_reducer(`${sl}(a ^ b)${and}(a = true)${and}(b = false)${sr}`,
-                `{a = true, b = false}`)
+                `{a = true, b = false, true}`)
             test_reducer(`${sl}(a ^ b)${and}(a = true)${and}(b = true)${sr}`,
                 `false`)
 
@@ -827,7 +827,7 @@ test.describe('reducer', {concurrency: true}, () => {
             `{a = false, b = false, foo = {a = true}}`)
 
         test_reducer(`${sl}foo = {a = true, b}${sr}`,
-            `{foo = {a = true, b = b, true, b}}`)
+            `{foo = ()}`)
 
         test_reducer(`${sl}foo = {a = true}, b = foo.a${sr}`,
             `{b = true, foo = {a = true}}`)
