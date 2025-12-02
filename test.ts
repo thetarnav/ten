@@ -514,9 +514,9 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}true | true${sr}`,
             `true`)
         test_reducer(`${sl}false | a${sr}`,
-            `false | a`)
+            `{a = a, false | a}`)
         test_reducer(`${sl}true | a${sr}`,
-            `true | a`)
+            `{a = a, true | a}`)
 
         // Logical AND (&)
         test_reducer(`${sl}true & false${sr}`,
@@ -526,9 +526,9 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}false & false${sr}`,
             `false`)
         test_reducer(`${sl}false & a${sr}`,
-            `false & a`)
+            `{a = a, false & a}`)
         test_reducer(`${sl}true & a${sr}`,
-            `true & a`)
+            `{a = a, true & a}`)
 
         // Boolean XOR (^)
         test_reducer(`${sl}true ^ false${sr}`,
@@ -600,6 +600,9 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}a = true, b = a - false${sr}`,
             `{a = true, b = false}`)
 
+        test_reducer(`${sl}!a${sr}`,
+            `{a = a, !a}`)
+
         // Variables with != operator
         test_reducer(`${sl}a != true${sr}`,
             `{a = a, a != true}`)
@@ -610,7 +613,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}a != true, a = true${sr}`,
             `!()`)
         test_reducer(`${sl}a != b${sr}`,
-            `{a = b ^ true, b = b}`)
+            `{a = a, b = b, a != b}`)
         test_reducer(`${sl}a != b, a = true, b = false${sr}`,
             `{a = true, b = false}`)
         test_reducer(`${sl}a = true, b = true, a != b${sr}`,
