@@ -643,9 +643,9 @@ test.describe('reducer', {concurrency: true}, () => {
 
         // Variables with OR operations
         test_reducer(`${sl}a + false${sr}`,
-            `a + false`)
+            `{a = a, a + false}`)
         test_reducer(`${sl}a + true${sr}`,
-            `a + true`)
+            `{a = a, a + true}`)
 
         // Variables with AND operations
         test_reducer(`${sl}a * true${sr}`,
@@ -655,7 +655,7 @@ test.describe('reducer', {concurrency: true}, () => {
 
         // Variables with XOR operations
         test_reducer(`${sl}a ^ false${sr}`,
-            `a ^ false`)
+            `{a = a, a ^ false}`)
 
         for (let and of [' & ', ', ']) {
             // Nested variable operations with constraint propagation
@@ -730,7 +730,7 @@ test.describe('reducer', {concurrency: true}, () => {
 
             // Variable conjunctions
             test_reducer(`${sl}(a${and}b)${and}(a = false)${and}(b = false)${sr}`,
-                `!()`)
+                `{a = false, b = false, false}`)
             test_reducer(`${sl}(a${and}b)${and}(a = false)${and}(b = true)${sr}`,
                 `!()`)
             test_reducer(`${sl}(a${and}b)${and}(a = true)${and}(b = false)${sr}`,
@@ -740,13 +740,13 @@ test.describe('reducer', {concurrency: true}, () => {
 
             // Variable xor
             test_reducer(`${sl}(a ^ b)${and}(a = false)${and}(b = false)${sr}`,
-                `false`)
+                `{a = false, b = false, false}`)
             test_reducer(`${sl}(a ^ b)${and}(a = false)${and}(b = true)${sr}`,
                 `{a = false, b = true, true}`)
             test_reducer(`${sl}(a ^ b)${and}(a = true)${and}(b = false)${sr}`,
                 `{a = true, b = false, true}`)
             test_reducer(`${sl}(a ^ b)${and}(a = true)${and}(b = true)${sr}`,
-                `false`)
+                `{a = true, b = true, false}`)
 
             // Complex operations with variables
             test_reducer(`${sl}(a = b)${and}(b != c)${and}(c = true)${and}(a = false)${sr}`,
@@ -755,8 +755,8 @@ test.describe('reducer', {concurrency: true}, () => {
                 `!()`)
             test_reducer(`${sl}(a = b)${and}(b != c)${and}(c = false)${and}(c = a ^ true)${sr}`,
                 `{a = true, b = true, c = false}`)
-            test_reducer(`${sl}(a = a${and}b, b = false)${and}(a = true)${sr}`,
-                `false`)
+            test_reducer(`${sl}((a = a)${and}b${and}(b = false))${and}(a = true)${sr}`,
+                `{a = true, b = false, false}`)
             test_reducer(`${sl}(a = b ^ c)${and}(a = true)${and}(c = false)${and}(b = true)${sr}`,
                 `{a = true, b = true, c = false}`)
             test_reducer(`${sl}(a = b ^ c)${and}(a = true)${and}(c = false)${and}(b = false)${sr}`,

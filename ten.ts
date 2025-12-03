@@ -1630,7 +1630,12 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
+            // a = a  ->  ()
             if (lhs_id === rhs_id) return get_node_any(ctx)
+
+            // a = !a  ->  !()
+            if (lhs_id === get_node_neg(ctx, rhs_id)) return get_node_never(ctx)
+            if (rhs_id === get_node_neg(ctx, lhs_id)) return get_node_never(ctx)
 
             let lhs = get_node_by_id(ctx, lhs_id)!
             let rhs = get_node_by_id(ctx, rhs_id)!
@@ -1822,10 +1827,6 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
 
         if (body.kind === NODE_NEVER) {
             return '!()'
-        }
-
-        if (body.kind === NODE_BOOL && body.value === false) {
-            return 'false'
         }
 
         // ???? not sure
