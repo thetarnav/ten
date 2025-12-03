@@ -1631,11 +1631,11 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
             // a = a  ->  ()
-            if (lhs_id === rhs_id) return get_node_any(ctx)
+            if (node_equals(ctx, world, lhs_id, rhs_id)) return get_node_any(ctx)
 
             // a = !a  ->  !()
-            if (lhs_id === get_node_neg(ctx, rhs_id)) return get_node_never(ctx)
-            if (rhs_id === get_node_neg(ctx, lhs_id)) return get_node_never(ctx)
+            if (node_equals(ctx, world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_never(ctx)
+            if (node_equals(ctx, world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_never(ctx)
 
             let lhs = get_node_by_id(ctx, lhs_id)!
             let rhs = get_node_by_id(ctx, rhs_id)!
@@ -1661,22 +1661,28 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
                 return get_node_any(ctx)
             }
 
-            return get_node_any_or_never(ctx, node_equals(ctx, world, lhs_id, rhs_id))
+            return get_node_never(ctx)
         }
         case TOKEN_NOT_EQ: {
             let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
-            if (lhs_id === rhs_id) return get_node_never(ctx)
+            // a != a  ->  !()
+            if (node_equals(ctx, world, lhs_id, rhs_id)) return get_node_never(ctx)
+
+            // a != !a  ->  ()
+            if (node_equals(ctx, world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_any(ctx)
+            if (node_equals(ctx, world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_any(ctx)
 
             let lhs = get_node_by_id(ctx, lhs_id)!
             let rhs = get_node_by_id(ctx, rhs_id)!
 
+            // Ignore unresolved selectors — we don't know yet
             if (lhs.kind === NODE_SELECTOR || rhs.kind === NODE_SELECTOR) {
                 return get_node_binary(ctx, TOKEN_NOT_EQ, lhs_id, rhs_id)
             }
 
-            return get_node_any_or_never(ctx, !node_equals(ctx, world, lhs_id, rhs_id))
+            return get_node_any(ctx)
         }
         }
 
