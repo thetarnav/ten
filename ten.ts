@@ -1566,6 +1566,31 @@ const bool_binary_reduce = (op: Token_Kind, lhs_id: Node_Id, rhs_id: Node_Id, wo
     }
 }
 
+const eq_selector_reduce = (world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id): Node_Id | null => {
+    let ctx = world.ctx
+
+    let lhs = get_node_by_id(ctx, lhs_id)!
+
+    if (lhs.kind === NODE_SELECTOR) {
+        let val_id = selector_get_var(world, lhs_id)
+        if (val_id != null) {
+            // return get_node_any_or_never(ctx, node_equals(world, rhs_id, val_id))
+            return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+        }
+
+        // Write var if it's from this scope
+        let scope = get_node_by_id(ctx, lhs.lhs)
+        if (scope != null && scope.kind === NODE_SCOPE && scope.id === scope_id) {
+            selector_set_var(world, lhs_id, rhs_id)
+            return get_node_any(ctx)
+        }
+
+        return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+    }
+
+    return null
+}
+
 const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited: Set<Node_Id> = new Set()): Node_Id => {
 
     let ctx = world.ctx
@@ -1658,31 +1683,9 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             if (node_equals(world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_never(ctx)
             if (node_equals(world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_never(ctx)
 
-            let lhs = get_node_by_id(ctx, lhs_id)!
-            let rhs = get_node_by_id(ctx, rhs_id)!
-
-            if (lhs.kind === NODE_SELECTOR) {
-                let val_id = selector_get_var(world, lhs_id)
-                if (val_id != null) {
-                    // return get_node_any_or_never(ctx, node_equals(world, rhs_id, val_id))
-                    return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
-                }
-
-                selector_set_var(world, lhs_id, rhs_id)
-                return get_node_any(ctx)
-            }
-            if (rhs.kind === NODE_SELECTOR) {
-                let val_id = selector_get_var(world, rhs_id)
-                if (val_id != null) {
-                    // return get_node_any_or_never(ctx, node_equals(world, lhs_id, val_id))
-                    return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
-                }
-
-                selector_set_var(world, rhs_id, lhs_id)
-                return get_node_any(ctx)
-            }
-
-            return get_node_never(ctx)
+            return eq_selector_reduce(world, lhs_id, rhs_id, scope_id)
+                || eq_selector_reduce(world, rhs_id, lhs_id, scope_id)
+                || get_node_never(ctx)
         }
         case TOKEN_NOT_EQ: {
             let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
