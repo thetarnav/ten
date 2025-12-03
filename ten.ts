@@ -1714,8 +1714,8 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             if (rhs.kind === NODE_ANY) return get_node_any(ctx)
 
             // true | true  ->  true
-            if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL) {
-                if (lhs.value === rhs.value) return get_node_bool(ctx, lhs.value)
+            if (node_equals(world, lhs_id, rhs_id)) {
+                return lhs_id
             }
 
             return get_node_binary(ctx, node.op, lhs_id, rhs_id)
@@ -1723,30 +1723,33 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         case TOKEN_COMMA:
         case TOKEN_AND: {
             // Special handling for operators that evaluate both sides (like AND/conjunction):
-            let lhs = node_reduce(node.lhs, world, scope_id, visited)
-            let rhs = node_reduce(node.rhs, world, scope_id, visited)
+            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
+            let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
-            lhs = node_reduce(node.lhs, world, scope_id, visited)
+            lhs_id = node_reduce(node.lhs, world, scope_id, visited)
 
             // If both sides are booleans, AND them
-            let lhs_node = get_node_by_id(ctx, lhs)!
-            let rhs_node = get_node_by_id(ctx, rhs)!
-            if (lhs_node.kind === NODE_NEVER || rhs_node.kind === NODE_NEVER) {
+            let lhs = get_node_by_id(ctx, lhs_id)!
+            let rhs = get_node_by_id(ctx, rhs_id)!
+            if (lhs.kind === NODE_NEVER || rhs.kind === NODE_NEVER) {
                 return get_node_never(ctx)
             }
-            if (lhs_node.kind === NODE_ANY) return rhs
-            if (rhs_node.kind === NODE_ANY) return lhs
+            if (lhs.kind === NODE_ANY) return rhs_id
+            if (rhs.kind === NODE_ANY) return lhs_id
 
             // true & false  ->  !()
-            // true & true   ->  true
-            if (lhs_node.kind === NODE_BOOL && rhs_node.kind === NODE_BOOL) {
-                if (lhs_node.value === rhs_node.value) return get_node_bool(ctx, lhs_node.value)
+            if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL && lhs.value !== rhs.value) {
                 return get_node_never(ctx)
             }
 
-            return get_node_binary(ctx, node.op, lhs, rhs)
+            // true & true  ->  true
+            if (node_equals(world, lhs_id, rhs_id)) {
+                return lhs_id
+            }
+
+            return get_node_binary(ctx, node.op, lhs_id, rhs_id)
         }
         }
 
