@@ -706,6 +706,20 @@ export const token_is_binary = (tok: Token): boolean => {
     return token_kind_is_binary(tok.kind)
 }
 
+// `|, &, ...`
+export const token_kind_is_logical = (kind: Token_Kind): boolean => {
+    switch (kind) {
+    case TOKEN_OR:    return true
+    case TOKEN_AND:   return true
+    case TOKEN_COMMA: return true
+    }
+    return false
+}
+// `|, &, ...`
+export const token_is_logical = (tok: Token): boolean => {
+    return token_kind_is_logical(tok.kind)
+}
+
 export type Parser = {
     src:    string
     t:      Tokenizer
@@ -1050,6 +1064,12 @@ export const node_neg_encode = (rhs: Node_Id) => {
 export const node_binary_encode = (op: Token_Kind, lhs: Node_Id, rhs: Node_Id): Node_Key => {
     let key = NODE_BINARY - NODE_ENUM_START
     key += (op - TOKEN_ENUM_START) * MAX_ID * MAX_ID * NODE_ENUM_RANGE
+
+    // Normalize order for logical operators that are symmetrical
+    if (token_kind_is_logical(op) && lhs > rhs) {
+        [lhs, rhs] = [rhs, lhs]
+    }
+
     key += lhs * MAX_ID * NODE_ENUM_RANGE
     key += rhs * NODE_ENUM_RANGE
     return key as Node_Key
