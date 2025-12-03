@@ -1373,7 +1373,9 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
     }
 }
 
-const node_equals = (ctx: Context, world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
+const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
+    let ctx = world.ctx
+
     if (a_id === b_id) return true
 
     let a = get_node_by_id(ctx, a_id)!
@@ -1392,17 +1394,17 @@ const node_equals = (ctx: Context, world: World, a_id: Node_Id, b_id: Node_Id): 
     case NODE_BINARY:
         b = b as Node_Binary
         return a.op === b.op &&
-               node_equals(ctx, world, a.lhs, b.lhs) &&
-               node_equals(ctx, world, a.rhs, b.rhs)
+               node_equals(world, a.lhs, b.lhs) &&
+               node_equals(world, a.rhs, b.rhs)
 
     case NODE_SELECTOR:
         b = b as Node_Selector
         return a.rhs === b.rhs &&
-               node_equals(ctx, world, a.lhs, b.lhs)
+               node_equals(world, a.lhs, b.lhs)
 
     case NODE_SCOPE: {
         b = b as Node_Scope
-        if (!node_equals(ctx, world, a.body, b.body)) return false
+        if (!node_equals(world, a.body, b.body)) return false
 
         // Compare vars
         let a_vars = world.vars.get(a.id)
@@ -1421,7 +1423,7 @@ const node_equals = (ctx: Context, world: World, a_id: Node_Id, b_id: Node_Id): 
             a_val_id = node_reduce(a_val_id, world, a.id)
             b_val_id = node_reduce(b_val_id, world, b.id)
 
-            if (!node_equals(ctx, world, a_val_id, b_val_id)) return false
+            if (!node_equals(world, a_val_id, b_val_id)) return false
         }
 
         return true
@@ -1432,7 +1434,8 @@ const node_equals = (ctx: Context, world: World, a_id: Node_Id, b_id: Node_Id): 
     }
 }
 
-const selector_get_var = (ctx: Context, world: World, selector_id: Node_Id): Node_Id | null => {
+const selector_get_var = (world: World, selector_id: Node_Id): Node_Id | null => {
+    let ctx = world.ctx
 
     let selector = get_node_by_id(ctx, selector_id)!
     if (selector.kind !== NODE_SELECTOR) return null
@@ -1445,7 +1448,8 @@ const selector_get_var = (ctx: Context, world: World, selector_id: Node_Id): Nod
 
     return vars.get(selector.rhs) ?? null
 }
-const selector_exists = (ctx: Context, world: World, selector_id: Node_Id): boolean => {
+const selector_exists = (world: World, selector_id: Node_Id): boolean => {
+    let ctx = world.ctx
 
     let selector = get_node_by_id(ctx, selector_id)!
     if (selector.kind !== NODE_SELECTOR) return false
@@ -1458,7 +1462,8 @@ const selector_exists = (ctx: Context, world: World, selector_id: Node_Id): bool
 
     return vars.has(selector.rhs)
 }
-const selector_has_val = (ctx: Context, world: World, selector_id: Node_Id): boolean => {
+const selector_has_val = (world: World, selector_id: Node_Id): boolean => {
+    let ctx = world.ctx
 
     let selector = get_node_by_id(ctx, selector_id)!
     if (selector.kind !== NODE_SELECTOR) return false
@@ -1471,12 +1476,8 @@ const selector_has_val = (ctx: Context, world: World, selector_id: Node_Id): boo
 
     return vars.get(selector.rhs) != null
 }
-const selector_set_var = (
-    ctx:        Context,
-    world:    World,
-    selector_id: Node_Id,
-    value_id: Node_Id
-): void => {
+const selector_set_var = (world: World, selector_id: Node_Id, value_id: Node_Id): void => {
+    let ctx = world.ctx
 
     let selector = get_node_by_id(ctx, selector_id)!
     if (selector.kind !== NODE_SELECTOR) return
@@ -1578,12 +1579,12 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         }
 
         if (lhs.kind === NODE_SCOPE) {
-            if (!selector_exists(ctx, world, selector)) {
+            if (!selector_exists(world, selector)) {
                 // Variable not defined in this scope
                 return get_node_never(ctx)
             }
 
-            let val = selector_get_var(ctx, world, selector)
+            let val = selector_get_var(world, selector)
             if (val != null) {
                 visited.add(selector)
                 let res = node_reduce(val, world, scope_id, visited)
@@ -1631,33 +1632,33 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
             // a = a  ->  ()
-            if (node_equals(ctx, world, lhs_id, rhs_id)) return get_node_any(ctx)
+            if (node_equals(world, lhs_id, rhs_id)) return get_node_any(ctx)
 
             // a = !a  ->  !()
-            if (node_equals(ctx, world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_never(ctx)
-            if (node_equals(ctx, world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_never(ctx)
+            if (node_equals(world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_never(ctx)
+            if (node_equals(world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_never(ctx)
 
             let lhs = get_node_by_id(ctx, lhs_id)!
             let rhs = get_node_by_id(ctx, rhs_id)!
 
             if (lhs.kind === NODE_SELECTOR) {
-                let val_id = selector_get_var(ctx, world, lhs_id)
+                let val_id = selector_get_var(world, lhs_id)
                 if (val_id != null) {
-                    // return get_node_any_or_never(ctx, node_equals(ctx, world, rhs_id, val_id))
+                    // return get_node_any_or_never(ctx, node_equals(world, rhs_id, val_id))
                     return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
                 }
 
-                selector_set_var(ctx, world, lhs_id, rhs_id)
+                selector_set_var(world, lhs_id, rhs_id)
                 return get_node_any(ctx)
             }
             if (rhs.kind === NODE_SELECTOR) {
-                let val_id = selector_get_var(ctx, world, rhs_id)
+                let val_id = selector_get_var(world, rhs_id)
                 if (val_id != null) {
-                    // return get_node_any_or_never(ctx, node_equals(ctx, world, lhs_id, val_id))
+                    // return get_node_any_or_never(ctx, node_equals(world, lhs_id, val_id))
                     return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
                 }
 
-                selector_set_var(ctx, world, rhs_id, lhs_id)
+                selector_set_var(world, rhs_id, lhs_id)
                 return get_node_any(ctx)
             }
 
@@ -1668,11 +1669,11 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
             // a != a  ->  !()
-            if (node_equals(ctx, world, lhs_id, rhs_id)) return get_node_never(ctx)
+            if (node_equals(world, lhs_id, rhs_id)) return get_node_never(ctx)
 
             // a != !a  ->  ()
-            if (node_equals(ctx, world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_any(ctx)
-            if (node_equals(ctx, world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_any(ctx)
+            if (node_equals(world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_any(ctx)
+            if (node_equals(world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_any(ctx)
 
             let lhs = get_node_by_id(ctx, lhs_id)!
             let rhs = get_node_by_id(ctx, rhs_id)!
@@ -1759,10 +1760,11 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
 }
 
 export const node_display = (world: World, node_id: Node_Id, indent = '\t', depth = 0): string => {
-    return _node_display(world.ctx, world, node_id, 0, false, new Set())
+    return _node_display(world, node_id, 0, false, new Set())
 }
 
-const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec: number, is_right: boolean, visited: Set<Node_Id>): string => {
+const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_right: boolean, visited: Set<Node_Id>): string => {
+    let ctx = world.ctx
 
     let node = get_node_by_id(ctx, node_id)
     if (node == null) return '<node = null>'
@@ -1778,7 +1780,7 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
         return node.value ? 'true' : 'false'
 
     case NODE_NEG:
-        let rhs = _node_display(ctx, world, node.rhs, 0, true, visited)
+        let rhs = _node_display(world, node.rhs, 0, true, visited)
         return '!'+rhs
 
     case NODE_BINARY: {
@@ -1788,8 +1790,8 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
             (!is_right && node.op === TOKEN_POW))
         )
 
-        let lhs = _node_display(ctx, world, node.lhs, prec, false, visited)
-        let rhs = _node_display(ctx, world, node.rhs, prec, true, visited)
+        let lhs = _node_display(world, node.lhs, prec, false, visited)
+        let rhs = _node_display(world, node.rhs, prec, true, visited)
 
         let op: string
         switch (node.op) {
@@ -1817,7 +1819,7 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
         if (rhs == null) return '<ident = null>'
         switch (lhs.kind) {
         case NODE_SELECTOR:
-            let lhs_str = _node_display(ctx, world, node.lhs, 0, false, visited)
+            let lhs_str = _node_display(world, node.lhs, 0, false, visited)
             return lhs_str + `.` + rhs
         case NODE_SCOPE:
             return rhs
@@ -1839,12 +1841,12 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
         // {a = true, b} should still be a scope
         // should scopes even "return" anyting?
         if (body.kind === NODE_SELECTOR) {
-            if (!selector_exists(ctx, world, node.body)) {
+            if (!selector_exists(world, node.body)) {
                 return '!()'
             }
-            let val = selector_get_var(ctx, world, node.body)
+            let val = selector_get_var(world, node.body)
             if (val != null) {
-                return _node_display(ctx, world, val, 0, false, visited)
+                return _node_display(world, val, 0, false, visited)
             }
             return '()'
         }
@@ -1876,7 +1878,7 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
                 if (value == null || visited.has(selector)) {
                     rhs = lhs
                 } else {
-                    rhs = _node_display(ctx, world, value, 0, false, visited)
+                    rhs = _node_display(world, value, 0, false, visited)
                 }
                 out += `${lhs} = ${rhs}`
             }
@@ -1885,11 +1887,11 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
                 return `{${out}}`
             }
         } else {
-            return _node_display(ctx, world, node.body, 0, false, visited)
+            return _node_display(world, node.body, 0, false, visited)
         }
 
         out += ', '
-        out += _node_display(ctx, world, node.body, 0, false, visited)
+        out += _node_display(world, node.body, 0, false, visited)
 
         return `{${out}}`
     }
@@ -1902,8 +1904,7 @@ const _node_display = (ctx: Context, world: World, node_id: Node_Id, parent_prec
 }
 
 export const world_display = (world: World): string => {
-    let ctx = world.ctx
-    let node = get_node_scope(ctx, world.scope)
+    let node = get_node_scope(world.ctx, world.scope)
     return node_display(world, node)
 }
 
