@@ -1731,10 +1731,11 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
 
             // true | true  ->  true
             if (node_equals(world, lhs_id, rhs_id)) {
+                world_add(world, lhs_world)
                 return lhs_id
             }
 
-            return get_node_binary(ctx, TOKEN_OR, lhs_id, rhs_id)
+            return get_node_binary(ctx, TOKEN_OR, node.lhs, node.rhs)
         }
 
         /* Logical conjunction */
