@@ -1619,14 +1619,25 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
 
     case NODE_SCOPE:
         node.body = node_reduce(node.body, world, node.id, visited)
-        let vars = world.vars.get(node.id)
-        if (vars == null || vars.size === 0) {
-            return node.body
+
+        // Incorrect scope condition
+        let body = get_node_by_id(ctx, node.body)
+        if (body == null || body.kind === NODE_NEVER) {
+            return get_node_never(ctx)
         }
-        for (let [ident, val_id] of vars) if (val_id != null) {
+
+        // {}  ->  ()
+        let vars = world.vars.get(node.id)
+        if ((vars == null || vars.size === 0) && body.kind === NODE_ANY) {
+            return get_node_any(ctx)
+        }
+
+        // Reduce vars
+        if (vars != null) for (let [ident, val_id] of vars) if (val_id != null) {
             let reduced = node_reduce(val_id, world, node.id, visited)
             vars.set(ident, reduced)
         }
+
         return node_id
 
     case NODE_NEG:
@@ -1847,20 +1858,6 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
 
         if (body.kind === NODE_NEVER) {
             return '!()'
-        }
-
-        // ???? not sure
-        // {a = true, b} should still be a scope
-        // should scopes even "return" anyting?
-        if (body.kind === NODE_SELECTOR) {
-            if (!selector_exists(world, node.body)) {
-                return '!()'
-            }
-            let val = selector_get_var(world, node.body)
-            if (val != null) {
-                return _node_display(world, val, 0, false, visited)
-            }
-            return '()'
         }
 
         if (vars != null && vars.size > 0) {
