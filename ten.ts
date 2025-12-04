@@ -1255,6 +1255,10 @@ export const get_node_bool = (ctx: Context, value: boolean, expr: Expr | null = 
     return store_node_key(ctx, key, expr)
 }
 export const get_node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
+    let rhs_node = get_node_by_id(ctx, rhs)
+    if (rhs_node != null && rhs_node.kind === NODE_NEG) {
+        return rhs_node.rhs /*  !!x  ->  x  */
+    }
     let key = node_neg_encode(rhs)
     return store_node_key(ctx, key, expr)
 }
@@ -1344,13 +1348,24 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
         case TOKEN_SUB:
         case TOKEN_POW:
         case TOKEN_EQ:
-        case TOKEN_NOT_EQ:
-        case TOKEN_COMMA:
+        case TOKEN_COMMA: {
             let lhs = node_from_expr(world, expr.lhs, src, scope_id)
             let rhs = node_from_expr(world, expr.rhs, src, scope_id)
             if (!lhs || !rhs) return null
 
             return get_node_binary(ctx, expr.op.kind, lhs, rhs, expr)
+        }
+        // a != b  ->  a = !b, b = !a
+        case TOKEN_NOT_EQ: {
+            let lhs = node_from_expr(world, expr.lhs, src, scope_id)
+            let rhs = node_from_expr(world, expr.rhs, src, scope_id)
+            if (!lhs || !rhs) return null
+
+            return get_node_binary(ctx, TOKEN_AND,
+                get_node_binary(ctx, TOKEN_EQ, lhs, get_node_neg(ctx, rhs), expr),
+                get_node_binary(ctx, TOKEN_EQ, rhs, get_node_neg(ctx, lhs), expr),
+            )
+        }
         }
         return null
     }
@@ -1411,6 +1426,10 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
         b = b as Node_Bool
         return a.value === b.value
 
+    case NODE_NEG:
+        b = b as Node_Neg
+        return node_equals(world, a.rhs, b.rhs)
+
     case NODE_BINARY:
         b = b as Node_Binary
         return a.op === b.op &&
@@ -1450,6 +1469,7 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
     }
 
     default:
+        a satisfies never // exhaustive check
         return true
     }
 }
@@ -1670,8 +1690,8 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         res = bool_binary_reduce(node.op, node.lhs, node.rhs, world, scope_id, visited)
         if (res != null) return res
 
-        /* Equality */
         switch (node.op) {
+        /* Logical Equality */
         case TOKEN_EQ: {
             let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
@@ -1687,31 +1707,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
                 || eq_selector_reduce(world, rhs_id, lhs_id, scope_id)
                 || get_node_never(ctx)
         }
-        case TOKEN_NOT_EQ: {
-            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
-            let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
-
-            // a != a  ->  !()
-            if (node_equals(world, lhs_id, rhs_id)) return get_node_never(ctx)
-
-            // a != !a  ->  ()
-            if (node_equals(world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_any(ctx)
-            if (node_equals(world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_any(ctx)
-
-            let lhs = get_node_by_id(ctx, lhs_id)!
-            let rhs = get_node_by_id(ctx, rhs_id)!
-
-            // Ignore unresolved selectors — we don't know yet
-            if (lhs.kind === NODE_SELECTOR || rhs.kind === NODE_SELECTOR) {
-                return get_node_binary(ctx, TOKEN_NOT_EQ, lhs_id, rhs_id)
-            }
-
-            return get_node_any(ctx)
-        }
-        }
-
-        /* Logical */
-        switch (node.op) {
+        /* Logical disjunction */
         case TOKEN_OR: {
             // For OR/disjunction operators, each side needs its own variable scope
             // since they represent alternative realities
@@ -1743,9 +1739,9 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
 
             return get_node_binary(ctx, node.op, lhs_id, rhs_id)
         }
+        /* Logical conjunction */
         case TOKEN_COMMA:
         case TOKEN_AND: {
-            // Special handling for operators that evaluate both sides (like AND/conjunction):
             let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
@@ -1753,12 +1749,12 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             // original node to pick up those constraints
             lhs_id = node_reduce(node.lhs, world, scope_id, visited)
 
-            // If both sides are booleans, AND them
             let lhs = get_node_by_id(ctx, lhs_id)!
             let rhs = get_node_by_id(ctx, rhs_id)!
-            if (lhs.kind === NODE_NEVER || rhs.kind === NODE_NEVER) {
-                return get_node_never(ctx)
-            }
+
+            if (lhs.kind === NODE_NEVER) return get_node_never(ctx)
+            if (rhs.kind === NODE_NEVER) return get_node_never(ctx)
+
             if (lhs.kind === NODE_ANY) return rhs_id
             if (rhs.kind === NODE_ANY) return lhs_id
 
