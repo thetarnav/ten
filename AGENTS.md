@@ -20,6 +20,7 @@
 - Functions and variables follow `snake_case`, types `Ada_Case` and constants `SCREAMING_SNAKE_CASE`.
 - Prefer `let` for variables, use `const` only for static constants.
 - Single quotes, no semicolons.
+- No spacing around brackets and parens (`{a = b, c = d}`).
 - Keep procedural programming style where possible, avoid dynamically creating closures—prefer static, hoisted constants, functions, tables, etc.
 - Avoid introducing new dependencies; keep the code small and deterministic.
 - When adding CLI args, validate input and keep error messages terse and actionable.
