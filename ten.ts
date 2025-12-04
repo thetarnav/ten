@@ -971,9 +971,10 @@ export class Node_Scope {
 }
 
 export class World {
-    ctx:   Context = null as unknown as Context
-    scope: Scope_Id = 0 as Scope_Id
-    vars:  Map<Scope_Id, Map<Ident_Id, Node_Id | null>> = new Map()
+    ctx:    Context = null as any as Context
+    parent: World | null = null
+    scope:  Scope_Id = 0 as Scope_Id
+    vars:   Map<Scope_Id, Map<Ident_Id, Node_Id | null>> = new Map()
 }
 
 export class Context {
@@ -1002,12 +1003,9 @@ export const context_make = (): Context => {
 
 export const world_clone = (world: World): World => {
     let clone = new World()
-    clone.ctx   = world.ctx
-    clone.scope = world.scope
-    clone.vars  = new Map(world.vars)
-    for (let [scope_id, var_map] of world.vars) {
-        clone.vars.set(scope_id, new Map(var_map))
-    }
+    clone.ctx    = world.ctx
+    clone.scope  = world.scope
+    clone.parent = world
     return clone
 }
 
@@ -1486,10 +1484,18 @@ const selector_get_var = (world: World, selector_id: Node_Id): Node_Id | null =>
     let scope = get_node_by_id(ctx, selector.lhs)!
     if (scope.kind !== NODE_SCOPE) return null
 
-    let vars = world.vars.get(scope.id)
-    if (vars == null) return null
+    for (let w: World | null = world; w != null; w = world.parent) {
 
-    return vars.get(selector.rhs) ?? null
+        let vars = w.vars.get(scope.id)
+        if (vars == null) continue
+
+        let val = vars.get(selector.rhs)
+        if (val === undefined) continue
+
+        return val
+    }
+
+    return null
 }
 const selector_exists = (world: World, selector_id: Node_Id): boolean => {
     let ctx = world.ctx
@@ -1500,24 +1506,15 @@ const selector_exists = (world: World, selector_id: Node_Id): boolean => {
     let scope = get_node_by_id(ctx, selector.lhs)!
     if (scope.kind !== NODE_SCOPE) return false
 
-    let vars = world.vars.get(scope.id)
-    if (vars == null) return false
+    for (let w: World | null = world; w != null; w = world.parent) {
 
-    return vars.has(selector.rhs)
-}
-const selector_has_val = (world: World, selector_id: Node_Id): boolean => {
-    let ctx = world.ctx
+        let vars = w.vars.get(scope.id)
+        if (vars == null) continue
 
-    let selector = get_node_by_id(ctx, selector_id)!
-    if (selector.kind !== NODE_SELECTOR) return false
+        if (vars.has(selector.rhs)) return true
+    }
 
-    let scope = get_node_by_id(ctx, selector.lhs)!
-    if (scope.kind !== NODE_SCOPE) return false
-
-    let vars = world.vars.get(scope.id)
-    if (vars == null) return false
-
-    return vars.get(selector.rhs) != null
+    return false
 }
 const selector_set_var = (world: World, selector_id: Node_Id, value_id: Node_Id): void => {
     let ctx = world.ctx
