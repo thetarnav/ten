@@ -1734,7 +1734,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
                 return lhs_id
             }
 
-            return get_node_binary(ctx, node.op, lhs_id, rhs_id)
+            return get_node_binary(ctx, TOKEN_OR, lhs_id, rhs_id)
         }
 
         /* Logical conjunction */
@@ -1766,7 +1766,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
                 return lhs_id
             }
 
-            return get_node_binary(ctx, node.op, lhs_id, rhs_id)
+            return get_node_binary(ctx, TOKEN_AND, lhs_id, rhs_id)
         }
         }
 
