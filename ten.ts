@@ -3,6 +3,9 @@ function assert(condition: boolean, message?: string): asserts condition {
         throw new Error(message || 'Assertion failed')
     }
 }
+function unreachable(): never {
+    throw new Error('Should\'t reach here')
+}
 
 /*--------------------------------------------------------------*
 
@@ -1540,52 +1543,6 @@ export const reduce = (ctx: Context) => {
     }
 }
 
-const bool_binary_reduce = (op: Token_Kind, lhs_id: Node_Id, rhs_id: Node_Id, world: World, scope_id: Scope_Id, visited: Set<Node_Id> = new Set()): Node_Id | null => {
-    switch (op) {
-    case TOKEN_ADD:
-    case TOKEN_SUB:
-    case TOKEN_MUL:
-    case TOKEN_POW:
-        break
-    default:
-        return null
-    }
-
-    let ctx = world.ctx
-
-    lhs_id = node_reduce(lhs_id, world, scope_id, visited)
-    rhs_id = node_reduce(rhs_id, world, scope_id, visited)
-
-    let lhs = get_node_by_id(ctx, lhs_id)!
-    let rhs = get_node_by_id(ctx, rhs_id)!
-
-    // * Require both sides to be bools for now
-    // TODO: for vars it should split worlds {x: bool, res = true} | {res = !()}
-    if (lhs.kind !== NODE_BOOL) {
-        if (lhs.kind === NODE_SELECTOR) {
-            return null // Cannot resolve now
-        }
-        return get_node_never(ctx) // Boolean operation on non-boolean
-    }
-    if (rhs.kind !== NODE_BOOL) {
-        if (rhs.kind === NODE_SELECTOR) {
-            return null // Cannot resolve now
-        }
-        return get_node_never(ctx) // Boolean operation on non-boolean
-    }
-
-    switch (op) {
-    // a + b
-    case TOKEN_ADD: return get_node_bool(ctx, lhs.value || rhs.value)
-    // a * b
-    case TOKEN_MUL: return get_node_bool(ctx, lhs.value && rhs.value)
-    // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
-    case TOKEN_SUB: return get_node_bool(ctx, lhs.value === rhs.value)
-    // Pow is XOR
-    case TOKEN_POW: return get_node_bool(ctx, lhs.value !== rhs.value)
-    }
-}
-
 const eq_selector_reduce = (world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id): Node_Id | null => {
     let ctx = world.ctx
 
@@ -1684,13 +1641,44 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         }
 
     case NODE_BINARY: {
-
-        let res: Node_Id | null = null
-
-        res = bool_binary_reduce(node.op, node.lhs, node.rhs, world, scope_id, visited)
-        if (res != null) return res
-
         switch (node.op) {
+        /* Boolean operators */
+        case TOKEN_ADD:
+        case TOKEN_SUB:
+        case TOKEN_MUL:
+        case TOKEN_POW:
+            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
+            let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
+
+            let lhs = get_node_by_id(ctx, lhs_id)!
+            let rhs = get_node_by_id(ctx, rhs_id)!
+
+            // * Require both sides to be bools for now
+            // TODO: for vars it should split worlds {x: bool, res = true} | {res = !()}
+            if (lhs.kind !== NODE_BOOL) {
+                if (lhs.kind === NODE_SELECTOR) {
+                    return node_id // Cannot resolve now
+                }
+                return get_node_never(ctx) // Boolean operation on non-boolean
+            }
+            if (rhs.kind !== NODE_BOOL) {
+                if (rhs.kind === NODE_SELECTOR) {
+                    return node_id // Cannot resolve now
+                }
+                return get_node_never(ctx) // Boolean operation on non-boolean
+            }
+
+            switch (node.op) {
+            // a + b
+            case TOKEN_ADD: return get_node_bool(ctx, lhs.value || rhs.value)
+            // a * b
+            case TOKEN_MUL: return get_node_bool(ctx, lhs.value && rhs.value)
+            // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
+            case TOKEN_SUB: return get_node_bool(ctx, lhs.value === rhs.value)
+            // Pow is XOR
+            case TOKEN_POW: return get_node_bool(ctx, lhs.value !== rhs.value)
+            }
+
         /* Logical Equality */
         case TOKEN_EQ: {
             let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
@@ -1707,6 +1695,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
                 || eq_selector_reduce(world, rhs_id, lhs_id, scope_id)
                 || get_node_never(ctx)
         }
+
         /* Logical disjunction */
         case TOKEN_OR: {
             // For OR/disjunction operators, each side needs its own variable scope
@@ -1739,6 +1728,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
 
             return get_node_binary(ctx, node.op, lhs_id, rhs_id)
         }
+
         /* Logical conjunction */
         case TOKEN_COMMA:
         case TOKEN_AND: {
