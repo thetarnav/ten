@@ -622,9 +622,9 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}!a = !b, a = true, b = true${sr}`,
             `{a = true, b = true}`)
 
-        test_reducer(`${sl}false - a = !a, a - false = !a${sr}`,
-            `()`)
-        test_reducer(`${sl}false - a = a, a - false = a${sr}`,
+        test_reducer(`${sl}false - a = !a, a - false = !a, a = false${sr}`,
+            `{a = false}`)
+        test_reducer(`${sl}false - a = a, a - false = a, a = false${sr}`,
             `!()`)
 
         test_reducer(`${sl}a != b${sr}`,
