@@ -856,7 +856,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}foo = {a != b}, foo.a = foo.b${sr}`,
             `!()`)
         test_reducer(`${sl}foo = {a != b}, foo.a != foo.b${sr}`,
-            `{foo = {a = b ^ true, b = b}}`)
+            `{foo = {a = !b, b = b}}`)
         test_reducer(`${sl}foo.a = foo.b, foo = {a = b}${sr}`,
             `{foo = {a = b, b = b}}`)
         test_reducer(`${sl}foo.a != foo.b, foo = {a = b}${sr}`,
@@ -864,7 +864,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${sl}foo.a = foo.b, foo = {a != b}${sr}`,
             `!()`)
         test_reducer(`${sl}foo.a != foo.b, foo = {a != b}${sr}`,
-            `{foo = {a = b ^ true, b = b}}`)
+            `{foo = {a = !b, b = b}}`)
 
         // Scope Operators & Unification
         test_reducer(`${sl}a = {x=true}, b = {x=true}, a = b${sr}`,
