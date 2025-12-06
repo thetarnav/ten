@@ -14,44 +14,44 @@ function unreachable(): never {
 
 export const
     /* Special */
-    TOKEN_INVALID    =  0, // invalid token
-    TOKEN_EOF        =  1, // end of file
-    TOKEN_EOL        =  2, // end of line `\n`
+    TOKEN_INVALID    =  0 as const, // invalid token
+    TOKEN_EOF        =  1 as const, // end of file
+    TOKEN_EOL        =  2 as const, // end of line `\n`
     /* Operators */
-    TOKEN_QUESTION   =  3, // `?`
-    TOKEN_GREATER    =  4, // `>`
-    TOKEN_LESS       =  5, // `<`
-    TOKEN_GREATER_EQ =  6, // `>=`
-    TOKEN_LESS_EQ    =  7, // `<=`
-    TOKEN_NEG        =  8, // `!`
-    TOKEN_NOT_EQ     =  9, // `!=`
-    TOKEN_OR         = 10, // `|`
-    TOKEN_AND        = 11, // `&`
-    TOKEN_EQ         = 12, // `=`
-    TOKEN_ADD        = 13, // `+`
-    TOKEN_SUB        = 14, // `-`
-    TOKEN_ADD_EQ     = 15, // `+=`
-    TOKEN_SUB_EQ     = 16, // `-=`
-    TOKEN_MUL        = 17, // `*`
-    TOKEN_DIV        = 18, // `/`
-    TOKEN_POW        = 19, // `^`
-    TOKEN_AT         = 21, // `@`
-    TOKEN_COMMA      = 22, // `,`
+    TOKEN_QUESTION   =  3 as const, // `?`
+    TOKEN_GREATER    =  4 as const, // `>`
+    TOKEN_LESS       =  5 as const, // `<`
+    TOKEN_GREATER_EQ =  6 as const, // `>=`
+    TOKEN_LESS_EQ    =  7 as const, // `<=`
+    TOKEN_NEG        =  8 as const, // `!`
+    TOKEN_NOT_EQ     =  9 as const, // `!=`
+    TOKEN_OR         = 10 as const, // `|`
+    TOKEN_AND        = 11 as const, // `&`
+    TOKEN_EQ         = 12 as const, // `=`
+    TOKEN_ADD        = 13 as const, // `+`
+    TOKEN_SUB        = 14 as const, // `-`
+    TOKEN_ADD_EQ     = 15 as const, // `+=`
+    TOKEN_SUB_EQ     = 16 as const, // `-=`
+    TOKEN_MUL        = 17 as const, // `*`
+    TOKEN_DIV        = 18 as const, // `/`
+    TOKEN_POW        = 19 as const, // `^`
+    TOKEN_AT         = 21 as const, // `@`
+    TOKEN_COMMA      = 22 as const, // `,`
     /* Punctuation */
-    TOKEN_QUOTE      = 23, // `"`
-    TOKEN_PAREN_L    = 24, // `(`
-    TOKEN_PAREN_R    = 25, // `)`
-    TOKEN_BRACE_L    = 26, // `{`
-    TOKEN_BRACE_R    = 27, // `}`
+    TOKEN_QUOTE      = 23 as const, // `"`
+    TOKEN_PAREN_L    = 24 as const, // `(`
+    TOKEN_PAREN_R    = 25 as const, // `)`
+    TOKEN_BRACE_L    = 26 as const, // `{`
+    TOKEN_BRACE_R    = 27 as const, // `}`
     /* Keywords */
-    TOKEN_TRUE       = 28, // `true`
-    TOKEN_FALSE      = 29, // `false`
+    TOKEN_TRUE       = 28 as const, // `true`
+    TOKEN_FALSE      = 29 as const, // `false`
     /* Literals */
-    TOKEN_STRING     = 30, // string literal `"foo"`
-    TOKEN_IDENT      = 31, // identifier `foo`
-    TOKEN_FIELD      = 32, // field selector `.foo`
-    TOKEN_INT        = 33, // integer literal `123`
-    TOKEN_FLOAT      = 34,  // floating-point literal `123.456`
+    TOKEN_STRING     = 30 as const, // string literal `"foo"`
+    TOKEN_IDENT      = 31 as const, // identifier `foo`
+    TOKEN_FIELD      = 32 as const, // field selector `.foo`
+    TOKEN_INT        = 33 as const, // integer literal `123`
+    TOKEN_FLOAT      = 34 as const, // floating-point literal `123.456`
     TOKEN_ENUM_START = TOKEN_INVALID,
     TOKEN_ENUM_END   = TOKEN_FLOAT,
     TOKEN_ENUM_RANGE = TOKEN_ENUM_END - TOKEN_ENUM_START + 1
@@ -867,13 +867,14 @@ const _parse_expr_atom = (p: Parser): Expr => {
 */
 
 export const
-    NODE_ANY        = 200,
-    NODE_NEVER      = 201,
-    NODE_NEG        = 202,
-    NODE_BOOL       = 203,
-    NODE_BINARY     = 204,
-    NODE_SELECTOR   = 205,
-    NODE_SCOPE      = 206,
+    NODE_ANY        = 200 as const,
+    NODE_NEVER      = 201 as const,
+    NODE_NEG        = 202 as const,
+    NODE_BOOL       = 203 as const,
+    NODE_BINARY     = 204 as const,
+    NODE_SELECTOR   = 205 as const,
+    NODE_VAR        = 206 as const,
+    NODE_SCOPE      = 207 as const,
     NODE_TOP        = NODE_ANY,
     NODE_BOTTOM     = NODE_NEVER,
     NODE_ENUM_START = NODE_ANY,
@@ -887,6 +888,7 @@ export const Node_Kind = {
     Bool:     NODE_BOOL,
     Binary:   NODE_BINARY,
     Selector: NODE_SELECTOR,
+    Var:      NODE_VAR,
     Scope:    NODE_SCOPE,
 } as const
 
@@ -900,6 +902,7 @@ export const node_kind_string = (kind: Node_Kind): string => {
     case NODE_BOOL:     return "Bool"
     case NODE_BINARY:   return "Binary"
     case NODE_SELECTOR: return "Selector"
+    case NODE_VAR:      return "Var"
     case NODE_SCOPE:    return "Scope"
     default:
         kind satisfies never // exhaustive check
@@ -914,66 +917,58 @@ export type Node =
     | Node_Bool
     | Node_Binary
     | Node_Selector
+    | Node_Var
     | Node_Scope
 
 export class Node_Any {
-    /* Used to make the key: */
-    kind = NODE_ANY as typeof NODE_ANY
-    /* Added to instance: */
-    expr = null     as Expr | null
+    kind = NODE_ANY
+    expr:  Expr | null = null
 }
 export class Node_Never {
-    /* Used to make the key: */
-    kind = NODE_NEVER as typeof NODE_NEVER
-    /* Added to instance: */
-    expr = null       as Expr | null
+    kind = NODE_NEVER
+    expr:  Expr | null = null
 }
 export class Node_Neg {
-    /* Used to make the key: */
-    kind = NODE_NEG  as typeof NODE_NEG
-    rhs: Node_Id = NODE_ID_NONE
-    /* Added to instance: */
-    expr = null         as Expr | null
+    kind = NODE_NEG
+    rhs:   Node_Id     = NODE_ID_NONE
+    expr:  Expr | null = null
 }
 export class Node_Bool {
-    /* Used to make the key: */
-    kind  = NODE_BOOL as typeof NODE_BOOL
-    value = false     as boolean
-    /* Added to instance: */
-    expr  = null      as Expr | null
+    kind = NODE_BOOL
+    value: boolean     = false
+    expr:  Expr | null = null
 }
 export class Node_Binary {
-    /* Used to make the key: */
-    kind = NODE_BINARY  as typeof NODE_BINARY
-    op   = 0            as Token_Kind
-    lhs  = NODE_ID_NONE as Node_Id
-    rhs  = NODE_ID_NONE as Node_Id
-    /* Added to instance: */
-    expr = null         as Expr | null
+    kind = NODE_BINARY
+    op:    Token_Kind  = 0
+    lhs:   Node_Id     = NODE_ID_NONE
+    rhs:   Node_Id     = NODE_ID_NONE
+    expr:  Expr | null = null
 }
 export class Node_Selector {
-    /* Used to make the key: */
-    kind = NODE_SELECTOR as typeof NODE_SELECTOR
-    /** Var(foo) | Selector(...) */
-    lhs  = NODE_ID_NONE  as Node_Id
-    /** Field(.foo) */
-    rhs  = 0             as Ident_Id
-    /* Added to instance: */
-    expr = null          as Expr | null
+    kind = NODE_SELECTOR
+    lhs:   Node_Id     = NODE_ID_NONE  // Selector(foo) | Scope({...})
+    rhs:   Ident_Id    = IDENT_ID_NONE // Field(.foo)
+    expr:  Expr | null = null
+}
+export class Node_Var {
+    kind = NODE_VAR
+    lhs:   Scope_Id    = SCOPE_ID_NONE
+    rhs:   Ident_Id    = IDENT_ID_NONE // Field(.foo)
+    expr:  Expr | null = null
 }
 export class Node_Scope {
-    /* Used to make the key: */
-    kind  = NODE_SCOPE   as typeof NODE_SCOPE
-    id    = 0            as Scope_Id
-    /* Added to instance: */
-    expr  = null         as Expr | null
-    body  = NODE_ID_NONE as Node_Id
+    kind = NODE_SCOPE
+    id:    Scope_Id    = SCOPE_ID_NONE
+    body:  Node_Id     = NODE_ID_NONE
+    expr:  Expr | null = null
 }
 
 export class World {
     ctx:    Context = null as any as Context
     parent: World | null = null
     scope:  Scope_Id = 0 as Scope_Id
+    node:   Node_Id = NODE_ID_NONE
     vars:   Map<Scope_Id, Map<Ident_Id, Node_Id | null>> = new Map()
 }
 
@@ -1026,7 +1021,9 @@ export type Ident_Id = number & {__var_id: void}
 export type Node_Id  = number & {__node_id: void}
 export type Scope_Id = number & {__scope_id: void}
 
-const NODE_ID_NONE = 0 as Node_Id
+const NODE_ID_NONE  = 0 as Node_Id
+const IDENT_ID_NONE = 0 as Ident_Id
+const SCOPE_ID_NONE = 0 as Scope_Id
 
 export const MAX_ID = 4194304 // 2^22
 
@@ -1081,6 +1078,12 @@ export const node_selector_encode = (lhs: Node_Id, rhs: Ident_Id): Node_Key => {
     key += rhs * NODE_ENUM_RANGE
     return key as Node_Key
 }
+export const node_var_encode = (lhs: Scope_Id, rhs: Ident_Id): Node_Key => {
+    let key = NODE_VAR - NODE_ENUM_START
+    key += lhs * MAX_ID * NODE_ENUM_RANGE
+    key += rhs * NODE_ENUM_RANGE
+    return key as Node_Key
+}
 export const node_scope_encode = (id: Scope_Id): Node_Key => {
     let key = NODE_SCOPE - NODE_ENUM_START
     key += id * NODE_ENUM_RANGE
@@ -1095,6 +1098,7 @@ export const node_encode = (node: Node): Node_Key => {
     case NODE_BOOL:     return node_bool_encode(node.value)
     case NODE_BINARY:   return node_binary_encode(node.op, node.lhs, node.rhs)
     case NODE_SELECTOR: return node_selector_encode(node.lhs, node.rhs)
+    case NODE_VAR:      return node_var_encode(node.lhs, node.rhs)
     case NODE_SCOPE:    return node_scope_encode(node.id)
     default:
         node satisfies never // exhaustive check
@@ -1153,6 +1157,20 @@ export const node_decode = (_key: Node_Key): Node => {
         key = Math.floor(key / MAX_ID)
 
         node.lhs = (key % MAX_ID) as Node_Id
+
+        return node
+    }
+    case NODE_VAR: {
+        let node = new Node_Var()
+
+        // key layout after dividing by NODE_ENUM_RANGE:
+        // key = lhs * MAX_ID + rhs
+
+        node.rhs = (key % MAX_ID) as Ident_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.lhs = (key % MAX_ID) as Scope_Id
+
         return node
     }
     case NODE_SCOPE: {
@@ -1162,6 +1180,7 @@ export const node_decode = (_key: Node_Key): Node => {
         // key = id
 
         node.id = (key % MAX_ID) as Scope_Id
+
         return node
     }
     default:
@@ -1271,6 +1290,10 @@ export const get_node_selector = (ctx: Context, lhs: Node_Id, rhs: Ident_Id, exp
     let key = node_selector_encode(lhs, rhs)
     return store_node_key(ctx, key, expr)
 }
+export const get_node_var = (ctx: Context, lhs: Scope_Id, rhs: Ident_Id, expr: Expr | null = null): Node_Id => {
+    let key = node_var_encode(lhs, rhs)
+    return store_node_key(ctx, key, expr)
+}
 export const get_node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id = NODE_ID_NONE, expr: Expr | null = null): Node_Id => {
     let key = node_scope_encode(scope_id)
     let id = store_node_key(ctx, key, expr)
@@ -1308,7 +1331,6 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
         case TOKEN_IDENT: {
             let text  = token_string(src, expr.tok)
             let ident = ident_id(ctx, text)
-            let scope = get_node_scope(ctx, scope_id)
             let vars  = world.vars.get(scope_id)
 
             if (vars == null) {
@@ -1316,7 +1338,7 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
             }
             vars.set(ident, null)
 
-            return get_node_selector(ctx, scope, ident, expr)
+            return get_node_var(ctx, scope_id, ident, expr)
         }
         }
         return null
@@ -1424,26 +1446,31 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
     case NODE_NEVER:
         return true
     case NODE_BOOL:
-        b = b as Node_Bool
+        b = b as typeof a
         return a.value === b.value
 
     case NODE_NEG:
-        b = b as Node_Neg
+        b = b as typeof a
         return node_equals(world, a.rhs, b.rhs)
 
     case NODE_BINARY:
-        b = b as Node_Binary
+        b = b as typeof a
         return a.op === b.op &&
                node_equals(world, a.lhs, b.lhs) &&
                node_equals(world, a.rhs, b.rhs)
 
     case NODE_SELECTOR:
-        b = b as Node_Selector
+        b = b as typeof a
         return a.rhs === b.rhs &&
                node_equals(world, a.lhs, b.lhs)
 
+    case NODE_VAR:
+        b = b as typeof a
+        return a.rhs === b.rhs &&
+               a.lhs === b.lhs
+
     case NODE_SCOPE: {
-        b = b as Node_Scope
+        b = b as typeof a
         if (!node_equals(world, a.body, b.body)) return false
 
         // Compare vars
@@ -1471,11 +1498,60 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
 
     default:
         a satisfies never // exhaustive check
-        return true
+        return true // TODO: shouldn't this just return false as id is being compared, then some checks could be removed
     }
 }
 
-const selector_get_var = (world: World, selector_id: Node_Id): Node_Id | null => {
+const var_get_val = (world: World, var_id: Node_Id): Node_Id | null => {
+    let ctx = world.ctx
+
+    let var_node = get_node_by_id(ctx, var_id)!
+    if (var_node.kind !== NODE_VAR) return null
+
+    for (let w: World | null = world; w != null; w = world.parent) {
+
+        let vars = w.vars.get(var_node.lhs)
+        if (vars == null) continue
+
+        let val = vars.get(var_node.rhs)
+        if (val === undefined) continue
+
+        return val
+    }
+
+    return null
+}
+const var_exists = (world: World, var_id: Node_Id): boolean => {
+    let ctx = world.ctx
+
+    let var_node = get_node_by_id(ctx, var_id)!
+    if (var_node.kind !== NODE_VAR) return false
+
+    for (let w: World | null = world; w != null; w = world.parent) {
+
+        let vars = w.vars.get(var_node.lhs)
+        if (vars == null) continue
+
+        if (vars.has(var_node.rhs)) return true
+    }
+
+    return false
+}
+const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => {
+    let ctx = world.ctx
+
+    let var_node = get_node_by_id(ctx, var_id)!
+    if (var_node.kind !== NODE_VAR) return
+
+    let vars = world.vars.get(var_node.lhs)
+    if (vars == null) {
+        world.vars.set(var_node.lhs, vars = new Map())
+    }
+
+    vars.set(var_node.rhs, value_id)
+}
+
+const selector_get_val = (world: World, selector_id: Node_Id): Node_Id | null => {
     let ctx = world.ctx
 
     let selector = get_node_by_id(ctx, selector_id)!
@@ -1516,7 +1592,7 @@ const selector_exists = (world: World, selector_id: Node_Id): boolean => {
 
     return false
 }
-const selector_set_var = (world: World, selector_id: Node_Id, value_id: Node_Id): void => {
+const selector_set_val = (world: World, selector_id: Node_Id, value_id: Node_Id): void => {
     let ctx = world.ctx
 
     let selector = get_node_by_id(ctx, selector_id)!
@@ -1540,22 +1616,21 @@ export const reduce = (ctx: Context) => {
     }
 }
 
-const eq_selector_reduce = (world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id): Node_Id | null => {
+const eq_var_reduce = (world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id): Node_Id | null => {
     let ctx = world.ctx
 
     let lhs = get_node_by_id(ctx, lhs_id)!
 
-    if (lhs.kind === NODE_SELECTOR) {
-        let val_id = selector_get_var(world, lhs_id)
+    if (lhs.kind === NODE_VAR) {
+        let val_id = var_get_val(world, lhs_id)
         if (val_id != null) {
             // return get_node_any_or_never(ctx, node_equals(world, rhs_id, val_id))
             return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
         }
 
         // Write var if it's from this scope
-        let scope = get_node_by_id(ctx, lhs.lhs)
-        if (scope != null && scope.kind === NODE_SCOPE && scope.id === scope_id) {
-            selector_set_var(world, lhs_id, rhs_id)
+        if (lhs.lhs === scope_id) {
+            var_set_val(world, lhs_id, rhs_id)
             return get_node_any(ctx)
         }
 
@@ -1578,41 +1653,43 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
     case NODE_BOOL:
         return node_id
 
-    case NODE_SELECTOR:
+    case NODE_VAR:
         if (visited.has(node_id)) return node_id
 
+        if (!var_exists(world, node_id)) {
+            return get_node_never(ctx) // Variable not defined in this scope
+        }
+
         // Return the variable's value if known, otherwise keep as variable
+        let val = var_get_val(world, node_id)
+        if (val != null) {
+            visited.add(node_id)
+            let res = node_reduce(val, world, scope_id, visited)
+            visited.delete(node_id)
+            return res
+        }
 
-        let lhs = get_node_by_id(ctx, node.lhs)!
-        let selector = node_id
+        return node_id
 
-        if (lhs.kind === NODE_SELECTOR) {
-            let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
+    case NODE_SELECTOR:
+        let lhs_id = node.lhs
+        let lhs = get_node_by_id(ctx, lhs_id)!
+
+        if (lhs.kind === NODE_SELECTOR || lhs.kind === NODE_VAR) {
+            lhs_id = node_reduce(lhs_id, world, scope_id, visited)
             lhs = get_node_by_id(ctx, lhs_id)!
-
-            if (lhs.kind === NODE_SCOPE) {
-                selector = get_node_selector(ctx, lhs_id, node.rhs)
-            } else if (lhs.kind !== NODE_SELECTOR) {
-                return get_node_never(ctx)
-            }
         }
 
         if (lhs.kind === NODE_SCOPE) {
-            if (!selector_exists(world, selector)) {
-                // Variable not defined in this scope
-                return get_node_never(ctx)
-            }
-
-            let val = selector_get_var(world, selector)
-            if (val != null) {
-                visited.add(selector)
-                let res = node_reduce(val, world, scope_id, visited)
-                visited.delete(selector)
-                return res
-            }
+            let var_id = get_node_var(ctx, lhs.id, node.rhs)
+            return node_reduce(var_id, world, scope_id, visited)
         }
 
-        return selector
+        if (lhs.kind !== NODE_SELECTOR && lhs.kind !== NODE_VAR) {
+            return get_node_never(ctx)
+        }
+
+        return get_node_selector(ctx, lhs_id, node.rhs)
 
     case NODE_SCOPE:
         node.body = node_reduce(node.body, world, node.id, visited)
@@ -1664,13 +1741,13 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             // * Require both sides to be bools for now
             // TODO: for vars it should split worlds {x: bool, res = true} | {res = !()}
             if (lhs.kind !== NODE_BOOL) {
-                if (lhs.kind === NODE_SELECTOR) {
+                if (lhs.kind === NODE_SELECTOR || lhs.kind === NODE_VAR) {
                     return node_id // Cannot resolve now
                 }
                 return get_node_never(ctx) // Boolean operation on non-boolean
             }
             if (rhs.kind !== NODE_BOOL) {
-                if (rhs.kind === NODE_SELECTOR) {
+                if (rhs.kind === NODE_SELECTOR || rhs.kind === NODE_VAR) {
                     return node_id // Cannot resolve now
                 }
                 return get_node_never(ctx) // Boolean operation on non-boolean
@@ -1699,8 +1776,8 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             if (node_equals(world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_never(ctx)
             if (node_equals(world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_never(ctx)
 
-            return eq_selector_reduce(world, lhs_id, rhs_id, scope_id)
-                || eq_selector_reduce(world, rhs_id, lhs_id, scope_id)
+            return eq_var_reduce(world, lhs_id, rhs_id, scope_id)
+                || eq_var_reduce(world, rhs_id, lhs_id, scope_id)
                 || get_node_never(ctx)
         }
 
@@ -1834,19 +1911,15 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
     }
 
     case NODE_SELECTOR: {
-        let lhs = get_node_by_id(ctx, node.lhs)
-        if (lhs == null) return '<lhs = null>'
+        let rhs = ident_string(ctx, node.rhs) ?? '<null>'
+        let lhs_str = _node_display(world, node.lhs, 99, false, visited)
+        return lhs_str + `.` + rhs
+    }
+
+    case NODE_VAR: {
         let rhs = ident_string(ctx, node.rhs)
         if (rhs == null) return '<ident = null>'
-        switch (lhs.kind) {
-        case NODE_SELECTOR:
-            let lhs_str = _node_display(world, node.lhs, 0, false, visited)
-            return lhs_str + `.` + rhs
-        case NODE_SCOPE:
-            return rhs
-        default:
-            return '<incorrect selector lhs>.' + rhs
-        }
+        return rhs
     }
 
     case NODE_SCOPE: {
