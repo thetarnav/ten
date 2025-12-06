@@ -1551,64 +1551,6 @@ const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => 
     vars.set(var_node.rhs, value_id)
 }
 
-const selector_get_val = (world: World, selector_id: Node_Id): Node_Id | null => {
-    let ctx = world.ctx
-
-    let selector = get_node_by_id(ctx, selector_id)!
-    if (selector.kind !== NODE_SELECTOR) return null
-
-    let scope = get_node_by_id(ctx, selector.lhs)!
-    if (scope.kind !== NODE_SCOPE) return null
-
-    for (let w: World | null = world; w != null; w = world.parent) {
-
-        let vars = w.vars.get(scope.id)
-        if (vars == null) continue
-
-        let val = vars.get(selector.rhs)
-        if (val === undefined) continue
-
-        return val
-    }
-
-    return null
-}
-const selector_exists = (world: World, selector_id: Node_Id): boolean => {
-    let ctx = world.ctx
-
-    let selector = get_node_by_id(ctx, selector_id)!
-    if (selector.kind !== NODE_SELECTOR) return false
-
-    let scope = get_node_by_id(ctx, selector.lhs)!
-    if (scope.kind !== NODE_SCOPE) return false
-
-    for (let w: World | null = world; w != null; w = world.parent) {
-
-        let vars = w.vars.get(scope.id)
-        if (vars == null) continue
-
-        if (vars.has(selector.rhs)) return true
-    }
-
-    return false
-}
-const selector_set_val = (world: World, selector_id: Node_Id, value_id: Node_Id): void => {
-    let ctx = world.ctx
-
-    let selector = get_node_by_id(ctx, selector_id)!
-    if (selector.kind !== NODE_SELECTOR) return
-
-    let scope = get_node_by_id(ctx, selector.lhs)!
-    if (scope.kind !== NODE_SCOPE) return
-
-    let vars = world.vars.get(scope.id)
-    if (vars == null) {
-        world.vars.set(scope.id, vars = new Map())
-    }
-
-    vars.set(selector.rhs, value_id)
-}
-
 export const reduce = (ctx: Context) => {
     for (let world of ctx.worlds) {
         let scope_id = get_node_scope(ctx, world.scope)
@@ -1933,9 +1875,8 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
 
         if (vars != null && vars.size > 0) {
             let first = true
-            let scope = get_node_scope(ctx, node.id)
             for (let ident of vars.keys()) {
-                let selector = get_node_selector(ctx, scope, ident)
+                let var_id = get_node_var(ctx, node.id, ident)
                 let value = vars.get(ident)
                 if (!first) {
                     out += ', '
@@ -1943,7 +1884,7 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
                 first = false
                 let lhs = ident_string(ctx, ident)!
                 let rhs: string
-                if (value == null || visited.has(selector)) {
+                if (value == null || visited.has(var_id)) {
                     rhs = lhs
                 } else {
                     rhs = _node_display(world, value, 0, false, visited)
