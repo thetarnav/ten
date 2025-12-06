@@ -820,15 +820,15 @@ test.describe('reducer', {concurrency: true}, () => {
             `!()`)
 
         test_reducer(`${sl}foo = {a = true}, a = false, b = a${sr}`,
-            `{a = false, b = false, foo = {a = true}}`)
+            `{foo = {a = true}, a = false, b = false}`)
         test_reducer(`${sl}foo = {a = true}, a = false, b = a${sr}`,
-            `{a = false, b = false, foo = {a = true}}`)
+            `{foo = {a = true}, a = false, b = false}`)
 
         test_reducer(`${sl}foo = {a = true, b}${sr}`,
             `{foo = {a = true, b = b, b}}`)
 
         test_reducer(`${sl}foo = {a = true}, b = foo.a${sr}`,
-            `{b = true, foo = {a = true}}`)
+            `{foo = {a = true}, b = true}`)
         test_reducer(`${sl}foo = {}, foo.a = true${sr}`,
             `!()`)
         test_reducer(`${sl}foo = {}, foo.a = false${sr}`,
@@ -843,7 +843,7 @@ test.describe('reducer', {concurrency: true}, () => {
             `!()`)
 
         test_reducer(`${sl}foo = {bar = {a = true}}, b = foo.bar.a, b = true${sr}`,
-            `{b = true, foo = {bar = {a = true}}}`)
+            `{foo = {bar = {a = true}}, b = true}`)
 
         test_reducer(`${sl}foo = {a = b}, foo.a = foo.b${sr}`,
             `{foo = {a = b, b = b}}`)

@@ -1933,20 +1933,8 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
 
         if (vars != null && vars.size > 0) {
             let first = true
-            let keys_regular: Ident_Id[] = []
-            let keys_scopes: Ident_Id[] = []
-            for (let ident of vars.keys()) {
-                let value = vars.get(ident)
-                let node  = value == null ? null : get_node_by_id(ctx, value)
-                if (node != null && node.kind === NODE_SCOPE) {
-                    keys_scopes.push(ident)
-                } else {
-                    keys_regular.push(ident)
-                }
-            }
-            let keys = keys_regular.concat(keys_scopes)
             let scope = get_node_scope(ctx, node.id)
-            for (let ident of keys) {
+            for (let ident of vars.keys()) {
                 let selector = get_node_selector(ctx, scope, ident)
                 let value = vars.get(ident)
                 if (!first) {
