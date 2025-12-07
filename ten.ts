@@ -1849,20 +1849,24 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
     case NODE_ANY:
     case NODE_NEVER:
     case NODE_BOOL:
+        // literals pass through unchanged
         worlds_push(out, world, node_id)
         return out
 
     case NODE_VAR: {
+        // stop on self-reference
         if (visited.has(node_id)) {
             worlds_push(out, world, node_id)
             return out
         }
 
+        // missing var -> impossible
         if (!var_exists(world, node_id)) {
             worlds_push(out, world, get_node_never(ctx))
             return out
         }
 
+        // follow known value (track visited)
         let val = var_get_val(world, node_id)
         if (val != null) {
             let next_visited = new Set(visited)
@@ -1870,6 +1874,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
             return node_reduce_many(val, world, scope_id, next_visited, out)
         }
 
+        // unresolved var stays symbolic
         worlds_push(out, world, node_id)
         return out
     }
@@ -1888,12 +1893,14 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
             let lhs_reduced = get_node_by_id(ctx, lhs_res.node)
             if (lhs_reduced == null) continue
 
+            // scope.field -> resolve var
             if (lhs_reduced.kind === NODE_SCOPE) {
                 let var_id = get_node_var(ctx, lhs_reduced.id, node.rhs)
                 node_reduce_many(var_id, lhs_res, scope_id, visited, out)
                 continue
             }
 
+            // invalid target
             if (lhs_reduced.kind !== NODE_SELECTOR && lhs_reduced.kind !== NODE_VAR) {
                 worlds_push(out, lhs_res, get_node_never(ctx))
                 continue
@@ -1909,6 +1916,8 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         let body_results = node_reduce_many(node.body, world, node.id, visited)
 
         for (let body_res of body_results) {
+
+            // dead body -> dead scope
             let body_node = get_node_by_id(ctx, body_res.node)
             if (body_node == null || body_node.kind === NODE_NEVER) {
                 worlds_push(out, body_res, get_node_never(ctx))
@@ -1922,6 +1931,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                 let next_worlds: Worlds = []
                 for (let w of worlds) {
                     if (val_id == null) {
+                        // keep unresolved var
                         let w_copy = world_clone(w)
                         let map = w_copy.vars.get(node.id) ?? new Map(w_copy.vars.get(node.id))
                         map.set(ident, null)
@@ -1929,6 +1939,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                         next_worlds.push(w_copy)
                         continue
                     }
+                    // fork per reduced value
                     let reduced_vals = node_reduce_many(val_id, w, node.id, visited)
                     for (let reduced of reduced_vals) {
                         let w_copy = world_clone(reduced)
@@ -1947,6 +1958,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
             }
 
             for (let w of worlds) {
+                // rebuild scope with resolved vars/body
                 let scope_id = get_node_scope(ctx, node.id, body_res.node)
                 worlds_push(out, w, scope_id)
             }
@@ -1961,21 +1973,11 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         for (let rhs_res of rhs_results) {
             let rhs_node = get_node_by_id(ctx, rhs_res.node)!
             switch (rhs_node.kind) {
-            case NODE_ANY:
-                worlds_push(out, rhs_res, get_node_never(ctx))
-                break
-            case NODE_NEVER:
-                worlds_push(out, rhs_res, get_node_any(ctx))
-                break
-            case NODE_BOOL:
-                worlds_push(out, rhs_res, get_node_bool(ctx, !rhs_node.value))
-                break
-            case NODE_NEG:
-                worlds_push(out, rhs_res, rhs_node.rhs)
-                break
-            default:
-                worlds_push(out, rhs_res, get_node_neg(ctx, rhs_res.node))
-                break
+            case NODE_ANY:   /* !() -> !()     */ worlds_push(out, rhs_res, get_node_never(ctx))                 ;break
+            case NODE_NEVER: /* !!() -> ()     */ worlds_push(out, rhs_res, get_node_any(ctx))                   ;break
+            case NODE_BOOL:  /* !true -> false */ worlds_push(out, rhs_res, get_node_bool(ctx, !rhs_node.value)) ;break
+            case NODE_NEG:   /* !!x -> x       */ worlds_push(out, rhs_res, rhs_node.rhs)                        ;break
+            default:         /* keep structure */ worlds_push(out, rhs_res, get_node_neg(ctx, rhs_res.node))     ;break
             }
         }
 
@@ -1992,6 +1994,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
             let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
 
             for (let lhs_res of lhs_results) {
+
                 let rhs_results = node_reduce_many(node.rhs, lhs_res, scope_id, visited)
                 for (let rhs_res of rhs_results) {
                     let lhs_node = get_node_by_id(ctx, lhs_res.node)!
@@ -2000,22 +2003,24 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                     if (lhs_node.kind !== NODE_BOOL || rhs_node.kind !== NODE_BOOL) {
                         if (lhs_node.kind === NODE_SELECTOR || lhs_node.kind === NODE_VAR ||
                             rhs_node.kind === NODE_SELECTOR || rhs_node.kind === NODE_VAR) {
+                            // symbolic bool op (keep structure)
                             worlds_push(out, rhs_res, get_node_binary(ctx, node.op, lhs_res.node, rhs_res.node))
                         } else {
+                            // non-boolean operands -> impossible
                             worlds_push(out, rhs_res, get_node_never(ctx))
                         }
                         continue
                     }
 
-                    let res_id = get_node_never(ctx)
+                    let res = get_node_never(ctx)
                     switch (node.op) {
-                    case TOKEN_ADD: res_id = get_node_bool(ctx, lhs_node.value || rhs_node.value); break
-                    case TOKEN_MUL: res_id = get_node_bool(ctx, lhs_node.value && rhs_node.value); break
-                    case TOKEN_SUB: res_id = get_node_bool(ctx, lhs_node.value === rhs_node.value); break
-                    case TOKEN_POW: res_id = get_node_bool(ctx, lhs_node.value !== rhs_node.value); break
+                    case TOKEN_ADD: res = get_node_bool(ctx, lhs_node.value || rhs_node.value); break
+                    case TOKEN_MUL: res = get_node_bool(ctx, lhs_node.value && rhs_node.value); break
+                    case TOKEN_SUB: res = get_node_bool(ctx, lhs_node.value === rhs_node.value); break
+                    case TOKEN_POW: res = get_node_bool(ctx, lhs_node.value !== rhs_node.value); break
                     }
 
-                    worlds_push(out, rhs_res, res_id)
+                    worlds_push(out, rhs_res, res)
                 }
             }
 
@@ -2036,41 +2041,49 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                     let rhs_node = get_node_by_id(ctx, rhs_id)!
 
                     if (lhs_node.kind === NODE_ANY || rhs_node.kind === NODE_ANY) {
+                        // () = x -> () only if x is ()
                         worlds_push(out, rhs_res, get_node_any_or_never(ctx, lhs_node.kind === NODE_ANY && rhs_node.kind === NODE_ANY))
                         continue
                     }
 
                     if (lhs_node.kind === NODE_NEVER || rhs_node.kind === NODE_NEVER) {
+                        // !() = x -> !() unless both !()
                         worlds_push(out, rhs_res, get_node_any_or_never(ctx, lhs_node.kind === NODE_NEVER && rhs_node.kind === NODE_NEVER))
                         continue
                     }
 
-                    if ((lhs_node.kind === NODE_SCOPE) !== (rhs_node.kind === NODE_SCOPE)) {
-                        if (lhs_node.kind !== NODE_VAR && lhs_node.kind !== NODE_SELECTOR &&
-                            rhs_node.kind !== NODE_VAR && rhs_node.kind !== NODE_SELECTOR) {
-                            worlds_push(out, rhs_res, get_node_never(ctx))
-                            continue
-                        }
+                    if ((lhs_node.kind === NODE_SCOPE) !== (rhs_node.kind === NODE_SCOPE) &&
+                        lhs_node.kind !== NODE_VAR && lhs_node.kind !== NODE_SELECTOR &&
+                        rhs_node.kind !== NODE_VAR && rhs_node.kind !== NODE_SELECTOR)
+                    {
+                        // scope vs literal (non-symbolic) -> impossible
+                        worlds_push(out, rhs_res, get_node_never(ctx))
+                        continue
                     }
 
-                    if (lhs_node.kind === NODE_SCOPE && rhs_node.kind === NODE_SCOPE) {
-                        if (scopes_conflict(rhs_res, lhs_node, rhs_node)) {
-                            worlds_push(out, rhs_res, get_node_never(ctx))
-                            continue
-                        }
+                    if (lhs_node.kind === NODE_SCOPE &&
+                        rhs_node.kind === NODE_SCOPE &&
+                        scopes_conflict(rhs_res, lhs_node, rhs_node))
+                    {
+                        // conflicting scopes -> impossible
+                        worlds_push(out, rhs_res, get_node_never(ctx))
+                        continue
                     }
 
                     if (lhs_node.kind === NODE_BOOL && rhs_node.kind === NODE_BOOL) {
+                        // literal bool equality
                         worlds_push(out, rhs_res, get_node_any_or_never(ctx, lhs_node.value === rhs_node.value))
                         continue
                     }
 
                     if (node_equals(rhs_res, lhs_id, rhs_id)) {
+                        // x = x -> ()
                         worlds_push(out, rhs_res, get_node_any(ctx))
                         continue
                     }
 
                     if (node_equals(rhs_res, lhs_id, get_node_neg(ctx, rhs_id))) {
+                        // x = !x -> !()
                         worlds_push(out, rhs_res, get_node_never(ctx))
                         continue
                     }
@@ -2091,6 +2104,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                     }
 
                     if (assigned.length === 0) {
+                        // cannot resolve further; keep equality
                         worlds_push(out, rhs_res, get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id))
                         continue
                     }
@@ -2126,8 +2140,8 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                 }
             }
 
+            // pure scope branches stay separate
             if (lhs_all_scopes && rhs_all_scopes) {
-                // pure scope branches stay separate
                 for (let lhs_res of lhs_results) {
                     worlds_push(out, lhs_res, lhs_res.node)
                 }
@@ -2139,6 +2153,8 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
 
             for (let lhs_res of lhs_results) {
                 let lhs_node = get_node_by_id(ctx, lhs_res.node)!
+
+                /* !() | rhs -> rhs */
                 if (lhs_node.kind === NODE_NEVER) {
                     for (let rhs_res of rhs_results) {
                         let rhs_node = get_node_by_id(ctx, rhs_res.node)!
@@ -2159,6 +2175,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                 for (let rhs_res of rhs_results) {
                     let rhs_node = get_node_by_id(ctx, rhs_res.node)!
 
+                    // x | !() -> x
                     if (rhs_node.kind === NODE_NEVER) {
                         if (lhs_node.kind !== NODE_ANY) {
                             worlds_push(out, lhs_res, lhs_res.node)
@@ -2166,6 +2183,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                         continue
                     }
 
+                    // x | () -> ()
                     if (rhs_node.kind === NODE_ANY) {
                         worlds_push(out, rhs_res, get_node_any(ctx))
                         continue
@@ -2203,38 +2221,45 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                     let lhs_node = get_node_by_id(ctx, lhs_res.node)!
                     let rhs_node = get_node_by_id(ctx, rhs_res.node)!
 
+                    // false branch -> !()
                     if (lhs_node.kind === NODE_NEVER || rhs_node.kind === NODE_NEVER) {
                         worlds_push(out, rhs_res, get_node_never(ctx))
                         continue
                     }
 
+                    // () & x -> x
                     if (lhs_node.kind === NODE_ANY) {
                         let reduced_rhs = node_reduce(rhs_res.node, rhs_res, scope_id, visited)
                         worlds_push(out, rhs_res, reduced_rhs)
                         continue
                     }
+                    // x & () -> x
                     if (rhs_node.kind === NODE_ANY) {
                         let reduced_lhs = node_reduce(lhs_res.node, rhs_res, scope_id, visited)
                         worlds_push(out, rhs_res, reduced_lhs)
                         continue
                     }
 
+                    // x & !x -> !()
                     if (node_equals(rhs_res, lhs_res.node, get_node_neg(ctx, rhs_res.node)) ||
                         node_equals(rhs_res, rhs_res.node, get_node_neg(ctx, lhs_res.node))) {
                         worlds_push(out, rhs_res, get_node_never(ctx))
                         continue
                     }
 
+                    // true & false -> !()
                     if (lhs_node.kind === NODE_BOOL && rhs_node.kind === NODE_BOOL && lhs_node.value !== rhs_node.value) {
                         worlds_push(out, rhs_res, get_node_never(ctx))
                         continue
                     }
 
+                    // x & x -> x
                     if (node_equals(rhs_res, lhs_res.node, rhs_res.node)) {
                         worlds_push(out, rhs_res, lhs_res.node)
                         continue
                     }
 
+                    // keep conjunction
                     worlds_push(out, rhs_res, get_node_binary(ctx, TOKEN_AND, lhs_res.node, rhs_res.node))
                 }
             }
