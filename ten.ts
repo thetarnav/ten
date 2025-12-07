@@ -1610,24 +1610,64 @@ const worlds_push = (out: Worlds, world: World, node_id: Node_Id): World => {
     return w
 }
 
-const world_key = (world: World): string => {
+const world_compare_node = (world: World): Node_Id => {
     let ctx = world.ctx
     let node = get_node_by_id(ctx, world.node)
-
     if (node != null && node.kind === NODE_SCOPE) {
-        return _scope_display(world, world.node, true, false, new Set(), true)
+        return world.node
+    }
+    return get_node_scope(ctx, world.scope, world.node)
+}
+
+const scope_equals = (world_a: World, scope_a: Node_Scope, world_b: World, scope_b: Node_Scope): boolean => {
+    let vars_a = scope_vars_collect(world_a, scope_a.id) ?? new Map()
+    let vars_b = scope_vars_collect(world_b, scope_b.id) ?? new Map()
+
+    let idents = new Set<Ident_Id>()
+    for (let id of vars_a.keys()) idents.add(id)
+    for (let id of vars_b.keys()) idents.add(id)
+
+    for (let ident of idents) {
+        let a_val = vars_a.get(ident) ?? null
+        let b_val = vars_b.get(ident) ?? null
+
+        if (a_val == null && b_val == null) continue
+        if (a_val == null || b_val == null) return false
+
+        let a_res = node_reduce(a_val, world_a, scope_a.id)
+        let b_res = node_reduce(b_val, world_b, scope_b.id)
+
+        if (!node_equals(world_a, a_res, b_res)) return false
+        if (!node_equals(world_b, b_res, a_res)) return false
     }
 
-    let scope_node = get_node_scope(ctx, world.scope, world.node)
-    return _scope_display(world, scope_node, true, true, new Set(), true)
+    let a_body = node_reduce(scope_a.body, world_a, scope_a.id)
+    let b_body = node_reduce(scope_b.body, world_b, scope_b.id)
+
+    if (!node_equals(world_a, a_body, b_body)) return false
+    if (!node_equals(world_b, b_body, a_body)) return false
+
+    return true
+}
+
+const worlds_equal = (a: World, b: World): boolean => {
+    let a_node = world_compare_node(a)
+    let b_node = world_compare_node(b)
+
+    let a_scope = get_node_by_id(a.ctx, a_node)
+    let b_scope = get_node_by_id(b.ctx, b_node)
+
+    if (a_scope == null || b_scope == null) return false
+    if (a_scope.kind !== NODE_SCOPE || b_scope.kind !== NODE_SCOPE) return false
+
+    return scope_equals(a, a_scope, b, b_scope)
 }
 
 const worlds_dedupe = (worlds: Worlds, out: Worlds = []): Worlds => {
-    let seen = new Set<string>()
-    for (let w of worlds) {
-        let key = world_key(w)
-        if (seen.has(key)) continue
-        seen.add(key)
+    outer: for (let w of worlds) {
+        for (let existing of out) {
+            if (worlds_equal(existing, w)) continue outer
+        }
         out.push(w)
     }
     return out
