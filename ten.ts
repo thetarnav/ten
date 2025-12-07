@@ -1619,9 +1619,18 @@ const world_compare_node = (world: World): Node_Id => {
     return get_node_scope(ctx, world.scope, world.node)
 }
 
-const scope_equals = (world_a: World, scope_a: Node_Scope, world_b: World, scope_b: Node_Scope): boolean => {
-    let vars_a = scope_vars_collect(world_a, scope_a.id) ?? new Map()
-    let vars_b = scope_vars_collect(world_b, scope_b.id) ?? new Map()
+const worlds_equal = (a: World, b: World): boolean => {
+    let a_node = world_compare_node(a)
+    let b_node = world_compare_node(b)
+
+    let a_scope = get_node_by_id(a.ctx, a_node)
+    let b_scope = get_node_by_id(b.ctx, b_node)
+
+    if (a_scope == null || b_scope == null) return false
+    if (a_scope.kind !== NODE_SCOPE || b_scope.kind !== NODE_SCOPE) return false
+
+    let vars_a: Map<Ident_Id, Node_Id> = scope_vars_collect(a, a_scope.id) ?? new Map()
+    let vars_b: Map<Ident_Id, Node_Id> = scope_vars_collect(b, b_scope.id) ?? new Map()
 
     let idents = new Set<Ident_Id>()
     for (let id of vars_a.keys()) idents.add(id)
@@ -1634,33 +1643,14 @@ const scope_equals = (world_a: World, scope_a: Node_Scope, world_b: World, scope
         if (a_val == null && b_val == null) continue
         if (a_val == null || b_val == null) return false
 
-        let a_res = node_reduce(a_val, world_a, scope_a.id)
-        let b_res = node_reduce(b_val, world_b, scope_b.id)
-
-        if (!node_equals(world_a, a_res, b_res)) return false
-        if (!node_equals(world_b, b_res, a_res)) return false
+        if (!node_equals(a, a_val, b_val)) return false
+        if (!node_equals(b, b_val, a_val)) return false
     }
 
-    let a_body = node_reduce(scope_a.body, world_a, scope_a.id)
-    let b_body = node_reduce(scope_b.body, world_b, scope_b.id)
-
-    if (!node_equals(world_a, a_body, b_body)) return false
-    if (!node_equals(world_b, b_body, a_body)) return false
+    if (!node_equals(a, a_scope.body, b_scope.body)) return false
+    if (!node_equals(b, b_scope.body, a_scope.body)) return false
 
     return true
-}
-
-const worlds_equal = (a: World, b: World): boolean => {
-    let a_node = world_compare_node(a)
-    let b_node = world_compare_node(b)
-
-    let a_scope = get_node_by_id(a.ctx, a_node)
-    let b_scope = get_node_by_id(b.ctx, b_node)
-
-    if (a_scope == null || b_scope == null) return false
-    if (a_scope.kind !== NODE_SCOPE || b_scope.kind !== NODE_SCOPE) return false
-
-    return scope_equals(a, a_scope, b, b_scope)
 }
 
 const worlds_dedupe = (worlds: Worlds, out: Worlds = []): Worlds => {
