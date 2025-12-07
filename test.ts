@@ -765,7 +765,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}(a = false) & (a + false = x) & (x = false)${br}`,
             `${bl}a = false, x = false${br}`)
 
-        // Variable disjunctions
+        // Variable conjunctaions
         test_reducer(`${bl}(a+b = true) & (a = false) & (b = false)${br}`,
             `!()`)
         test_reducer(`${bl}(a+b = true) & (a = false) & (b = true)${br}`,
@@ -774,6 +774,10 @@ test.describe('reducer', {concurrency: true}, () => {
             `${bl}a = true, b = false${br}`)
         test_reducer(`${bl}(a+b = true) & (a = true) & (b = true)${br}`,
             `${bl}a = true, b = true${br}`)
+
+        // Variable disjunctions
+        test_reducer(`${bl}a = true | false, b = -a, b = true${br}`,
+            `${bl}a = false, b = true${br}`)
 
         test_reducer(`${bl}((a = false) & !()) | ((a = true) & ())${br}`,
             `${bl}a = true${br}`)
