@@ -1603,10 +1603,11 @@ const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => 
 
 export type Worlds = World[]
 
-const worlds_push = (out: Worlds, world: World, node_id: Node_Id): void => {
+const worlds_push = (out: Worlds, world: World, node_id: Node_Id): World => {
     let w = world_clone(world)
     w.node = node_id
     out.push(w)
+    return w
 }
 
 const world_key = (world: World): string => {
@@ -1639,8 +1640,7 @@ export const reduce = (ctx: Context) => {
     for (let world of ctx.worlds) {
         let res = node_reduce_many(world.node, world, world.scope)
         if (res.length === 0) {
-            let w = world_clone(world)
-            worlds_push(never_worlds, w, get_node_never(ctx))
+            worlds_push(never_worlds, world, get_node_never(ctx))
             continue
         }
         for (let r of res) {
@@ -1672,7 +1672,7 @@ const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visi
             eq_rhs_branches(w, w.node, scope_id, visited, out)
         }
     } else {
-        worlds_push(out, world_clone(world), rhs_id)
+        worlds_push(out, world, rhs_id)
     }
 
     return out
@@ -1707,17 +1707,15 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
                         has_unknown = true
                         break
                     }
-                    let new_world = world_clone(br)
+                    let new_world = worlds_push(out, br, get_node_any(ctx))
                     var_set_val(new_world, br.node, val_id)
-                    worlds_push(out, new_world, get_node_any(ctx))
                     continue
                 }
                 case NODE_NEG: {
                     let inner = get_node_by_id(ctx, br_node.rhs)
                     if (inner != null && inner.kind === NODE_VAR && inner.lhs === scope_id) {
-                        let new_world = world_clone(br)
+                        let new_world = worlds_push(out, br, get_node_any(ctx))
                         var_set_val(new_world, br_node.rhs, get_node_bool(ctx, !val_node.value))
-                        worlds_push(out, new_world, get_node_any(ctx))
                         continue
                     }
                     has_unknown = true
@@ -1728,17 +1726,15 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
                         let lhs_node = get_node_by_id(ctx, br_node.lhs)
                         let rhs_node = get_node_by_id(ctx, br_node.rhs)
                         if (lhs_node != null && lhs_node.kind === NODE_BOOL && rhs_node != null && rhs_node.kind === NODE_VAR && rhs_node.lhs === scope_id) {
-                            let new_world = world_clone(br)
+                            let new_world = worlds_push(out, br, get_node_any(ctx))
                             let desired = val_node.value ? lhs_node.value : !lhs_node.value
                             var_set_val(new_world, br_node.rhs, get_node_bool(ctx, desired))
-                            worlds_push(out, new_world, get_node_any(ctx))
                             continue
                         }
                         if (rhs_node != null && rhs_node.kind === NODE_BOOL && lhs_node != null && lhs_node.kind === NODE_VAR && lhs_node.lhs === scope_id) {
-                            let new_world = world_clone(br)
+                            let new_world = worlds_push(out, br, get_node_any(ctx))
                             let desired = val_node.value ? rhs_node.value : !rhs_node.value
                             var_set_val(new_world, br_node.lhs, get_node_bool(ctx, desired))
-                            worlds_push(out, new_world, get_node_any(ctx))
                             continue
                         }
                     }
@@ -1772,9 +1768,8 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
         let br_node = get_node_by_id(ctx, br.node)
         if (br_node != null && br_node.kind === NODE_NEVER) continue
 
-        let new_world = world_clone(br)
+        let new_world = worlds_push(out, br, get_node_any(ctx))
         var_set_val(new_world, lhs_id, br.node)
-        worlds_push(out, new_world, get_node_any(ctx))
     }
 
     if (out.length === 0) {
@@ -1826,8 +1821,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         if (lhs_node.kind === NODE_SELECTOR || lhs_node.kind === NODE_VAR) {
             node_reduce_many(node.lhs, world, scope_id, visited, lhs_results)
         } else {
-            let w = world_clone(world)
-            worlds_push(lhs_results, w, node.lhs)
+            worlds_push(lhs_results, world, node.lhs)
         }
 
         for (let lhs_res of lhs_results) {
