@@ -1622,9 +1622,8 @@ const world_key = (world: World): string => {
     return _scope_display(world, scope_node, true, true, new Set(), true)
 }
 
-const dedupe_worlds = (worlds: Reduce_Result[]): Reduce_Result[] => {
+const dedupe_worlds = (worlds: Reduce_Result[], out: Reduce_Result[] = []): Reduce_Result[] => {
     let seen = new Set<string>()
-    let out: Reduce_Result[] = []
     for (let res of worlds) {
         let key = world_key(res.world)
         if (seen.has(key)) continue
@@ -1634,20 +1633,16 @@ const dedupe_worlds = (worlds: Reduce_Result[]): Reduce_Result[] => {
     return out
 }
 
-const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>): Reduce_Result[] => {
+const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>, out: Reduce_Result[] = []): Reduce_Result[] => {
     let queue: Reduce_Result[] = [{world, node_id: rhs_id}]
-    let out: Reduce_Result[] = []
 
     while (queue.length > 0) {
         let current = queue.shift()!
         let rhs_node = get_node_by_id(current.world.ctx, current.node_id)
 
         if (rhs_node != null && rhs_node.kind === NODE_BINARY && rhs_node.op === TOKEN_OR) {
-            let lhs_results = node_reduce_many(rhs_node.lhs, world_clone(current.world), scope_id, visited)
-            for (let res of lhs_results) queue.push(res)
-
-            let rhs_results = node_reduce_many(rhs_node.rhs, world_clone(current.world), scope_id, visited)
-            for (let res of rhs_results) queue.push(res)
+            node_reduce_many(rhs_node.lhs, world_clone(current.world), scope_id, visited, queue)
+            node_reduce_many(rhs_node.rhs, world_clone(current.world), scope_id, visited, queue)
             continue
         }
 
@@ -1658,7 +1653,7 @@ const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visi
 }
 
 export const reduce = (ctx: Context) => {
-    let next_worlds: Reduce_Result[] = []
+    let next_worlds:  Reduce_Result[] = []
     let never_worlds: Reduce_Result[] = []
 
     for (let world of ctx.worlds) {
@@ -1690,16 +1685,15 @@ export const reduce = (ctx: Context) => {
     ctx.worlds = worlds
 }
 
-function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>): Reduce_Result[] {
+function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>, out: Reduce_Result[] = []): Reduce_Result[] {
     let ctx = world.ctx
 
     let lhs = get_node_by_id(ctx, lhs_id)
-    if (lhs == null || lhs.kind !== NODE_VAR) return []
+    if (lhs == null || lhs.kind !== NODE_VAR) return out
 
     let rhs_branches = eq_rhs_branches(world, rhs_id, scope_id, visited)
 
     let val_id = var_get_val(world, lhs_id)
-    let out: Reduce_Result[] = []
 
     if (val_id != null) {
         let val_node = get_node_by_id(ctx, val_id)
@@ -1784,6 +1778,7 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
     for (let br of rhs_branches) {
         let br_node = get_node_by_id(ctx, br.node_id)
         if (br_node != null && br_node.kind === NODE_NEVER) continue
+
         let new_world = world_clone(br.world)
         var_set_val(new_world, lhs_id, br.node_id)
         reduce_result_push(out, new_world, get_node_any(ctx))
@@ -1796,8 +1791,7 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
     return out
 }
 
-function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, visited: Set<Node_Id> = new Set()): Reduce_Result[] {
-
+function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, visited: Set<Node_Id> = new Set(), out: Reduce_Result[] = []): Reduce_Result[] {
     let ctx = world.ctx
 
     let node = get_node_by_id(ctx, node_id)
@@ -1806,21 +1800,17 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
     switch (node.kind) {
     case NODE_ANY:
     case NODE_NEVER:
-    case NODE_BOOL: {
-        let out: Reduce_Result[] = []
+    case NODE_BOOL:
         reduce_result_push(out, world, node_id)
         return out
-    }
 
     case NODE_VAR: {
         if (visited.has(node_id)) {
-            let out: Reduce_Result[] = []
             reduce_result_push(out, world, node_id)
             return out
         }
 
         if (!var_exists(world, node_id)) {
-            let out: Reduce_Result[] = []
             reduce_result_push(out, world, get_node_never(ctx))
             return out
         }
@@ -1829,10 +1819,9 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         if (val != null) {
             let next_visited = new Set(visited)
             next_visited.add(node_id)
-            return node_reduce_many(val, world, scope_id, next_visited)
+            return node_reduce_many(val, world, scope_id, next_visited, out)
         }
 
-        let out: Reduce_Result[] = []
         reduce_result_push(out, world, node_id)
         return out
     }
@@ -1842,22 +1831,18 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         let lhs_results: Reduce_Result[] = []
 
         if (lhs_node.kind === NODE_SELECTOR || lhs_node.kind === NODE_VAR) {
-            lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
+            node_reduce_many(node.lhs, world, scope_id, visited, lhs_results)
         } else {
-            lhs_results.push({world, node_id: node.lhs})
+            reduce_result_push(lhs_results, world, node.lhs)
         }
 
-        let out: Reduce_Result[] = []
         for (let lhs_res of lhs_results) {
             let lhs_reduced = get_node_by_id(ctx, lhs_res.node_id)
             if (lhs_reduced == null) continue
 
             if (lhs_reduced.kind === NODE_SCOPE) {
                 let var_id = get_node_var(ctx, lhs_reduced.id, node.rhs)
-                let res = node_reduce_many(var_id, lhs_res.world, scope_id, visited)
-                for (let r of res) {
-                    reduce_result_push(out, r.world, r.node_id)
-                }
+                node_reduce_many(var_id, lhs_res.world, scope_id, visited, out)
                 continue
             }
 
@@ -1874,7 +1859,6 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
 
     case NODE_SCOPE: {
         let body_results = node_reduce_many(node.body, world, node.id, visited)
-        let out: Reduce_Result[] = []
 
         for (let body_res of body_results) {
             let body_node = get_node_by_id(ctx, body_res.node_id)
@@ -1925,7 +1909,6 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
 
     case NODE_NEG: {
         let rhs_results = node_reduce_many(node.rhs, world, scope_id, visited)
-        let out: Reduce_Result[] = []
 
         for (let rhs_res of rhs_results) {
             let rhs_node = get_node_by_id(ctx, rhs_res.node_id)!
@@ -1959,7 +1942,6 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         case TOKEN_MUL:
         case TOKEN_POW: {
             let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
-            let out: Reduce_Result[] = []
 
             for (let lhs_res of lhs_results) {
                 let rhs_results = node_reduce_many(node.rhs, lhs_res.world, scope_id, visited)
@@ -1995,7 +1977,6 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         /* Logical Equality */
         case TOKEN_EQ: {
             let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
-            let out: Reduce_Result[] = []
 
             for (let lhs_res of lhs_results) {
                 let rhs_results = node_reduce_many(node.rhs, lhs_res.world, scope_id, visited)
@@ -2079,7 +2060,33 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         case TOKEN_OR: {
             let lhs_results = node_reduce_many(node.lhs, world_clone(world), scope_id, visited)
             let rhs_results = node_reduce_many(node.rhs, world_clone(world), scope_id, visited)
-            let out: Reduce_Result[] = []
+
+            let lhs_all_scopes = lhs_results.length > 0
+            let rhs_all_scopes = rhs_results.length > 0
+            for (let lhs_res of lhs_results) {
+                let lhs_node = get_node_by_id(ctx, lhs_res.node_id)
+                if (lhs_node == null || lhs_node.kind !== NODE_SCOPE) {
+                    lhs_all_scopes = false
+                    break
+                }
+            }
+            for (let rhs_res of rhs_results) {
+                let rhs_node = get_node_by_id(ctx, rhs_res.node_id)
+                if (rhs_node == null || rhs_node.kind !== NODE_SCOPE) {
+                    rhs_all_scopes = false
+                    break
+                }
+            }
+
+            if (lhs_all_scopes && rhs_all_scopes) {
+                for (let lhs_res of lhs_results) {
+                    reduce_result_push(out, lhs_res.world, lhs_res.node_id)
+                }
+                for (let rhs_res of rhs_results) {
+                    reduce_result_push(out, rhs_res.world, rhs_res.node_id)
+                }
+                return out
+            }
 
             for (let lhs_res of lhs_results) {
                 let lhs_node = get_node_by_id(ctx, lhs_res.node_id)!
@@ -2139,7 +2146,6 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
         case TOKEN_COMMA:
         case TOKEN_AND: {
             let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
-            let out: Reduce_Result[] = []
 
             for (let lhs_res of lhs_results) {
                 let rhs_results = node_reduce_many(node.rhs, lhs_res.world, scope_id, visited)
