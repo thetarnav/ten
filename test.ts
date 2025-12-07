@@ -371,13 +371,13 @@ test.describe('reducer', {concurrency: true}, () => {
     // Any and never nodes
     test_reducer(``,      `()`)
     test_reducer(`()`,    `()`)
-    test_reducer(`{()}`,  `()`)
+    test_reducer(`{()}`,  `{}`)
     test_reducer(`(())`,  `()`)
     test_reducer(`!()`,   `!()`)
-    test_reducer(`!{}`,   `!()`)
+    test_reducer(`!{}`,   `!{}`)
     test_reducer(`{!()}`, `!()`)
     test_reducer(`!!()`,  `()`)
-    test_reducer(`!!{}`,  `()`)
+    test_reducer(`!!{}`,  `{}`)
 
     // Logical OR and AND with any and never
     test_reducer(`() | !()`,
@@ -389,9 +389,9 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`{} | !{}`,
         `()`)
     test_reducer(`!{} | !{}`,
-        `!()`)
+        `!{}`)
     test_reducer(`{} | {}`,
-        `()`)
+        `{}`)
 
     test_reducer(`() & !()`,
         `!()`)
@@ -402,9 +402,9 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`{} & !{}`,
         `!()`)
     test_reducer(`{} & {}`,
-        `()`)
+        `{}`)
     test_reducer(`!{} & !{}`,
-        `!()`)
+        `!{}`)
 
     // Equality and inequality with any and never
     test_reducer(`() = ()`,
@@ -420,9 +420,9 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`{} = !{}`,
         `!()`)
     test_reducer(`{} = ()`,
-        `()`)
+        `!()`)
     test_reducer(`!{} = !()`,
-        `()`)
+        `!()`)
     test_reducer(`{} = !()`,
         `!()`)
 
@@ -460,414 +460,409 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`() ^ ()`,
         `!()`)
 
-    for (let scope_used of [false, true]) {
-        let sl = scope_used ? '{' : ''
-        let sr = scope_used ? '}' : ''
+    // Simple boolean values
+    test_reducer(`true`,
+        `true`)
+    test_reducer(`false`,
+        `false`)
 
-        // Simple boolean values
-        test_reducer(`${sl}true${sr}`,
-            `true`)
-        test_reducer(`${sl}false${sr}`,
-            `false`)
+    // Unary plus (identity)
+    test_reducer(`+true`,
+        `true`)
+    test_reducer(`+false`,
+        `false`)
 
-        // Unary plus (identity)
-        test_reducer(`${sl}+true${sr}`,
-            `true`)
-        test_reducer(`${sl}+false${sr}`,
-            `false`)
+    // Boolean NOT (unary negation)
+    test_reducer(`-true`,
+        `false`)
+    test_reducer(`-false`,
+        `true`)
+    test_reducer(`--true`,
+        `true`)
+    test_reducer(`!true`,
+        `false`)
+    test_reducer(`!false`,
+        `true`)
+    test_reducer(`!!true`,
+        `true`)
 
-        // Boolean NOT (unary negation)
-        test_reducer(`${sl}-true${sr}`,
-            `false`)
-        test_reducer(`${sl}-false${sr}`,
-            `true`)
-        test_reducer(`${sl}--true${sr}`,
-            `true`)
-        test_reducer(`${sl}!true${sr}`,
-            `false`)
-        test_reducer(`${sl}!false${sr}`,
-            `true`)
-        test_reducer(`${sl}!!true${sr}`,
-            `true`)
+    // Boolean OR (addition)
+    test_reducer(`true + false`,
+        `true`)
+    test_reducer(`false + false`,
+        `false`)
+    test_reducer(`true + true`,
+        `true`)
 
-        // Boolean OR (addition)
-        test_reducer(`${sl}true + false${sr}`,
-            `true`)
-        test_reducer(`${sl}false + false${sr}`,
-            `false`)
-        test_reducer(`${sl}true + true${sr}`,
-            `true`)
+    // Boolean AND (multiplication)
+    test_reducer(`true * false`,
+        `false`)
+    test_reducer(`true * true`,
+        `true`)
+    test_reducer(`false * false`,
+        `false`)
 
-        // Boolean AND (multiplication)
-        test_reducer(`${sl}true * false${sr}`,
-            `false`)
-        test_reducer(`${sl}true * true${sr}`,
-            `true`)
-        test_reducer(`${sl}false * false${sr}`,
-            `false`)
+    // Logical OR (|)
+    test_reducer(`true | false`,
+        `true | false`)
+    test_reducer(`false | false`,
+        `false`)
+    test_reducer(`true | true`,
+        `true`)
+    test_reducer(`false | a`,
+        `a = a, false | a`)
+    test_reducer(`true | a`,
+        `a = a, true | a`)
 
-        // Logical OR (|)
-        test_reducer(`${sl}true | false${sr}`,
-            `true | false`)
-        test_reducer(`${sl}false | false${sr}`,
-            `false`)
-        test_reducer(`${sl}true | true${sr}`,
-            `true`)
-        test_reducer(`${sl}false | a${sr}`,
-            `{a = a, false | a}`)
-        test_reducer(`${sl}true | a${sr}`,
-            `{a = a, true | a}`)
+    // Logical AND (&)
+    test_reducer(`true & false`,
+        `!()`)
+    test_reducer(`true & true`,
+        `true`)
+    test_reducer(`false & false`,
+        `false`)
+    test_reducer(`false & a`,
+        `a = a, false & a`)
+    test_reducer(`true & a`,
+        `a = a, true & a`)
 
-        // Logical AND (&)
-        test_reducer(`${sl}true & false${sr}`,
-            `!()`)
-        test_reducer(`${sl}true & true${sr}`,
-            `true`)
-        test_reducer(`${sl}false & false${sr}`,
-            `false`)
-        test_reducer(`${sl}false & a${sr}`,
-            `{a = a, false & a}`)
-        test_reducer(`${sl}true & a${sr}`,
-            `{a = a, true & a}`)
+    // Boolean XOR (^)
+    test_reducer(`true ^ false`,
+        `true`)
+    test_reducer(`false ^ false`,
+        `false`)
+    test_reducer(`true ^ true`,
+        `false`)
+    test_reducer(`false ^ true`,
+        `true`)
 
-        // Boolean XOR (^)
-        test_reducer(`${sl}true ^ false${sr}`,
-            `true`)
-        test_reducer(`${sl}false ^ false${sr}`,
-            `false`)
-        test_reducer(`${sl}true ^ true${sr}`,
-            `false`)
-        test_reducer(`${sl}false ^ true${sr}`,
-            `true`)
+    // Complex expressions
+    test_reducer(`true * (false + true)`,
+        `true`)
+    test_reducer(`(true + false) * false`,
+        `false`)
+    test_reducer(`-(true * false)`,
+        `true`)
+    test_reducer(`-false + true`,
+        `true`)
 
-        // Complex expressions
-        test_reducer(`${sl}true * (false + true)${sr}`,
-            `true`)
-        test_reducer(`${sl}(true + false) * false${sr}`,
-            `false`)
-        test_reducer(`${sl}-(true * false)${sr}`,
-            `true`)
-        test_reducer(`${sl}-false + true${sr}`,
-            `true`)
+    // Nested operations
+    test_reducer(`true + false * true`,
+        `true`)
+    test_reducer(`-(-true)`,
+        `true`)
+    test_reducer(`-(true + false)`,
+        `false`)
 
-        // Nested operations
-        test_reducer(`${sl}true + false * true${sr}`,
-            `true`)
-        test_reducer(`${sl}-(-true)${sr}`,
-            `true`)
-        test_reducer(`${sl}-(true + false)${sr}`,
-            `false`)
+    // Boolean equality (=)
+    test_reducer(`true = true`,
+        `()`)
+    test_reducer(`false = false`,
+        `()`)
+    test_reducer(`true = false`,
+        `!()`)
+    test_reducer(`false = true`,
+        `!()`)
+    test_reducer(`false = !true`,
+        `()`)
 
-        // Boolean equality (=)
-        test_reducer(`${sl}true = true${sr}`,
-            `()`)
-        test_reducer(`${sl}false = false${sr}`,
-            `()`)
-        test_reducer(`${sl}true = false${sr}`,
-            `!()`)
-        test_reducer(`${sl}false = true${sr}`,
-            `!()`)
-        test_reducer(`${sl}false = !true${sr}`,
-            `()`)
+    // Boolean inequality (!=)
+    test_reducer(`true != true`,
+        `!()`)
+    test_reducer(`false != false`,
+        `!()`)
+    test_reducer(`true != false`,
+        `()`)
+    test_reducer(`false != true`,
+        `()`)
 
-        // Boolean inequality (!=)
-        test_reducer(`${sl}true != true${sr}`,
-            `!()`)
-        test_reducer(`${sl}false != false${sr}`,
-            `!()`)
-        test_reducer(`${sl}true != false${sr}`,
-            `()`)
-        test_reducer(`${sl}false != true${sr}`,
-            `()`)
+    // Variables
+    test_reducer(`a = true`,
+        `a = true`)
+    test_reducer(`false = b`,
+        `b = false`)
+    test_reducer(`x = y`,
+        `x = y, y = y`)
+    test_reducer(`x = x`,
+        `x = x`)
+    test_reducer(`a = true, a = true`,
+        `a = true`)
+    test_reducer(`a = true, a = false`,
+        `!()`)
+    test_reducer(`a = true, a = -false`,
+        `a = true`)
+    test_reducer(`a = true, b = -a`,
+        `a = true, b = false`)
+    test_reducer(`a = true, b = a - false`,
+        `a = true, b = false`)
 
-        // Variables
-        test_reducer(`${sl}a = true${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}false = b${sr}`,
-            `{b = false}`)
-        test_reducer(`${sl}x = y${sr}`,
-            `{x = y, y = y}`)
-        test_reducer(`${sl}x = x${sr}`,
-            `{x = x}`)
-        test_reducer(`${sl}a = true, a = true${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}a = true, a = false${sr}`,
-            `!()`)
-        test_reducer(`${sl}a = true, a = -false${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}a = true, b = -a${sr}`,
-            `{a = true, b = false}`)
-        test_reducer(`${sl}a = true, b = a - false${sr}`,
-            `{a = true, b = false}`)
+    test_reducer(`!a`,
+        `a = a, !a`)
 
-        test_reducer(`${sl}!a${sr}`,
-            `{a = a, !a}`)
+    // Variables with != operator
+    test_reducer(`a != true`,
+        `a = false`)
+    test_reducer(`a != false`,
+        `a = true`)
+    test_reducer(`a != true, a = false`,
+        `a = false`)
+    test_reducer(`a != true, a = true`,
+        `!()`)
+    test_reducer(`a != b, a = true, b = false`,
+        `a = true, b = false`)
+    test_reducer(`a = true, b = true, a != b`,
+        `!()`)
 
-        // Variables with != operator
-        test_reducer(`${sl}a != true${sr}`,
-            `{a = false}`)
-        test_reducer(`${sl}a != false${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}a != true, a = false${sr}`,
-            `{a = false}`)
-        test_reducer(`${sl}a != true, a = true${sr}`,
-            `!()`)
-        test_reducer(`${sl}a != b, a = true, b = false${sr}`,
-            `{a = true, b = false}`)
-        test_reducer(`${sl}a = true, b = true, a != b${sr}`,
-            `!()`)
+    test_reducer(`a = !b, a = true, b = true`,
+        `!()`)
+    test_reducer(`!a = !b, a = true, b = true`,
+        `a = true, b = true`)
 
-        test_reducer(`${sl}a = !b, a = true, b = true${sr}`,
-            `!()`)
-        test_reducer(`${sl}!a = !b, a = true, b = true${sr}`,
-            `{a = true, b = true}`)
+    test_reducer(`false - a = !a, a - false = !a, a = false`,
+        `a = false`)
+    test_reducer(`false - a = a, a - false = a, a = false`,
+        `!()`)
 
-        test_reducer(`${sl}false - a = !a, a - false = !a, a = false${sr}`,
-            `{a = false}`)
-        test_reducer(`${sl}false - a = a, a - false = a, a = false${sr}`,
-            `!()`)
+    test_reducer(`a != b`,
+        `a = !b, b = b`)
 
-        test_reducer(`${sl}a != b${sr}`,
-            `{a = !b, b = b}`)
+    test_reducer(`a = b, a != b`,
+        `!()`)
+    test_reducer(`a != b, a = b`,
+        `!()`)
+    test_reducer(`a = b, a = !b`,
+        `!()`)
+    test_reducer(`a = !b, a = b`,
+        `!()`)
 
-        test_reducer(`${sl}a = b, a != b${sr}`,
-            `!()`)
-        test_reducer(`${sl}a != b, a = b${sr}`,
-            `!()`)
-        test_reducer(`${sl}a = b, a = !b${sr}`,
-            `!()`)
-        test_reducer(`${sl}a = !b, a = b${sr}`,
-            `!()`)
+    // Variables with OR operations
+    test_reducer(`a + false`,
+        `a = a, a + false`)
+    test_reducer(`a + true`,
+        `a = a, a + true`)
 
-        // Variables with OR operations
-        test_reducer(`${sl}a + false${sr}`,
-            `{a = a, a + false}`)
-        test_reducer(`${sl}a + true${sr}`,
-            `{a = a, a + true}`)
+    // Variables with AND operations
+    test_reducer(`a * true`,
+        `a = a, a * true`)
+    test_reducer(`a * false`,
+        `a = a, a * false`)
 
-        // Variables with AND operations
-        test_reducer(`${sl}a * true${sr}`,
-            `{a = a, a * true}`)
-        test_reducer(`${sl}a * false${sr}`,
-            `{a = a, a * false}`)
+    // Variables with XOR operations
+    test_reducer(`a ^ false`,
+        `a = a, a ^ false`)
 
-        // Variables with XOR operations
-        test_reducer(`${sl}a ^ false${sr}`,
-            `{a = a, a ^ false}`)
+    // Nested variable operations with constraint propagation
+    test_reducer(`(a = b) & (b = false) & (a = true)`,
+        `!()`)
+    test_reducer(`true & (a = false) & (a = true)`,
+        `!()`)
 
-        // Nested variable operations with constraint propagation
-        test_reducer(`${sl}(a = b) & (b = false) & (a = true)${sr}`,
-            `!()`)
-        test_reducer(`${sl}true & (a = false) & (a = true)${sr}`,
-            `!()`)
+    // Edge cases for constraint propagation through comma
+    test_reducer(`(a = b) & (b = false) & (a = false)`,
+        `a = false, b = false`)
+    test_reducer(`(a = b) & (b = true) & (a = false)`,
+        `!()`)
+    test_reducer(`(a = b) & (b = true) & (a = true)`,
+        `a = true, b = true`)
 
-        // Edge cases for constraint propagation through comma
-        test_reducer(`${sl}(a = b) & (b = false) & (a = false)${sr}`,
-            `{a = false, b = false}`)
-        test_reducer(`${sl}(a = b) & (b = true) & (a = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a = b) & (b = true) & (a = true)${sr}`,
-            `{a = true, b = true}`)
+    // Multiple variable chains
+    test_reducer(`(a = b) & (b = c) & (c = false) & (a = false)`,
+        `a = false, b = false, c = false`)
+    test_reducer(`(a = b) & (b = c) & (c = false) & (a = true)`,
+        `!()`)
+    test_reducer(`(a = b) & (b = c) & (c = true) & (a = true)`,
+        `a = true, b = true, c = true`)
 
-        // Multiple variable chains
-        test_reducer(`${sl}(a = b) & (b = c) & (c = false) & (a = false)${sr}`,
-            `{a = false, b = false, c = false}`)
-        test_reducer(`${sl}(a = b) & (b = c) & (c = false) & (a = true)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a = b) & (b = c) & (c = true) & (a = true)${sr}`,
-            `{a = true, b = true, c = true}`)
+    // Reverse order constraint setting
+    test_reducer(`(a = true) & (b = a) & (b = false)`,
+        `!()`)
+    test_reducer(`(a = true) & (b = a) & (b = true)`,
+        `a = true, b = true`)
 
-        // Reverse order constraint setting
-        test_reducer(`${sl}(a = true) & (b = a) & (b = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a = true) & (b = a) & (b = true)${sr}`,
-            `{a = true, b = true}`)
+    // Not-equal with constraint propagation
+    test_reducer(`(a = b) & (b = false) & (a != true)`,
+        `a = false, b = false`)
+    test_reducer(`(a = b) & (b = false) & (a != false)`,
+        `!()`)
+    test_reducer(`(a != b) & (a = true) & (b = true)`,
+        `!()`)
+    test_reducer(`(a != b) & (a = true) & (b = false)`,
+        `a = true, b = false`)
 
-        // Not-equal with constraint propagation
-        test_reducer(`${sl}(a = b) & (b = false) & (a != true)${sr}`,
-            `{a = false, b = false}`)
-        test_reducer(`${sl}(a = b) & (b = false) & (a != false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a != b) & (a = true) & (b = true)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a != b) & (a = true) & (b = false)${sr}`,
-            `{a = true, b = false}`)
+    // Complex chains with mixed operators
+    test_reducer(`(a = b) & (c = a) & (b = true) & (c = false)`,
+        `!()`)
+    test_reducer(`(a != b) & (b = c) & (c = true) & (a = true)`,
+        `!()`)
+    test_reducer(`(a != b) & (b = c) & (c = true) & (a = false)`,
+        `a = false, b = true, c = true`)
 
-        // Complex chains with mixed operators
-        test_reducer(`${sl}(a = b) & (c = a) & (b = true) & (c = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a != b) & (b = c) & (c = true) & (a = true)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a != b) & (b = c) & (c = true) & (a = false)${sr}`,
-            `{a = false, b = true, c = true}`)
+    // Self-reference propagation
+    test_reducer(`(a = a) & (a = true)`,
+        `a = true`)
+    test_reducer(`(a = a) & (a = false)`,
+        `a = false`)
+    test_reducer(`(a != a) & (a = true)`,
+        `!()`)
 
-        // Self-reference propagation
-        test_reducer(`${sl}(a = a) & (a = true)${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}(a = a) & (a = false)${sr}`,
-            `{a = false}`)
-        test_reducer(`${sl}(a != a) & (a = true)${sr}`,
-            `!()`)
+    // Operations with variable constraints
+    test_reducer(`(a = b) & (b = false) & (a + true)`,
+        `a = false, b = false, true`)
+    test_reducer(`(a = b) & (b = true) & (a & false)`,
+        `!()`)
+    test_reducer(`(a = b) & (b = false) & (a ^ true)`,
+        `a = false, b = false, true`)
 
-        // Operations with variable constraints
-        test_reducer(`${sl}(a = b) & (b = false) & (a + true)${sr}`,
-            `{a = false, b = false, true}`)
-        test_reducer(`${sl}(a = b) & (b = true) & (a & false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a = b) & (b = false) & (a ^ true)${sr}`,
-            `{a = false, b = false, true}`)
+    // Multiple constraints on same variable
+    test_reducer(`(a = true) & (a = true) & (a = true)`,
+        `a = true`)
+    test_reducer(`(a = true) & (a != false) & (a = true)`,
+        `a = true`)
+    test_reducer(`(a != false) & (a = true) & (a != false)`,
+        `a = true`)
 
-        // Multiple constraints on same variable
-        test_reducer(`${sl}(a = true) & (a = true) & (a = true)${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}(a = true) & (a != false) & (a = true)${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}(a != false) & (a = true) & (a != false)${sr}`,
-            `{a = true}`)
+    // Variable conjunctions
+    test_reducer(`(a & b) & (a = false) & (b = false)`,
+        `a = false, b = false, false`)
+    test_reducer(`(a & b) & (a = false) & (b = true)`,
+        `!()`)
+    test_reducer(`(a & b) & (a = true) & (b = false)`,
+        `!()`)
+    test_reducer(`(a & b) & (a = true) & (b = true)`,
+        `a = true, b = true, true`)
 
-        // Variable conjunctions
-        test_reducer(`${sl}(a & b) & (a = false) & (b = false)${sr}`,
-            `{a = false, b = false, false}`)
-        test_reducer(`${sl}(a & b) & (a = false) & (b = true)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a & b) & (a = true) & (b = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a & b) & (a = true) & (b = true)${sr}`,
-            `{a = true, b = true, true}`)
+    // Variable xor
+    test_reducer(`(a ^ b) & (a = false) & (b = false)`,
+        `a = false, b = false, false`)
+    test_reducer(`(a ^ b) & (a = false) & (b = true)`,
+        `a = false, b = true, true`)
+    test_reducer(`(a ^ b) & (a = true) & (b = false)`,
+        `a = true, b = false, true`)
+    test_reducer(`(a ^ b) & (a = true) & (b = true)`,
+        `a = true, b = true, false`)
 
-        // Variable xor
-        test_reducer(`${sl}(a ^ b) & (a = false) & (b = false)${sr}`,
-            `{a = false, b = false, false}`)
-        test_reducer(`${sl}(a ^ b) & (a = false) & (b = true)${sr}`,
-            `{a = false, b = true, true}`)
-        test_reducer(`${sl}(a ^ b) & (a = true) & (b = false)${sr}`,
-            `{a = true, b = false, true}`)
-        test_reducer(`${sl}(a ^ b) & (a = true) & (b = true)${sr}`,
-            `{a = true, b = true, false}`)
+    // Complex operations with variables
+    test_reducer(`(a = b) & (b != c) & (c = true) & (a = false)`,
+        `a = false, b = false, c = true`)
+    test_reducer(`(a = b) & (b != c) & (c = true) & (a = true)`,
+        `!()`)
+    test_reducer(`(a = b) & (b = !c) & (c = false) & (c = a ^ true)`,
+        `a = true, b = true, c = false`)
+    test_reducer(`((a = a) & b & (b = false)) & (a = true)`,
+        `a = true, b = false, false`)
+    test_reducer(`(a = b ^ c) & (a = true) & (c = false) & (b = true)`,
+        `a = true, b = true, c = false`)
+    test_reducer(`(a = b ^ c) & (a = true) & (c = false) & (b = false)`,
+        `!()`)
+    test_reducer(`(a = false) & (a + false = x) & (x = true)`,
+        `!()`)
+    test_reducer(`(a = false) & (a + false = x) & (x = false)`,
+        `a = false, x = false`)
 
-        // Complex operations with variables
-        test_reducer(`${sl}(a = b) & (b != c) & (c = true) & (a = false)${sr}`,
-            `{a = false, b = false, c = true}`)
-        test_reducer(`${sl}(a = b) & (b != c) & (c = true) & (a = true)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a = b) & (b = !c) & (c = false) & (c = a ^ true)${sr}`,
-            `{a = true, b = true, c = false}`)
-        test_reducer(`${sl}((a = a) & b & (b = false)) & (a = true)${sr}`,
-            `{a = true, b = false, false}`)
-        test_reducer(`${sl}(a = b ^ c) & (a = true) & (c = false) & (b = true)${sr}`,
-            `{a = true, b = true, c = false}`)
-        test_reducer(`${sl}(a = b ^ c) & (a = true) & (c = false) & (b = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a = false) & (a + false = x) & (x = true)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a = false) & (a + false = x) & (x = false)${sr}`,
-            `{a = false, x = false}`)
+    // Variable disjunctions
+    test_reducer(`(a+b = true) & (a = false) & (b = false)`,
+        `!()`)
+    test_reducer(`(a+b = true) & (a = false) & (b = true)`,
+        `a = false, b = true`)
+    test_reducer(`(a+b = true) & (a = true) & (b = false)`,
+        `a = true, b = false`)
+    test_reducer(`(a+b = true) & (a = true) & (b = true)`,
+        `a = true, b = true`)
 
-        // Variable disjunctions
-        test_reducer(`${sl}(a+b = true) & (a = false) & (b = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(a+b = true) & (a = false) & (b = true)${sr}`,
-            `{a = false, b = true}`)
-        test_reducer(`${sl}(a+b = true) & (a = true) & (b = false)${sr}`,
-            `{a = true, b = false}`)
-        test_reducer(`${sl}(a+b = true) & (a = true) & (b = true)${sr}`,
-            `{a = true, b = true}`)
+    test_reducer(`((a = false) & !()) | ((a = true) & ())`,
+        `a = true`)
+    test_reducer(`((a = false) & !()) | ((a = false) & ())`,
+        `a = false`)
+    test_reducer(`((a = false) & !()) | ((a = true) & !())`,
+        `!()`)
 
-        test_reducer(`${sl}((a = false) & !()) | ((a = true) & ())${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}((a = false) & !()) | ((a = false) & ())${sr}`,
-            `{a = false}`)
-        test_reducer(`${sl}((a = false) & !()) | ((a = true) & !())${sr}`,
-            `!()`)
+    test_reducer(`(((a = false) & !()) | (a = true)) & (a = false)`,
+        `!()`)
+    test_reducer(`(((a = false) & !()) | (a = true)) & (a = true)`,
+        `a = true`)
+    test_reducer(`(((a = false) & !()) | (a = true)) & (a = true)`,
+        `a = true`)
+    test_reducer(`(!() | (a = true)) & (a = false)`,
+        `!()`)
+    test_reducer(`((a = true) | (a = false)) & (a = true)`,
+        `a = true`)
 
-        test_reducer(`${sl}(((a = false) & !()) | (a = true)) & (a = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}(((a = false) & !()) | (a = true)) & (a = true)${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}(((a = false) & !()) | (a = true)) & (a = true)${sr}`,
-            `{a = true}`)
-        test_reducer(`${sl}(!() | (a = true)) & (a = false)${sr}`,
-            `!()`)
-        test_reducer(`${sl}((a = true) | (a = false)) & (a = true)${sr}`,
-            `{a = true}`)
+    // Complex operations with variables
+    test_reducer(`(a = false + b) & (c = b) & (c = true) & (a = true)`,
+        `a = true, b = true, c = true`)
+    test_reducer(`(a = false + b) & (c = b) & (c = true) & (a = false)`,
+        `!()`)
 
-        // Complex operations with variables
-        test_reducer(`${sl}(a = false + b) & (c = b) & (c = true) & (a = true)${sr}`,
-            `{a = true, b = true, c = true}`)
-        test_reducer(`${sl}(a = false + b) & (c = b) & (c = true) & (a = false)${sr}`,
-            `!()`)
+    // Nested scopes
+    test_reducer(`{a = false, c = a} = {a = false, c = a}`,
+        `()`)
+    test_reducer(`{a = true, c = a} = {a = false, c = a}`,
+        `!()`)
+    test_reducer(`{a = false, a = c} = {a = false, c = a}`,
+        `()`)
+    test_reducer(`{a = false, a = c} = {c = a, a = false}`,
+        `()`)
+    test_reducer(`{a = false, a = c} = {c = a, a = false, c = false}`,
+        `()`)
+    test_reducer(`{a = false, a = c} = {a = false, c = false}`,
+        `()`)
+    test_reducer(`{a = false, a = c} = {c = a, a = false, c = true}`,
+        `!()`)
+    test_reducer(`{a = false} = {a = false, c = a}`,
+        `!()`)
+    test_reducer(`{a = false} = true`,
+        `!()`)
 
-        // Nested scopes
-        test_reducer(`${sl}{a = false, c = a} = {a = false, c = a}${sr}`,
-            `()`)
-        test_reducer(`${sl}{a = true, c = a} = {a = false, c = a}${sr}`,
-            `!()`)
-        test_reducer(`${sl}{a = false, a = c} = {a = false, c = a}${sr}`,
-            `()`)
-        test_reducer(`${sl}{a = false, a = c} = {c = a, a = false}${sr}`,
-            `()`)
-        test_reducer(`${sl}{a = false, a = c} = {c = a, a = false, c = false}${sr}`,
-            `()`)
-        test_reducer(`${sl}{a = false, a = c} = {a = false, c = false}${sr}`,
-            `()`)
-        test_reducer(`${sl}{a = false, a = c} = {c = a, a = false, c = true}${sr}`,
-            `!()`)
-        test_reducer(`${sl}{a = false} = {a = false, c = a}${sr}`,
-            `!()`)
-        test_reducer(`${sl}{a = false} = true${sr}`,
-            `!()`)
+    test_reducer(`foo = {a = true}, a = false, b = a`,
+        `foo = {a = true}, a = false, b = false`)
+    test_reducer(`foo = {a = true}, a = false, b = a`,
+        `foo = {a = true}, a = false, b = false`)
 
-        test_reducer(`${sl}foo = {a = true}, a = false, b = a${sr}`,
-            `{foo = {a = true}, a = false, b = false}`)
-        test_reducer(`${sl}foo = {a = true}, a = false, b = a${sr}`,
-            `{foo = {a = true}, a = false, b = false}`)
+    test_reducer(`foo = {a = true, b}`,
+        `foo = {a = true, b = b, b}`)
 
-        test_reducer(`${sl}foo = {a = true, b}${sr}`,
-            `{foo = {a = true, b = b, b}}`)
+    test_reducer(`foo = {a = true}, b = foo.a`,
+        `foo = {a = true}, b = true`)
+    test_reducer(`foo = {}, foo.a = true`,
+        `!()`)
+    test_reducer(`foo = {}, foo.a = false`,
+        `!()`)
+    test_reducer(`foo = {}, foo.a = ()`,
+        `!()`)
+    test_reducer(`foo = {}, foo.a = !()`,
+        `foo = {}`)
+    test_reducer(`foo = {a = true}, bar = {b = true}, bar.b = foo.a`,
+        `foo = {a = true}, bar = {b = true}`)
+    test_reducer(`foo = {a = true}, bar = {b = true}, bar.b != foo.a`,
+        `!()`)
 
-        test_reducer(`${sl}foo = {a = true}, b = foo.a${sr}`,
-            `{foo = {a = true}, b = true}`)
-        test_reducer(`${sl}foo = {}, foo.a = true${sr}`,
-            `!()`)
-        test_reducer(`${sl}foo = {}, foo.a = false${sr}`,
-            `!()`)
-        test_reducer(`${sl}foo = {}, foo.a = ()${sr}`,
-            `!()`)
-        test_reducer(`${sl}foo = {}, foo.a = !()${sr}`,
-            `{foo = ()}`)
-        test_reducer(`${sl}foo = {a = true}, bar = {b = true}, bar.b = foo.a${sr}`,
-            `{foo = {a = true}, bar = {b = true}}`)
-        test_reducer(`${sl}foo = {a = true}, bar = {b = true}, bar.b != foo.a${sr}`,
-            `!()`)
+    test_reducer(`foo = {bar = {a = true}}, b = foo.bar.a, b = true`,
+        `foo = {bar = {a = true}}, b = true`)
 
-        test_reducer(`${sl}foo = {bar = {a = true}}, b = foo.bar.a, b = true${sr}`,
-            `{foo = {bar = {a = true}}, b = true}`)
+    test_reducer(`foo = {a = b}, foo.a = foo.b`,
+        `foo = {a = b, b = b}`)
+    test_reducer(`foo = {a = b}, foo.b = foo.a`,
+        `foo = {a = b, b = b}`)
+    test_reducer(`foo = {a = b, b = true}, foo.b = true`,
+        `foo = {a = true, b = true}`)
+    test_reducer(`foo = {a = b}, foo.a != foo.b`,
+        `!()`)
+    test_reducer(`foo = {a != b}, foo.a = foo.b`,
+        `!()`)
+    test_reducer(`foo = {a != b}, foo.a != foo.b`,
+        `foo = {a = !b, b = b}`)
+    test_reducer(`foo.a = foo.b, foo = {a = b}`,
+        `foo = {a = b, b = b}`)
+    test_reducer(`foo.a != foo.b, foo = {a = b}`,
+        `!()`)
+    test_reducer(`foo.a = foo.b, foo = {a != b}`,
+        `!()`)
+    test_reducer(`foo.a != foo.b, foo = {a != b}`,
+        `foo = {a = !b, b = b}`)
 
-        test_reducer(`${sl}foo = {a = b}, foo.a = foo.b${sr}`,
-            `{foo = {a = b, b = b}}`)
-        test_reducer(`${sl}foo = {a = b}, foo.b = foo.a${sr}`,
-            `{foo = {a = b, b = b}}`)
-        test_reducer(`${sl}foo = {a = b, b = true}, foo.b = true${sr}`,
-            `{foo = {a = true, b = true}}`)
-        test_reducer(`${sl}foo = {a = b}, foo.a != foo.b${sr}`,
-            `!()`)
-        test_reducer(`${sl}foo = {a != b}, foo.a = foo.b${sr}`,
-            `!()`)
-        test_reducer(`${sl}foo = {a != b}, foo.a != foo.b${sr}`,
-            `{foo = {a = !b, b = b}}`)
-        test_reducer(`${sl}foo.a = foo.b, foo = {a = b}${sr}`,
-            `{foo = {a = b, b = b}}`)
-        test_reducer(`${sl}foo.a != foo.b, foo = {a = b}${sr}`,
-            `!()`)
-        test_reducer(`${sl}foo.a = foo.b, foo = {a != b}${sr}`,
-            `!()`)
-        test_reducer(`${sl}foo.a != foo.b, foo = {a != b}${sr}`,
-            `{foo = {a = !b, b = b}}`)
-
-        // Scope Operators & Unification
-        test_reducer(`${sl}a = {x=true}, b = {x=true}, a = b${sr}`,
-            `{a = {x = true}, b = {x = true}}`)
-        test_reducer(`${sl}a = {x=true}, b = {x=false}, a = b${sr}`,
-            `!()`)
-    }
+    // Scope Operators & Unification
+    test_reducer(`a = {x=true}, b = {x=true}, a = b`,
+        `a = {x = true}, b = {x = true}`)
+    test_reducer(`a = {x=true}, b = {x=false}, a = b`,
+        `!()`)
 })

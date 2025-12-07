@@ -1305,10 +1305,7 @@ export const get_node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id, 
 
 export const add_expr = (ctx: Context, expr: Expr, src: string): void => {
     for (let world of ctx.worlds) {
-        let node_id = node_from_expr(world, expr, src, world.scope)
-        if (node_id != null) {
-            world.node = get_node_scope(ctx, world.scope, node_id)
-        }
+        world.node = node_from_expr(world, expr, src, world.scope) ?? NODE_ID_NONE
     }
 }
 
@@ -1545,7 +1542,13 @@ const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => 
 
 export const reduce = (ctx: Context) => {
     for (let world of ctx.worlds) {
-        node_reduce(world.node, world, world.scope)
+        world.node = node_reduce(world.node, world, world.scope)
+        // Reduce vars (copied from scope branch in node_reduce)
+        let vars = world.vars.get(world.scope)
+        if (vars != null) for (let [ident, val_id] of vars) if (val_id != null) {
+            let reduced = node_reduce(val_id, world, world.scope, new Set)
+            vars.set(ident, reduced)
+        }
     }
 }
 
@@ -1633,13 +1636,8 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             return get_node_never(ctx)
         }
 
-        // {}  ->  ()
-        let vars = world.vars.get(node.id)
-        if ((vars == null || vars.size === 0) && body.kind === NODE_ANY) {
-            return get_node_any(ctx)
-        }
-
         // Reduce vars
+        let vars = world.vars.get(node.id)
         if (vars != null) for (let [ident, val_id] of vars) if (val_id != null) {
             let reduced = node_reduce(val_id, world, node.id, visited)
             vars.set(ident, reduced)
@@ -1745,6 +1743,10 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
                 return lhs_id
             }
 
+            // a | !a  ->  ()
+            if (node_equals(world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_any(ctx)
+            if (node_equals(world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_any(ctx)
+
             return get_node_binary(ctx, TOKEN_OR, node.lhs, node.rhs)
         }
 
@@ -1773,9 +1775,11 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             }
 
             // true & true  ->  true
-            if (node_equals(world, lhs_id, rhs_id)) {
-                return lhs_id
-            }
+            if (node_equals(world, lhs_id, rhs_id)) return lhs_id
+
+            // a & !a  ->  !()
+            if (node_equals(world, lhs_id, get_node_neg(ctx, rhs_id))) return get_node_never(ctx)
+            if (node_equals(world, rhs_id, get_node_neg(ctx, lhs_id))) return get_node_never(ctx)
 
             return get_node_binary(ctx, TOKEN_AND, lhs_id, rhs_id)
         }
@@ -1788,10 +1792,6 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         node satisfies never // exhaustive check
         return node_id
     }
-}
-
-export const node_display = (world: World, node_id: Node_Id, indent = '\t', depth = 0): string => {
-    return _node_display(world, node_id, 0, false, new Set())
 }
 
 const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_right: boolean, visited: Set<Node_Id>): string => {
@@ -1855,46 +1855,8 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
         return rhs
     }
 
-    case NODE_SCOPE: {
-        let vars = world.vars.get(node.id)
-        let body = get_node_by_id(ctx, node.body)!
-        let out = ''
-
-        if (body.kind === NODE_NEVER) {
-            return '!()'
-        }
-
-        if (vars != null && vars.size > 0) {
-            let first = true
-            for (let ident of vars.keys()) {
-                let var_id = get_node_var(ctx, node.id, ident)
-                let value = vars.get(ident)
-                if (!first) {
-                    out += ', '
-                }
-                first = false
-                let lhs = ident_string(ctx, ident)!
-                let rhs: string
-                if (value == null || visited.has(var_id)) {
-                    rhs = lhs
-                } else {
-                    rhs = _node_display(world, value, 0, false, visited)
-                }
-                out += `${lhs} = ${rhs}`
-            }
-
-            if (body.kind === NODE_ANY) {
-                return `{${out}}`
-            }
-        } else {
-            return _node_display(world, node.body, 0, false, visited)
-        }
-
-        out += ', '
-        out += _node_display(world, node.body, 0, false, visited)
-
-        return `{${out}}`
-    }
+    case NODE_SCOPE:
+        return _scope_display(world, node_id, true, visited)
 
     default:
         node satisfies never // exhaustive check
@@ -1903,10 +1865,87 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
     }
 }
 
-export const world_display = (world: World): string => {
-    return node_display(world, world.node)
+export const node_display = (world: World, node_id: Node_Id, indent = '\t', depth = 0): string => {
+    return _node_display(world, node_id, 0, false, new Set())
+}
+
+const _scope_display = (world: World, node_id: Node_Id, brackets: boolean, visited: Set<Node_Id>): string => {
+    let ctx = world.ctx
+
+    let node = get_node_by_id(ctx, node_id)
+    if (node == null) return '<node = null>'
+
+    if (node.kind !== NODE_SCOPE) return '<node.kind != SCOPE>'
+
+    let vars = world.vars.get(node.id)
+    let body = get_node_by_id(ctx, node.body)!
+
+    if (body.kind === NODE_NEVER) {
+        return '!()'
+    }
+
+    let out = ''
+
+    let bl = ''
+    let br = ''
+    if (brackets) {
+        bl = '{'
+        br = '}'
+    }
+
+    if (vars != null && vars.size > 0) {
+        let first = true
+        for (let ident of vars.keys()) {
+            let var_id = get_node_var(ctx, node.id, ident)
+            let value = vars.get(ident)
+            if (!first) {
+                out += ', '
+            }
+            first = false
+            let lhs = ident_string(ctx, ident)!
+            let rhs: string
+            if (value == null || visited.has(var_id)) {
+                rhs = lhs
+            } else {
+                rhs = _node_display(world, value, 0, false, visited)
+            }
+            out += `${lhs} = ${rhs}`
+        }
+
+        if (body.kind !== NODE_ANY) {
+            out += ', '
+            out += _node_display(world, node.body, 0, false, visited)
+        }
+    } else if (body.kind !== NODE_ANY) {
+        out = _node_display(world, node.body, 0, false, visited)
+    }
+
+    out = bl+out+br
+
+    if (out === '') {
+        return '()'
+    }
+
+    return out
+}
+
+export const world_display = (world: World, brackets: boolean = true): string => {
+    let ctx = world.ctx
+    let node = get_node_scope(ctx, world.scope, world.node)
+    return _scope_display(world, node, brackets, new Set)
 }
 
 export const display = (ctx: Context): string => {
-    return ctx.worlds.map(world_display).join(' | ')
+    if (ctx.worlds.length === 0) return '!()'
+    if (ctx.worlds.length === 1) return world_display(ctx.worlds[0], false)
+    let out = ''
+    let first = true
+    for (let world of ctx.worlds) {
+        if (!first) {
+            out += ' | '
+        }
+        first = false
+        out += world_display(world, true)
+    }
+    return out
 }
