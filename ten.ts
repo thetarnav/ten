@@ -1604,6 +1604,7 @@ const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => 
 export type Worlds = World[]
 
 const worlds_push = (out: Worlds, world: World, node_id: Node_Id): World => {
+    // fork world, attach new node id
     let w = world_clone(world)
     w.node = node_id
     out.push(w)
@@ -1611,12 +1612,60 @@ const worlds_push = (out: Worlds, world: World, node_id: Node_Id): World => {
 }
 
 const world_compare_node = (world: World): Node_Id => {
+    // compare via scope node if root isn't already a scope
     let ctx = world.ctx
     let node = get_node_by_id(ctx, world.node)
     if (node != null && node.kind === NODE_SCOPE) {
         return world.node
     }
     return get_node_scope(ctx, world.scope, world.node)
+}
+
+const scope_state = (world: World, scope: Node_Scope): [Map<Ident_Id, Node_Id | null>, Node_Id] => {
+    // normalize scope by reducing all vars and body for comparison
+    let vars_raw = scope_vars_collect(world, scope.id) ?? new Map()
+    let vars = new Map<Ident_Id, Node_Id | null>()
+    for (let [ident, val] of vars_raw) {
+        if (val == null) {
+            vars.set(ident, null)
+            continue
+        }
+        vars.set(ident, node_reduce(val, world, scope.id))
+    }
+    let body = node_reduce(scope.body, world, scope.id)
+    return [vars, body]
+}
+
+const scopes_equal_cross = (world_a: World, scope_a: Node_Scope, world_b: World, scope_b: Node_Scope): boolean => {
+    let [vars_a, body_a] = scope_state(world_a, scope_a)
+    let [vars_b, body_b] = scope_state(world_b, scope_b)
+
+    let idents = new Set<Ident_Id>()
+    for (let id of vars_a.keys()) idents.add(id)
+    for (let id of vars_b.keys()) idents.add(id)
+
+    for (let ident of idents) {
+        let a_val = vars_a.get(ident)
+        let b_val = vars_b.get(ident)
+
+        if (a_val == null && b_val == null) continue
+        if (a_val == null || b_val == null) return false
+
+        if (!nodes_equal_cross(world_a, a_val, world_b, b_val)) return false
+    }
+
+    return nodes_equal_cross(world_a, body_a, world_b, body_b)
+}
+
+const nodes_equal_cross = (world_a: World, node_a: Node_Id, world_b: World, node_b: Node_Id): boolean => {
+    let a_node = get_node_by_id(world_a.ctx, node_a)
+    let b_node = get_node_by_id(world_b.ctx, node_b)
+
+    if (a_node?.kind === NODE_SCOPE && b_node?.kind === NODE_SCOPE) {
+        return scopes_equal_cross(world_a, a_node, world_b, b_node)
+    }
+
+    return node_equals(world_a, node_a, node_b) && node_equals(world_b, node_b, node_a)
 }
 
 const worlds_equal = (a: World, b: World): boolean => {
@@ -1629,31 +1678,11 @@ const worlds_equal = (a: World, b: World): boolean => {
     if (a_scope == null || b_scope == null) return false
     if (a_scope.kind !== NODE_SCOPE || b_scope.kind !== NODE_SCOPE) return false
 
-    let vars_a: Map<Ident_Id, Node_Id> = scope_vars_collect(a, a_scope.id) ?? new Map()
-    let vars_b: Map<Ident_Id, Node_Id> = scope_vars_collect(b, b_scope.id) ?? new Map()
-
-    let idents = new Set<Ident_Id>()
-    for (let id of vars_a.keys()) idents.add(id)
-    for (let id of vars_b.keys()) idents.add(id)
-
-    for (let ident of idents) {
-        let a_val = vars_a.get(ident) ?? null
-        let b_val = vars_b.get(ident) ?? null
-
-        if (a_val == null && b_val == null) continue
-        if (a_val == null || b_val == null) return false
-
-        if (!node_equals(a, a_val, b_val)) return false
-        if (!node_equals(b, b_val, a_val)) return false
-    }
-
-    if (!node_equals(a, a_scope.body, b_scope.body)) return false
-    if (!node_equals(b, b_scope.body, a_scope.body)) return false
-
-    return true
+    return scopes_equal_cross(a, a_scope, b, b_scope)
 }
 
 const worlds_dedupe = (worlds: Worlds, out: Worlds = []): Worlds => {
+    // x | x  ->  x
     outer: for (let w of worlds) {
         for (let existing of out) {
             if (worlds_equal(existing, w)) continue outer
@@ -1695,6 +1724,7 @@ const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visi
 
     let rhs_node = get_node_by_id(world.ctx, rhs_id)
     if (rhs_node != null && rhs_node.kind === NODE_BINARY && rhs_node.op === TOKEN_OR) {
+        // expand a | b into separate worlds
         for (let w of node_reduce_many(rhs_node.lhs, world_clone(world), scope_id, visited)) {
             eq_rhs_branches(w, w.node, scope_id, visited, out)
         }
@@ -2097,6 +2127,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
             }
 
             if (lhs_all_scopes && rhs_all_scopes) {
+                // pure scope branches stay separate
                 for (let lhs_res of lhs_results) {
                     worlds_push(out, lhs_res, lhs_res.node)
                 }
@@ -2120,8 +2151,8 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                     continue
                 }
 
-                let lhs_is_any = lhs_node.kind === NODE_ANY
-                if (lhs_is_any) {
+                // () | x -> ()
+                if (lhs_node.kind === NODE_ANY) {
                     worlds_push(out, lhs_res, get_node_any(ctx))
                 }
 
@@ -2129,7 +2160,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                     let rhs_node = get_node_by_id(ctx, rhs_res.node)!
 
                     if (rhs_node.kind === NODE_NEVER) {
-                        if (!lhs_is_any) {
+                        if (lhs_node.kind !== NODE_ANY) {
                             worlds_push(out, lhs_res, lhs_res.node)
                         }
                         continue
@@ -2140,7 +2171,7 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                         continue
                     }
 
-                    if (lhs_is_any) continue
+                    if (lhs_node.kind === NODE_ANY) continue
 
                     if (node_equals(rhs_res, lhs_res.node, get_node_neg(ctx, rhs_res.node)) ||
                         node_equals(rhs_res, rhs_res.node, get_node_neg(ctx, lhs_res.node))) {
