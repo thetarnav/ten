@@ -778,6 +778,10 @@ test.describe('reducer', {concurrency: true}, () => {
         // Variable disjunctions
         test_reducer(`${bl}a = true | false, b = -a, b = true${br}`,
             `${bl}a = false, b = true${br}`)
+        test_reducer(`${bl}a = true, a = b | false${br}`,
+            `${bl}a = true, b = true${br}`)
+        test_reducer(`${bl}a = false, a = -b | true${br}`,
+            `${bl}a = false, b = true${br}`)
 
         test_reducer(`${bl}((a = false) & !()) | ((a = true) & ())${br}`,
             `${bl}a = true${br}`)
@@ -876,4 +880,11 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}a = {x=true}, b = {x=false}, a = b${br}`,
             `!()`)
     }
+
+    test_reducer(`foo = {a = true | false}, foo.a = false`,
+        `foo = {a = false}`)
+    test_reducer(`foo = {a = true | false}, foo.a = true`,
+        `foo = {a = true}`)
+    test_reducer(`(a = true) | (a = false)`,
+        `{a = true} | {a = false}`)
 })
