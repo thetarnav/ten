@@ -1662,20 +1662,17 @@ export const reduce = (ctx: Context) => {
 }
 
 const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>, out: Worlds = []): Worlds => {
-    let queue: Worlds = []
-    worlds_push(queue, world_clone(world), rhs_id)
 
-    for (let idx = 0; idx < queue.length; idx += 1) {
-        let w = queue[idx]
-        let rhs_node = get_node_by_id(w.ctx, w.node)
-
-        if (rhs_node != null && rhs_node.kind === NODE_BINARY && rhs_node.op === TOKEN_OR) {
-            node_reduce_many(rhs_node.lhs, world_clone(w), scope_id, visited, queue)
-            node_reduce_many(rhs_node.rhs, world_clone(w), scope_id, visited, queue)
-            continue
+    let rhs_node = get_node_by_id(world.ctx, rhs_id)
+    if (rhs_node != null && rhs_node.kind === NODE_BINARY && rhs_node.op === TOKEN_OR) {
+        for (let w of node_reduce_many(rhs_node.lhs, world_clone(world), scope_id, visited)) {
+            eq_rhs_branches(w, w.node, scope_id, visited, out)
         }
-
-        worlds_push(out, w, w.node)
+        for (let w of node_reduce_many(rhs_node.rhs, world_clone(world), scope_id, visited)) {
+            eq_rhs_branches(w, w.node, scope_id, visited, out)
+        }
+    } else {
+        worlds_push(out, world_clone(world), rhs_id)
     }
 
     return out
