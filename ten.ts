@@ -1084,8 +1084,9 @@ export const node_var_encode = (lhs: Scope_Id, rhs: Ident_Id): Node_Key => {
     key += rhs * NODE_ENUM_RANGE
     return key as Node_Key
 }
-export const node_scope_encode = (id: Scope_Id): Node_Key => {
+export const node_scope_encode = (id: Scope_Id, body: Node_Id): Node_Key => {
     let key = NODE_SCOPE - NODE_ENUM_START
+    key += body * MAX_ID * NODE_ENUM_RANGE
     key += id * NODE_ENUM_RANGE
     return key as Node_Key
 }
@@ -1099,7 +1100,7 @@ export const node_encode = (node: Node): Node_Key => {
     case NODE_BINARY:   return node_binary_encode(node.op, node.lhs, node.rhs)
     case NODE_SELECTOR: return node_selector_encode(node.lhs, node.rhs)
     case NODE_VAR:      return node_var_encode(node.lhs, node.rhs)
-    case NODE_SCOPE:    return node_scope_encode(node.id)
+    case NODE_SCOPE:    return node_scope_encode(node.id, node.body)
     default:
         node satisfies never // exhaustive check
         return node_any_encode()
@@ -1177,9 +1178,12 @@ export const node_decode = (_key: Node_Key): Node => {
         let node = new Node_Scope()
 
         // key layout after dividing by NODE_ENUM_RANGE:
-        // key = id
+        // key = body * MAX_ID + id
 
         node.id = (key % MAX_ID) as Scope_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.body = (key % MAX_ID) as Node_Id
 
         return node
     }
@@ -1294,28 +1298,16 @@ export const get_node_var = (ctx: Context, lhs: Scope_Id, rhs: Ident_Id, expr: E
     let key = node_var_encode(lhs, rhs)
     return store_node_key(ctx, key, expr)
 }
-export const get_node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id = NODE_ID_NONE, expr: Expr | null = null): Node_Id => {
-    let key = node_scope_encode(scope_id)
-    let id = store_node_key(ctx, key, expr)
-    let node = get_node_by_id(ctx, id)! as Node_Scope
-    if (body !== NODE_ID_NONE) {
-        node.body = body
-    }
-    return id
+export const get_node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id, expr: Expr | null = null): Node_Id => {
+    let key = node_scope_encode(scope_id, body)
+    return store_node_key(ctx, key, expr)
 }
 
 export const add_expr = (ctx: Context, expr: Expr, src: string): void => {
     for (let world of ctx.worlds) {
         let node_id = node_from_expr(world, expr, src, world.scope)
         if (node_id != null) {
-            // Combine with existing root via AND
-            let scope_id = get_node_scope(ctx, world.scope)
-            let scope = get_node_by_id(ctx, scope_id)! as Node_Scope
-            if (scope.body === NODE_ID_NONE) {
-                scope.body = node_id
-            } else {
-                scope.body = get_node_binary(ctx, TOKEN_AND, scope.body, node_id)
-            }
+            world.node = get_node_scope(ctx, world.scope, node_id)
         }
     }
 }
@@ -1553,8 +1545,7 @@ const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => 
 
 export const reduce = (ctx: Context) => {
     for (let world of ctx.worlds) {
-        let scope_id = get_node_scope(ctx, world.scope)
-        node_reduce(scope_id, world, world.scope)
+        node_reduce(world.node, world, world.scope)
     }
 }
 
@@ -1913,8 +1904,7 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
 }
 
 export const world_display = (world: World): string => {
-    let node = get_node_scope(world.ctx, world.scope)
-    return node_display(world, node)
+    return node_display(world, world.node)
 }
 
 export const display = (ctx: Context): string => {
