@@ -1993,6 +1993,23 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
             let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
 
             for (let lhs_res of lhs_results) {
+
+                // if either side is an OR, expand/assign here so disjunction branches are captured before rhs reduction
+                let lhs_raw = get_node_by_id(ctx, node.lhs)
+                let rhs_raw = get_node_by_id(ctx, node.rhs)
+                // (a = b | c) / (a | b = c) -> delegate to eq_var_reduce to fork branches early
+                if ((lhs_raw != null && lhs_raw.kind === NODE_BINARY && lhs_raw.op === TOKEN_OR) ||
+                    (rhs_raw != null && rhs_raw.kind === NODE_BINARY && rhs_raw.op === TOKEN_OR)) {
+                    let direct = eq_var_reduce(lhs_res, node.lhs, node.rhs, scope_id, visited)
+                    if (direct.length === 0) {
+                        direct = eq_var_reduce(lhs_res, node.rhs, node.lhs, scope_id, visited)
+                    }
+                    if (direct.length > 0) {
+                        out.push(...direct)
+                        continue
+                    }
+                }
+
                 let rhs_results = node_reduce_many(node.rhs, lhs_res, scope_id, visited)
 
                 for (let rhs_res of rhs_results) {

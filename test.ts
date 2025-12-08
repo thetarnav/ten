@@ -928,4 +928,8 @@ test.describe('reducer', {concurrency: true}, () => {
         'a = true, b = b')
     test_reducer('a = true, a = true | false',
         'a = true')
+    test_reducer('a = true, a = true | (b = false)',
+        'a = true, b = b')
+    test_reducer('a = true, a = false | (b = false)',
+        '!()')
 })
