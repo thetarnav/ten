@@ -406,6 +406,24 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`!{} & !{}`,
         `!{}`)
 
+    test_reducer(`() | true`,
+        `()`)
+    test_reducer(`() | false`,
+        `()`)
+    test_reducer(`!() | true`,
+        `true`)
+    test_reducer(`!() | false`,
+        `false`)
+
+    test_reducer(`() & true`,
+        `true`)
+    test_reducer(`() & false`,
+        `false`)
+    test_reducer(`!() & true`,
+        `!()`)
+    test_reducer(`!() & false`,
+        `!()`)
+
     // Equality and inequality with any and never
     test_reducer(`() = ()`,
         `()`)
@@ -800,6 +818,8 @@ test.describe('reducer', {concurrency: true}, () => {
             `${bl}a = true${br}`)
         test_reducer(`${bl}(!() | (a = true)) & (a = false)${br}`,
             `!()`)
+        test_reducer(`${bl}(() | (a = true)) & (a = false)${br}`,
+            `${bl}a = false${br}`)
         test_reducer(`${bl}((a = true) | (a = false)) & (a = true)${br}`,
             `${bl}a = true${br}`)
 
@@ -908,6 +928,4 @@ test.describe('reducer', {concurrency: true}, () => {
         'a = true, b = b')
     test_reducer('a = true, a = true | false',
         'a = true')
-    test_reducer('a = true, a = true | (b = false)',
-        '!()')
 })
