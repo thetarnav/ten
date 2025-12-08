@@ -1005,19 +1005,6 @@ export const world_clone = (world: World): World => {
     return clone
 }
 
-export const world_add = (dest: World, src: World): void => {
-    for (let [scope_id, var_map] of src.vars) {
-        let dest_var_map = dest.vars.get(scope_id)
-        if (!dest_var_map) {
-            dest.vars.set(scope_id, new Map(var_map))
-        } else {
-            for (let [ident, val] of var_map) {
-                dest_var_map.set(ident, val)
-            }
-        }
-    }
-}
-
 export type Ident_Id = number & {__var_id: void}
 export type Node_Id  = number & {__node_id: void}
 export type Scope_Id = number & {__scope_id: void}
@@ -1741,26 +1728,26 @@ const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visi
 function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>, out: Worlds = []): Worlds {
     let ctx = world.ctx
 
-    let lhs = get_node_by_id(ctx, lhs_id)
     // only vars participate in assignment
+    let lhs = get_node_by_id(ctx, lhs_id)
     if (lhs == null || lhs.kind !== NODE_VAR) return out
 
     // collect all OR branches of rhs (each in its own world)
     let rhs_branches = eq_rhs_branches(world, rhs_id, scope_id, visited)
 
     let val_id = var_get_val(world, lhs_id)
-
     if (val_id != null) {
         // lhs already known -> try to match/propagate into rhs branches
         let val_node = get_node_by_id(ctx, val_id)
 
+        let matches: Worlds = []
+
         for (let br of rhs_branches) {
             let br_node = get_node_by_id(ctx, br.node)
-            if (br_node != null && br_node.kind === NODE_NEVER) continue
 
             // rhs equals lhs value -> satisfied
             if (node_equals(br, val_id, br.node)) {
-                worlds_push(out, br, get_node_any(ctx))
+                worlds_push(matches, br, get_node_any(ctx))
                 continue
             }
 
@@ -1800,14 +1787,12 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
             }
         }
 
+        if (matches.length > 0) return matches
         return out
     }
 
+    // assign lhs to each viable branch
     for (let br of rhs_branches) {
-        let br_node = get_node_by_id(ctx, br.node)
-        if (br_node != null && br_node.kind === NODE_NEVER) continue
-
-        // assign lhs to each viable branch
         var_set_val(worlds_push(out, br, get_node_any(ctx)), lhs_id, br.node)
     }
 
