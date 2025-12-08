@@ -1,11 +1,11 @@
-function assert(condition: boolean, message?: string): asserts condition {
-    if (!condition) {
-        throw new Error(message || 'Assertion failed')
-    }
-}
-function unreachable(): never {
-    throw new Error('Should\'t reach here')
-}
+// function assert(condition: boolean, message?: string): asserts condition {
+//     if (!condition) {
+//         throw new Error(message || 'Assertion failed')
+//     }
+// }
+// function unreachable(): never {
+//     throw new Error('Should\'t reach here')
+// }
 
 /*--------------------------------------------------------------*
 
@@ -1273,7 +1273,7 @@ export const get_node_never = (ctx: Context, expr: Expr | null = null): Node_Id 
     return store_node_key(ctx, key, expr)
 }
 export const get_node_any_or_never = (ctx: Context, condition: boolean, expr: Expr | null = null): Node_Id => {
-    return condition ? get_node_any(ctx) : get_node_never(ctx)
+    return condition ? get_node_any(ctx, expr) : get_node_never(ctx, expr)
 }
 export const get_node_bool = (ctx: Context, value: boolean, expr: Expr | null = null): Node_Id => {
     let key = node_bool_encode(value)
@@ -1753,7 +1753,6 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
     if (val_id != null) {
         // lhs already known -> try to match/propagate into rhs branches
         let val_node = get_node_by_id(ctx, val_id)
-        let has_unknown = false
 
         for (let br of rhs_branches) {
             let br_node = get_node_by_id(ctx, br.node)
@@ -1768,19 +1767,16 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
             if (val_node != null && val_node.kind === NODE_BOOL && br_node != null) {
                 switch (br_node.kind) {
                 case NODE_VAR: {
-                    if (br_node.lhs !== scope_id) {
-                        break
-                    }
+                    if (br_node.lhs !== scope_id) break
                     // assign rhs var to known value
                     var_set_val(worlds_push(out, br, get_node_any(ctx)), br.node, val_id)
-                    continue
+                    break
                 }
                 case NODE_NEG: {
                     /* !(var) equals known bool -> assign inverse */
                     let inner = get_node_by_id(ctx, br_node.rhs)
                     if (inner != null && inner.kind === NODE_VAR && inner.lhs === scope_id) {
                         var_set_val(worlds_push(out, br, get_node_any(ctx)), br_node.rhs, get_node_bool(ctx, !val_node.value))
-                        continue
                     }
                     break
                 }
@@ -1793,38 +1789,17 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
                         if (lhs_node != null && lhs_node.kind === NODE_BOOL && rhs_node != null && rhs_node.kind === NODE_VAR && rhs_node.lhs === scope_id) {
                             let desired = val_node.value ? lhs_node.value : !lhs_node.value
                             var_set_val(worlds_push(out, br, get_node_any(ctx)), br_node.rhs, get_node_bool(ctx, desired))
-                            continue
-                        }
-
-                        if (rhs_node != null && rhs_node.kind === NODE_BOOL && lhs_node != null && lhs_node.kind === NODE_VAR && lhs_node.lhs === scope_id) {
+                        } else if (rhs_node != null && rhs_node.kind === NODE_BOOL && lhs_node != null && lhs_node.kind === NODE_VAR && lhs_node.lhs === scope_id) {
                             let desired = val_node.value ? rhs_node.value : !rhs_node.value
                             var_set_val(worlds_push(out, br, get_node_any(ctx)), br_node.lhs, get_node_bool(ctx, desired))
-                            continue
                         }
                     }
                     break
                 }
-                case NODE_BOOL: continue
                 }
             }
-
-            has_unknown = true
         }
 
-        if (out.length === 0 && !has_unknown) {
-            // no branch satisfied and no unknowns -> contradiction
-            worlds_push(out, world, get_node_never(ctx))
-        }
-
-        return out
-    }
-
-    // lhs unknown here
-    if (lhs.lhs !== scope_id) {
-        // cannot assign across scopes, keep equality
-        for (let br of rhs_branches) {
-            worlds_push(out, br, get_node_binary(ctx, TOKEN_EQ, lhs_id, br.node))
-        }
         return out
     }
 
@@ -1834,10 +1809,6 @@ function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id:
 
         // assign lhs to each viable branch
         var_set_val(worlds_push(out, br, get_node_any(ctx)), lhs_id, br.node)
-    }
-
-    if (out.length === 0) {
-        worlds_push(out, world, get_node_never(ctx))
     }
 
     return out
@@ -2341,7 +2312,7 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
     }
 }
 
-export const node_display = (world: World, node_id: Node_Id, indent = '\t', depth = 0): string => {
+export const node_display = (world: World, node_id: Node_Id): string => {
     return _node_display(world, node_id, 0, false, new Set())
 }
 
