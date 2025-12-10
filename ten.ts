@@ -1990,8 +1990,8 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
 
         /* Logical Equality */
         case TOKEN_EQ: {
-            let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
 
+            let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
             for (let lhs_res of lhs_results) {
 
                 // if either side is an OR, expand/assign here so disjunction branches are captured before rhs reduction
@@ -2011,7 +2011,6 @@ function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, vi
                 }
 
                 let rhs_results = node_reduce_many(node.rhs, lhs_res, scope_id, visited)
-
                 for (let rhs_res of rhs_results) {
                     let lhs_id = lhs_res.node
                     let rhs_id = rhs_res.node
