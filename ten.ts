@@ -1433,10 +1433,9 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
     switch (a.kind) {
     case NODE_ANY:
     case NODE_NEVER:
-        return true
     case NODE_BOOL:
-        b = b as typeof a
-        return a.value === b.value
+    case NODE_VAR:
+        return false // Cannot be equal if ids don't match
 
     case NODE_NEG:
         b = b as typeof a
@@ -1452,11 +1451,6 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
         b = b as typeof a
         return a.rhs === b.rhs &&
                node_equals(world, a.lhs, b.lhs)
-
-    case NODE_VAR:
-        b = b as typeof a
-        return a.rhs === b.rhs &&
-               a.lhs === b.lhs
 
     case NODE_SCOPE: {
         b = b as typeof a
@@ -1487,7 +1481,7 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
 
     default:
         a satisfies never // exhaustive check
-        return true // TODO: shouldn't this just return false as id is being compared, then some checks could be removed
+        return false
     }
 }
 
