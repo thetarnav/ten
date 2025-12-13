@@ -1628,10 +1628,10 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         return get_node_selector(ctx, lhs_id, node.rhs)
 
     case NODE_SCOPE:
-        node.body = node_reduce(node.body, world, node.id, visited)
+        let body_id = node_reduce(node.body, world, node.id, visited)
 
         // Incorrect scope condition
-        let body = get_node_by_id(ctx, node.body)
+        let body = get_node_by_id(ctx, body_id)
         if (body == null || body.kind === NODE_NEVER) {
             return get_node_never(ctx)
         }
@@ -1643,7 +1643,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             vars.set(ident, reduced)
         }
 
-        return node_id
+        return get_node_scope(ctx, node.id, body_id)
 
     case NODE_NEG:
         let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
