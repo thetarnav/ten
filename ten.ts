@@ -1583,7 +1583,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
     case NODE_BOOL:
         return node_id
 
-    case NODE_VAR:
+    case NODE_VAR: {
         if (visited.has(node_id)) return node_id
 
         if (!var_exists(world, node_id)) {
@@ -1600,8 +1600,9 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         }
 
         return node_id
+    }
 
-    case NODE_SELECTOR:
+    case NODE_SELECTOR: {
         let lhs_id = node.lhs
         let lhs = get_node_by_id(ctx, lhs_id)!
 
@@ -1620,8 +1621,9 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         }
 
         return get_node_selector(ctx, lhs_id, node.rhs)
+    }
 
-    case NODE_SCOPE:
+    case NODE_SCOPE: {
         let body_id = node_reduce(node.body, world, node.id, visited)
 
         // Incorrect scope condition
@@ -1638,6 +1640,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         }
 
         return get_node_scope(ctx, node.id, body_id)
+    }
 
     case NODE_NEG:
         let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
@@ -1656,7 +1659,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
         case TOKEN_ADD:
         case TOKEN_SUB:
         case TOKEN_MUL:
-        case TOKEN_POW:
+        case TOKEN_POW: {
             let lhs_id = node_reduce(node.lhs, world, scope_id, visited)
             let rhs_id = node_reduce(node.rhs, world, scope_id, visited)
 
@@ -1688,6 +1691,7 @@ const node_reduce = (node_id: Node_Id, world: World, scope_id: Scope_Id, visited
             // Pow is XOR
             case TOKEN_POW: return get_node_bool(ctx, lhs.value !== rhs.value)
             }
+        }
 
         /* Logical Equality */
         case TOKEN_EQ: {
