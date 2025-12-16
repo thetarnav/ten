@@ -975,7 +975,6 @@ export class Node_World {
 }
 
 export class World {
-    ctx:    Context = null as any as Context
     parent: World | null = null
     vars:   Map<Scope_Id, Map<Ident_Id, Node_Id | null>> = new Map()
 }
@@ -1057,7 +1056,6 @@ export const context_make = (): Context => {
 export const world_make = (ctx: Context): World_Id => {
     let id = new_world_id(ctx)
     let w = new World()
-    w.ctx = ctx
     ctx.worlds[id] = w
     return id
 }
@@ -1072,7 +1070,6 @@ export const world_clone = (ctx: Context, id: World_Id): World_Id => {
     let clone = world_get(ctx, clone_id)
     assert(clone != null, 'Couldn\'t get world object from id')
 
-    clone.ctx    = world.ctx
     clone.parent = world
 
     return clone_id
@@ -1370,22 +1367,21 @@ export const get_node_world = (ctx: Context, world_id: World_Id, node: Node_Id, 
 }
 
 export const add_expr = (ctx: Context, expr: Expr, src: string): void => {
-    let world = ctx.worlds[0]
-    assert(world != null, 'Context is uninitialized')
-    let node = node_from_expr(world, expr, src, SCOPE_ID_ROOT)
+    let node = node_from_expr(ctx, WORLD_ID_ROOT, expr, src, SCOPE_ID_ROOT)
     assert(node != null, 'node_from_expr produced no result')
     ctx.root = node
 }
 
-const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_Id): Node_Id | null => {
-    let ctx = world.ctx
-
+const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: string, scope_id: Scope_Id): Node_Id | null => {
     switch (expr.kind) {
     case EXPR_TOKEN:
         switch (expr.tok.kind) {
         case TOKEN_TRUE:  return get_node_bool(ctx, true, expr)
         case TOKEN_FALSE: return get_node_bool(ctx, false, expr)
         case TOKEN_IDENT: {
+            let world = world_get(ctx, world_id)
+            assert(world != null, 'Used a null world id')
+
             let text  = token_string(src, expr.tok)
             let ident = ident_id(ctx, text)
             let vars  = world.vars.get(scope_id)
@@ -1402,7 +1398,7 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
 
     case EXPR_UNARY: {
         // Convert unary to binary
-        let rhs = node_from_expr(world, expr.rhs, src, scope_id)
+        let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
         if (rhs == null) return null
 
         let lhs = get_node_bool(ctx, false, expr)
@@ -1429,16 +1425,16 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
         case TOKEN_POW:
         case TOKEN_EQ:
         case TOKEN_COMMA: {
-            let lhs = node_from_expr(world, expr.lhs, src, scope_id)
-            let rhs = node_from_expr(world, expr.rhs, src, scope_id)
+            let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
+            let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
             if (!lhs || !rhs) return null
 
             return get_node_binary(ctx, expr.op.kind, lhs, rhs, expr)
         }
         // a != b  ->  a = !b, b = !a
         case TOKEN_NOT_EQ: {
-            let lhs = node_from_expr(world, expr.lhs, src, scope_id)
-            let rhs = node_from_expr(world, expr.rhs, src, scope_id)
+            let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
+            let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
             if (!lhs || !rhs) return null
 
             return get_node_binary(ctx, TOKEN_AND,
@@ -1455,7 +1451,7 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
 
         // foo.bar
         // foo.bar.baz...
-        let lhs = node_from_expr(world, expr.lhs, src, scope_id)
+        let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
         if (!lhs) return null
 
         let text  = token_string(src, expr.rhs).substring(1) // Remove '.'
@@ -1470,7 +1466,7 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
             let body: Node_Id | null
             if (expr.body) {
                 // TODO: How to get scope id before processing body?
-                body = node_from_expr(world, expr.body, src, scope_id)
+                body = node_from_expr(ctx, world_id, expr.body, src, scope_id)
                 body ??= get_node_any(ctx, expr)
             } else {
                 body = get_node_any(ctx, expr)
@@ -1479,7 +1475,7 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
         }
         // Regular paren (...)
         if (!expr.body) return get_node_any(ctx, expr)
-        return node_from_expr(world, expr.body, src, scope_id)
+        return node_from_expr(ctx, world_id, expr.body, src, scope_id)
     }
 
     case EXPR_INVALID:
