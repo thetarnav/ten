@@ -1101,6 +1101,17 @@ export const world_is_empty = (ctx: Context, id: World_Id): boolean => {
     return world.vars.size === 0
 }
 
+export const world_unwrap = (ctx: Context, dst_id: World_Id, src_id: World_Id, node_id: Node_Id): Node_Id => {
+
+    let node = get_node_by_id(ctx, node_id)
+    if (node != null && node.kind === NODE_WORLD && node.id === src_id) {
+        world_add(ctx, dst_id, src_id)
+        return node.node
+    }
+
+    return node_id
+}
+
 export type Ident_Id = number & {__var_id: void}
 export type Node_Id  = number & {__node_id: void}
 export type Scope_Id = number & {__scope_id: void}
@@ -1719,11 +1730,6 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             return get_node_never(ctx)
         }
 
-        if (body != null && body.kind === NODE_WORLD) {
-            world_add(ctx, world_id, body.id)
-            body_id = body.node
-        }
-
         let world = world_get(ctx, world_id)
         assert(world != null, 'Used a null world id')
 
@@ -1744,11 +1750,6 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         let body = get_node_by_id(ctx, body_id)
         if (body == null || body.kind === NODE_NEVER) {
             return get_node_never(ctx)
-        }
-
-        if (body != null && body.kind === NODE_WORLD) {
-            world_add(ctx, node.id, body.id)
-            return get_node_world(ctx, node.id, body.node)
         }
 
         let world = world_get(ctx, world_id)
@@ -1853,14 +1854,14 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             let lhs = get_node_by_id(ctx, lhs_id)!
             let rhs = get_node_by_id(ctx, rhs_id)!
 
-            if (lhs.kind === NODE_NEVER) return rhs_id
-            if (rhs.kind === NODE_NEVER) return lhs_id
+            if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_world, rhs_id)
+            if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
 
             if (lhs.kind === NODE_ANY) return get_node_any(ctx)
             if (rhs.kind === NODE_ANY) return get_node_any(ctx)
 
             // true | true  ->  true
-            if (node_equals(ctx, lhs_id, rhs_id, world_id)) return lhs_id
+            if (node_equals(ctx, lhs_id, rhs_id, world_id)) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
 
             // a | !a  ->  ()
             if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), world_id)) return get_node_any(ctx)
