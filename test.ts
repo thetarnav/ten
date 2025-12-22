@@ -406,6 +406,24 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`!{} & !{}`,
         `!{}`)
 
+    test_reducer(`() | true`,
+        `()`)
+    test_reducer(`() | false`,
+        `()`)
+    test_reducer(`!() | true`,
+        `true`)
+    test_reducer(`!() | false`,
+        `false`)
+
+    test_reducer(`() & true`,
+        `true`)
+    test_reducer(`() & false`,
+        `false`)
+    test_reducer(`!() & true`,
+        `!()`)
+    test_reducer(`!() & false`,
+        `!()`)
+
     // Equality and inequality with any and never
     test_reducer(`() = ()`,
         `()`)
@@ -599,6 +617,8 @@ test.describe('reducer', {concurrency: true}, () => {
             `${bl}a = true${br}`)
         test_reducer(`${bl}a = true, b = -a${br}`,
             `${bl}a = true, b = false${br}`)
+        test_reducer(`${bl}a = true, -b = a${br}`,
+            `${bl}a = true, b = false${br}`)
         test_reducer(`${bl}a = true, b = a - false${br}`,
             `${bl}a = true, b = false${br}`)
 
@@ -765,7 +785,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}(a = false) & (a + false = x) & (x = false)${br}`,
             `${bl}a = false, x = false${br}`)
 
-        // Variable disjunctions
+        // Variable conjunctaions
         test_reducer(`${bl}(a+b = true) & (a = false) & (b = false)${br}`,
             `!()`)
         test_reducer(`${bl}(a+b = true) & (a = false) & (b = true)${br}`,
@@ -774,6 +794,14 @@ test.describe('reducer', {concurrency: true}, () => {
             `${bl}a = true, b = false${br}`)
         test_reducer(`${bl}(a+b = true) & (a = true) & (b = true)${br}`,
             `${bl}a = true, b = true${br}`)
+
+        // Variable disjunctions
+        test_reducer(`${bl}a = true | false, b = -a, b = true${br}`,
+            `${bl}a = false, b = true${br}`)
+        test_reducer(`${bl}a = true, a = b | false${br}`,
+            `${bl}a = true, b = true${br}`)
+        test_reducer(`${bl}a = false, a = -b | true${br}`,
+            `${bl}a = false, b = true${br}`)
 
         test_reducer(`${bl}((a = false) & !()) | ((a = true) & ())${br}`,
             `${bl}a = true${br}`)
@@ -790,6 +818,8 @@ test.describe('reducer', {concurrency: true}, () => {
             `${bl}a = true${br}`)
         test_reducer(`${bl}(!() | (a = true)) & (a = false)${br}`,
             `!()`)
+        test_reducer(`${bl}(() | (a = true)) & (a = false)${br}`,
+            `${bl}a = false${br}`)
         test_reducer(`${bl}((a = true) | (a = false)) & (a = true)${br}`,
             `${bl}a = true${br}`)
 
@@ -872,4 +902,34 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}a = {x=true}, b = {x=false}, a = b${br}`,
             `!()`)
     }
+
+    test_reducer(`foo = {a = true | false}, foo.a = false`,
+        `foo = {a = false}`)
+    test_reducer(`foo = {a = true | false}, foo.a = true`,
+        `foo = {a = true}`)
+    test_reducer(`(a = true) | (a = false)`,
+        `{a = true} | {a = false}`)
+    test_reducer(`a = true | true`,
+        `a = true`)
+    test_reducer(`foo = {a = true} | {a = false}`,
+        `{foo = {a = true}} | {foo = {a = false}}`)
+    test_reducer(`foo = {a = true} | {a = true}`,
+        `foo = {a = true}`)
+    test_reducer(`foo = {bar = {a = true}} | {bar = {a = false}}`,
+        `{foo = {bar = {a = true}}} | {foo = {bar = {a = false}}}`)
+    test_reducer(`foo = {a = true} | {a = false}, foo.a = false`,
+        `foo = {a = false}`)
+
+    test_reducer('a = true, a = false | !()',
+        '!()')
+    test_reducer('a = true, a = true | b',
+        'a = true, b = b')
+    test_reducer('a = true, a = true | !b',
+        'a = true, b = b')
+    test_reducer('a = true, a = true | false',
+        'a = true')
+    test_reducer('a = true, a = true | (b = false)',
+        'a = true, b = b')
+    test_reducer('a = true, a = false | (b = false)',
+        '!()')
 })
