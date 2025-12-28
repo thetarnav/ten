@@ -1507,10 +1507,15 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
     }
 }
 
-const node_equals = (ctx: Context, a_id: Node_Id, b_id: Node_Id, world_id: World_Id): boolean => {
-
-    let world = world_get(ctx, world_id)
-    assert(world != null, 'Used a null world id')
+const node_equals = (
+    ctx:        Context,
+    a_id:       Node_Id,
+    b_id:       Node_Id,
+    a_world_id: World_Id,
+    a_scope_id: Scope_Id,
+    b_world_id: World_Id = a_world_id,
+    b_scope_id: Scope_Id = a_scope_id,
+): boolean => {
 
     if (a_id === b_id) return true
 
@@ -1528,27 +1533,30 @@ const node_equals = (ctx: Context, a_id: Node_Id, b_id: Node_Id, world_id: World
 
     case NODE_NEG:
         b = b as typeof a
-        return node_equals(ctx, a.rhs, b.rhs, world_id)
+        return node_equals(ctx, a.rhs, b.rhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
     case NODE_BINARY:
         b = b as typeof a
         return a.op === b.op &&
-               node_equals(ctx, a.lhs, b.lhs, world_id) &&
-               node_equals(ctx, a.rhs, b.rhs, world_id)
+               node_equals(ctx, a.lhs, b.lhs, a_world_id, a_scope_id, b_world_id, b_scope_id) &&
+               node_equals(ctx, a.rhs, b.rhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
     case NODE_SELECTOR:
         b = b as typeof a
         return a.rhs === b.rhs &&
-               node_equals(ctx, a.lhs, b.lhs, world_id)
+               node_equals(ctx, a.lhs, b.lhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
     case NODE_SCOPE: {
         b = b as typeof a
-        if (!node_equals(ctx, a.body, b.body, world_id)) return false
+        if (!node_equals(ctx, a.body, b.body, a_world_id, a_scope_id, b_world_id, b_scope_id)) return false
 
         // Compare vars
-        let a_vars = world.vars.get(a.id)
-        let b_vars = world.vars.get(b.id)
+        let a_world = world_get(ctx, a_world_id)
+        let b_world = world_get(ctx, b_world_id)
+        assert(a_world != null && b_world != null, 'Used a null world id')
 
+        let a_vars = a_world.vars.get(a.id)
+        let b_vars = b_world.vars.get(b.id)
         if (a_vars == null && b_vars == null) return true
         if (a_vars == null || b_vars == null) return false
         if (a_vars.size !== b_vars.size) return false
@@ -1559,10 +1567,10 @@ const node_equals = (ctx: Context, a_id: Node_Id, b_id: Node_Id, world_id: World
             if (a_val_id == null && b_val_id == null) continue
             if (a_val_id == null || b_val_id == null) return false
 
-            a_val_id = node_reduce(ctx, a_val_id, world_id, a.id, new Set)
-            b_val_id = node_reduce(ctx, b_val_id, world_id, b.id, new Set)
+            a_val_id = node_reduce(ctx, a_val_id, a_world_id, a.id, new Set)
+            b_val_id = node_reduce(ctx, b_val_id, a_world_id, b.id, new Set)
 
-            if (!node_equals(ctx, a_val_id, b_val_id, world_id)) return false
+            if (!node_equals(ctx, a_val_id, b_val_id, a_world_id, a.id, b_world_id, b.id)) return false
         }
 
         return true
@@ -1577,10 +1585,8 @@ const node_equals = (ctx: Context, a_id: Node_Id, b_id: Node_Id, world_id: World
 
         if (a_world.vars.size !== b_world.vars.size) return false
 
-        let scope_id = SCOPE_ID_ROOT // TODO: Handle scopes properly
-
-        let a_vars = a_world.vars.get(SCOPE_ID_ROOT)
-        let b_vars = b_world.vars.get(SCOPE_ID_ROOT)
+        let a_vars = a_world.vars.get(a_scope_id)
+        let b_vars = b_world.vars.get(b_scope_id)
 
         if (a_vars == null || b_vars == null) return false
 
@@ -1590,13 +1596,13 @@ const node_equals = (ctx: Context, a_id: Node_Id, b_id: Node_Id, world_id: World
             if (a_val_id == null && b_val_id == null) continue
             if (a_val_id == null || b_val_id == null) return false
 
-            a_val_id = node_reduce(ctx, a_val_id, world_id, scope_id, new Set)
-            b_val_id = node_reduce(ctx, b_val_id, world_id, scope_id, new Set)
+            a_val_id = node_reduce(ctx, a_val_id, a.id, a_scope_id, new Set)
+            b_val_id = node_reduce(ctx, b_val_id, b.id, b_scope_id, new Set)
 
-            if (!node_equals(ctx, a_val_id, b_val_id, world_id)) return false
+            if (!node_equals(ctx, a_val_id, b_val_id, a.id, a_scope_id, b.id, b_scope_id)) return false
         }
 
-        if (!node_equals(ctx, a.node, b.node, world_id)) return false
+        if (!node_equals(ctx, a.node, b.node, a.id, a_scope_id, b.id, b_scope_id)) return false
         return true
     }
 
@@ -1845,11 +1851,11 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             if (rhs.kind === NODE_ANY) return get_node_any(ctx)
 
             // true | true  ->  true
-            if (node_equals(ctx, lhs_id, rhs_id, world_id)) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
+            if (node_equals(ctx, lhs_id, rhs_id, lhs_world, scope_id, rhs_world, scope_id)) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
 
             // a | !a  ->  ()
-            if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), world_id)) return get_node_any(ctx)
-            if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), world_id)) return get_node_any(ctx)
+            if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), lhs_world, scope_id, rhs_world, scope_id)) return get_node_any(ctx)
+            if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), rhs_world, scope_id, lhs_world, scope_id)) return get_node_any(ctx)
 
             return get_node_binary(ctx, TOKEN_OR, node.lhs, node.rhs)
         }
@@ -1911,11 +1917,11 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         /* Logical Equality */
         case TOKEN_EQ: {
             // a = a  ->  ()
-            if (node_equals(ctx, lhs_id, rhs_id, world_id)) return get_node_any(ctx)
+            if (node_equals(ctx, lhs_id, rhs_id, world_id, scope_id)) return get_node_any(ctx)
 
             // a = !a  ->  !()
-            if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), world_id)) return get_node_never(ctx)
-            if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), world_id)) return get_node_never(ctx)
+            if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), world_id, scope_id)) return get_node_never(ctx)
+            if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), world_id, scope_id)) return get_node_never(ctx)
 
             return eq_var_reduce(ctx, lhs_id, rhs_id, world_id, scope_id)
                 || eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id)
@@ -1942,11 +1948,11 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             }
 
             // true & true  ->  true
-            if (node_equals(ctx, lhs_id, rhs_id, world_id)) return lhs_id
+            if (node_equals(ctx, lhs_id, rhs_id, world_id, scope_id)) return lhs_id
 
             // a & !a  ->  !()
-            if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), world_id)) return get_node_never(ctx)
-            if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), world_id)) return get_node_never(ctx)
+            if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), world_id, scope_id)) return get_node_never(ctx)
+            if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), world_id, scope_id)) return get_node_never(ctx)
 
             return get_node_binary(ctx, TOKEN_AND, lhs_id, rhs_id)
         }
