@@ -1577,23 +1577,23 @@ const node_equals = (ctx: Context, a_id: Node_Id, b_id: Node_Id, world_id: World
 
         if (a_world.vars.size !== b_world.vars.size) return false
 
-        for (let [s, a_vars] of a_world.vars) {
-            let b_vars = b_world.vars.get(s)
+        let scope_id = SCOPE_ID_ROOT // TODO: Handle scopes properly
 
-            if (b_vars == null) return false
-            if (a_vars.size !== b_vars.size) return false
+        let a_vars = a_world.vars.get(SCOPE_ID_ROOT)
+        let b_vars = b_world.vars.get(SCOPE_ID_ROOT)
 
-            for (let [var_id, a_val_id] of a_vars) {
-                let b_val_id = b_vars.get(var_id)
+        if (a_vars == null || b_vars == null) return false
 
-                if (a_val_id == null && b_val_id == null) continue
-                if (a_val_id == null || b_val_id == null) return false
+        for (let [var_id, a_val_id] of a_vars) {
+            let b_val_id = b_vars.get(var_id)
 
-                a_val_id = node_reduce(ctx, a_val_id, world_id, s, new Set)
-                b_val_id = node_reduce(ctx, b_val_id, world_id, s, new Set)
+            if (a_val_id == null && b_val_id == null) continue
+            if (a_val_id == null || b_val_id == null) return false
 
-                if (!node_equals(ctx, a_val_id, b_val_id, world_id)) return false
-            }
+            a_val_id = node_reduce(ctx, a_val_id, world_id, scope_id, new Set)
+            b_val_id = node_reduce(ctx, b_val_id, world_id, scope_id, new Set)
+
+            if (!node_equals(ctx, a_val_id, b_val_id, world_id)) return false
         }
 
         if (!node_equals(ctx, a.node, b.node, world_id)) return false
