@@ -917,6 +917,8 @@ test.describe('reducer', {concurrency: true}, () => {
         `foo = {a = true}`)
     test_reducer(`foo = {bar = {a = true}} | {bar = {a = false}}`,
         `{foo = {bar = {a = true}}} | {foo = {bar = {a = false}}}`)
+    test_reducer(`foo = {bar = {a = true}} | {bar = {a = true}}`,
+        `foo = {bar = {a = true}}`)
     test_reducer(`foo = {a = true} | {a = false}, foo.a = false`,
         `foo = {a = false}`)
 
