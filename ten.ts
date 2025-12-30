@@ -1681,6 +1681,10 @@ const eq_var_reduce = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id:
 
     let lhs = get_node_by_id(ctx, lhs_id)!
 
+    if (lhs.kind === NODE_SELECTOR) {
+        return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+    }
+
     if (lhs.kind === NODE_VAR) {
         let val_id = var_get_val(ctx, world_id, lhs_id)
         if (val_id != null) {
