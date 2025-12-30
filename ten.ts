@@ -1103,10 +1103,12 @@ export const world_is_empty = (ctx: Context, id: World_Id): boolean => {
 
 export const world_unwrap = (ctx: Context, dst_id: World_Id, src_id: World_Id, node_id: Node_Id): Node_Id => {
 
-    let node = get_node_by_id(ctx, node_id)
-    if (node != null && node.kind === NODE_WORLD && node.id === src_id) {
-        world_add(ctx, dst_id, src_id)
-        return node.node
+    if (dst_id !== src_id) {
+        let node = get_node_by_id(ctx, node_id)
+        if (node != null && node.kind === NODE_WORLD && node.id === src_id) {
+            world_add(ctx, dst_id, src_id)
+            return node.node
+        }
     }
 
     return node_id
@@ -1588,18 +1590,18 @@ const node_equals = (
         let a_vars = a_world.vars.get(a_scope_id)
         let b_vars = b_world.vars.get(b_scope_id)
 
-        if (a_vars == null || b_vars == null) return false
+        if (a_vars != null && b_vars != null) {
+            for (let [var_id, a_val_id] of a_vars) {
+                let b_val_id = b_vars.get(var_id)
 
-        for (let [var_id, a_val_id] of a_vars) {
-            let b_val_id = b_vars.get(var_id)
+                if (a_val_id == null && b_val_id == null) continue
+                if (a_val_id == null || b_val_id == null) return false
 
-            if (a_val_id == null && b_val_id == null) continue
-            if (a_val_id == null || b_val_id == null) return false
+                a_val_id = node_reduce(ctx, a_val_id, a.id, a_scope_id, new Set)
+                b_val_id = node_reduce(ctx, b_val_id, b.id, b_scope_id, new Set)
 
-            a_val_id = node_reduce(ctx, a_val_id, a.id, a_scope_id, new Set)
-            b_val_id = node_reduce(ctx, b_val_id, b.id, b_scope_id, new Set)
-
-            if (!node_equals(ctx, a_val_id, b_val_id, a.id, a_scope_id, b.id, b_scope_id)) return false
+                if (!node_equals(ctx, a_val_id, b_val_id, a.id, a_scope_id, b.id, b_scope_id)) return false
+            }
         }
 
         if (!node_equals(ctx, a.node, b.node, a.id, a_scope_id, b.id, b_scope_id)) return false
@@ -1801,7 +1803,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             return get_node_never(ctx)
         }
 
-        let world = world_get(ctx, world_id)
+        let world = world_get(ctx, node.id)
         assert(world != null, 'Used a null world id')
 
         // Reduce vars
@@ -1813,6 +1815,12 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
 
         if (world_is_empty(ctx, node.id)) {
             return body_id // TODO: world reusing? it shouldn't ever be referenced if unwrapped
+        }
+
+        // Unwrap if possible
+        if (world_id !== node.id) {
+            world_add(ctx, world_id, node.id)
+            return body_id
         }
 
         return get_node_world(ctx, node.id, body_id)
@@ -1861,7 +1869,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), lhs_world, scope_id, rhs_world, scope_id)) return get_node_any(ctx)
             if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), rhs_world, scope_id, lhs_world, scope_id)) return get_node_any(ctx)
 
-            return get_node_binary(ctx, TOKEN_OR, node.lhs, node.rhs)
+            return get_node_binary(ctx, TOKEN_OR, lhs_id, rhs_id)
         }
 
         let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
