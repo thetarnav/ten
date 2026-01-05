@@ -2044,14 +2044,19 @@ const _node_display = (ctx: Context, world_id: World_Id, scope_id: Scope_Id, nod
     }
 
     case NODE_SCOPE:
-        return _scope_display(ctx, world_id, node_id, true, visited)
+        return _scope_display(ctx, world_id, node_id, '{', '}', visited)
 
     case NODE_WORLD: {
         let world = world_get(ctx, node.id)
         assert(world != null, 'Used a null world id')
 
+        let bl = '', br = ''
+        if (node.id !== WORLD_ID_ROOT) {
+            bl = '('; br = ')'
+        }
+
         let scope = get_node_scope(ctx, scope_id, node.node)
-        return _scope_display(ctx, node.id, scope, node.id !== WORLD_ID_ROOT, visited)
+        return _scope_display(ctx, node.id, scope, bl, br, visited)
     }
 
     default:
@@ -2065,7 +2070,7 @@ export const node_display = (ctx: Context, world_id: World_Id, scope_id: Scope_I
     return _node_display(ctx, world_id, scope_id, node_id, 0, false, new Set())
 }
 
-const _scope_display = (ctx: Context, world_id: World_Id, node_id: Node_Id, brackets: boolean, visited: Set<Node_Id>): string => {
+const _scope_display = (ctx: Context, world_id: World_Id, node_id: Node_Id, bl: string, br: string, visited: Set<Node_Id>): string => {
 
     let world = world_get(ctx, world_id)
     assert(world != null, 'Used a null world id')
@@ -2083,13 +2088,6 @@ const _scope_display = (ctx: Context, world_id: World_Id, node_id: Node_Id, brac
     }
 
     let out = ''
-
-    let bl = ''
-    let br = ''
-    if (brackets) {
-        bl = '{'
-        br = '}'
-    }
 
     if (vars != null && vars.size > 0) {
         let first = true
