@@ -903,6 +903,25 @@ test.describe('reducer', {concurrency: true}, () => {
             `!()`)
     }
 
+    test_reducer('a = true, a = false | !()',
+        '!()')
+    test_reducer('a = true, a = true | b',
+        'a = true, b = b')
+    test_reducer('a = true, a = true | !b',
+        'a = true, b = b')
+    test_reducer('a = true, a = true | false',
+        'a = true')
+    test_reducer('a = false, a = true | false',
+        'a = false')
+    test_reducer('a = true, a = true | (b = false)',
+        'a = true, b = b')
+    test_reducer('a = true, a = false | (b = false)',
+        '!()')
+
+    test_reducer(`foo = {a = true | false, a = false}`,
+        `foo = {a = false}`)
+    test_reducer(`foo = {a = true | false, a = true}`,
+        `foo = {a = true}`)
     test_reducer(`foo = {a = true | false}, foo.a = false`,
         `foo = {a = false}`)
     test_reducer(`foo = {a = true | false}, foo.a = true`,
@@ -921,17 +940,4 @@ test.describe('reducer', {concurrency: true}, () => {
         `foo = {bar = {a = true}}`)
     test_reducer(`foo = {a = true} | {a = false}, foo.a = false`,
         `foo = {a = false}`)
-
-    test_reducer('a = true, a = false | !()',
-        '!()')
-    test_reducer('a = true, a = true | b',
-        'a = true, b = b')
-    test_reducer('a = true, a = true | !b',
-        'a = true, b = b')
-    test_reducer('a = true, a = true | false',
-        'a = true')
-    test_reducer('a = true, a = true | (b = false)',
-        'a = true, b = b')
-    test_reducer('a = true, a = false | (b = false)',
-        '!()')
 })
