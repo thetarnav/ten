@@ -1519,8 +1519,6 @@ const node_equals = (
     b_scope_id: Scope_Id = a_scope_id,
 ): boolean => {
 
-    if (a_id === b_id) return true
-
     let a = get_node_by_id(ctx, a_id)!
     let b = get_node_by_id(ctx, b_id)!
 
@@ -1531,7 +1529,7 @@ const node_equals = (
     case NODE_NEVER:
     case NODE_BOOL:
     case NODE_VAR:
-        return false // Cannot be equal if ids don't match
+        return a_id === b_id
 
     case NODE_NEG:
         b = b as typeof a
@@ -1604,8 +1602,7 @@ const node_equals = (
             }
         }
 
-        if (!node_equals(ctx, a.node, b.node, a.id, a_scope_id, b.id, b_scope_id)) return false
-        return true
+        return node_equals(ctx, a.node, b.node, a.id, a_scope_id, b.id, b_scope_id)
     }
 
     default:
@@ -1622,13 +1619,13 @@ const var_get_val = (ctx: Context, world_id: World_Id, var_id: Node_Id): Node_Id
     let var_node = get_node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return null
 
-    for (let w: World | null = world; w != null; w = world.parent) {
+    for (let w: World | null = world; w != null; w = w.parent) {
 
         let vars = w.vars.get(var_node.lhs)
         if (vars == null) continue
 
         let val = vars.get(var_node.rhs)
-        if (val === undefined) continue
+        if (val == null) continue
 
         return val
     }
@@ -1809,8 +1806,15 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         // Reduce vars
         let vars = world.vars.get(scope_id)
         if (vars != null) for (let [ident, val_id] of vars) if (val_id != null) {
-            let reduced = node_reduce(ctx, val_id, node.id, scope_id, visited)
-            vars.set(ident, reduced)
+            val_id = node_reduce(ctx, val_id, node.id, scope_id, visited)
+            vars.set(ident, val_id)
+
+            // Check for contradictions with parent world
+            let var_id = get_node_var(ctx, scope_id, ident)
+            let parent_val_id = var_get_val(ctx, world_id, var_id)
+            if (parent_val_id != null && !node_equals(ctx, val_id, parent_val_id, node.id, scope_id, world_id, scope_id)) {
+                return get_node_never(ctx)
+            }
         }
 
         if (world_is_empty(ctx, node.id)) {
