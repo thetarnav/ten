@@ -528,15 +528,15 @@ test.describe('reducer', {concurrency: true}, () => {
 
         // Logical OR (|)
         test_reducer(`${bl}true | false${br}`,
-            `${bl}true | false${br}`)
+            `${bl}true${br} | ${bl}false${br}`)
         test_reducer(`${bl}false | false${br}`,
             `${bl}false${br}`)
         test_reducer(`${bl}true | true${br}`,
             `${bl}true${br}`)
         test_reducer(`${bl}false | a${br}`,
-            `${bl}a = a, false | a${br}`)
+            `${bl}false${br} | (${bl}a = a, a${br})`)
         test_reducer(`${bl}true | a${br}`,
-            `${bl}a = a, true | a${br}`)
+            `${bl}true${br} | (${bl}a = a, a${br})`)
 
         // Logical AND (&)
         test_reducer(`${bl}true & false${br}`,
@@ -906,15 +906,15 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer('a = true, a = false | !()',
         '!()')
     test_reducer('a = true, a = true | b',
-        'a = true, b = b')
+        'a = true')
     test_reducer('a = true, a = true | !b',
-        'a = true, b = b')
+        'a = true')
     test_reducer('a = true, a = true | false',
         'a = true')
     test_reducer('a = false, a = true | false',
         'a = false')
     test_reducer('a = true, a = true | (b = false)',
-        'a = true, b = b')
+        'a = true')
     test_reducer('a = true, a = false | (b = false)',
         '!()')
 
@@ -927,15 +927,15 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`foo = {a = true | false}, foo.a = true`,
         `foo = {a = true}`)
     test_reducer(`(a = true) | (a = false)`,
-        `{a = true} | {a = false}`)
+        `(a = true) | (a = false)`)
     test_reducer(`a = true | true`,
         `a = true`)
     test_reducer(`foo = {a = true} | {a = false}`,
-        `{foo = {a = true}} | {foo = {a = false}}`)
+        `foo = foo, (foo = {a = true}) | (foo = {a = false})`)
     test_reducer(`foo = {a = true} | {a = true}`,
         `foo = {a = true}`)
     test_reducer(`foo = {bar = {a = true}} | {bar = {a = false}}`,
-        `{foo = {bar = {a = true}}} | {foo = {bar = {a = false}}}`)
+        `foo = foo, (foo = {bar = {a = true}}) | (foo = {bar = {a = false}})`)
     test_reducer(`foo = {bar = {a = true}} | {bar = {a = true}}`,
         `foo = {bar = {a = true}}`)
     test_reducer(`foo = {a = true} | {a = false}, foo.a = false`,

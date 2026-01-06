@@ -975,7 +975,7 @@ export class Node_World {
 }
 
 export class World {
-    parent: World | null = null
+    parent: World_Id | null = null
     vars:   Map<Scope_Id, Map<Ident_Id, Node_Id | null>> = new Map()
 }
 
@@ -1045,6 +1045,11 @@ export const ident_string = (ctx: Context, ident: Ident_Id): string | null => {
 export const world_get = (ctx: Context, id: World_Id): World | null => {
     return ctx.worlds[id] ?? null
 }
+export const world_get_assert = (ctx: Context, id: World_Id): World => {
+    let world = world_get(ctx, id)
+    assert(world != null, 'Couldn\'t get world object from id')
+    return world
+}
 
 export const context_make = (): Context => {
     let ctx = new Context
@@ -1062,24 +1067,19 @@ export const world_make = (ctx: Context): World_Id => {
 
 export const world_clone = (ctx: Context, id: World_Id): World_Id => {
 
-    let world = world_get(ctx, id)
-    assert(world != null, 'Couldn\'t get world object from id')
-
     let clone_id = world_make(ctx)
 
-    let clone = world_get(ctx, clone_id)
-    assert(clone != null, 'Couldn\'t get world object from id')
+    let clone = world_get_assert(ctx, clone_id)
 
-    clone.parent = world
+    clone.parent = id
 
     return clone_id
 }
 
 export const world_add = (ctx: Context, dst_id: World_Id, src_id: World_Id): void => {
 
-    let dst = world_get(ctx, dst_id)
-    let src = world_get(ctx, src_id)
-    assert(dst != null && src != null, 'Couldn\'t get world object from id')
+    let dst = world_get_assert(ctx, dst_id)
+    let src = world_get_assert(ctx, src_id)
 
     for (let [scope_id, var_map] of src.vars) {
         let dest_var_map = dst.vars.get(scope_id)
@@ -1095,8 +1095,7 @@ export const world_add = (ctx: Context, dst_id: World_Id, src_id: World_Id): voi
 
 export const world_is_empty = (ctx: Context, id: World_Id): boolean => {
 
-    let world = world_get(ctx, id)
-    assert(world != null, 'Couldn\'t get world object from id')
+    let world = world_get_assert(ctx, id)
 
     return world.vars.size === 0
 }
@@ -1384,8 +1383,12 @@ export const get_node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id, 
 }
 export const get_node_world = (ctx: Context, world_id: World_Id, node_id: Node_Id, expr: Expr | null = null): Node_Id => {
     let node = get_node_by_id(ctx, node_id)
-    if (node != null && node.kind === NODE_WORLD && node.id === world_id) {
-        return node_id
+    if (node != null && node.kind === NODE_WORLD) {
+        if (node.id === world_id) {
+            return node_id
+        }
+        world_add(ctx, world_id, node.id)
+        return get_node_world(ctx, world_id, node.node, expr)
     }
     let key = node_world_encode(world_id, node_id)
     return store_node_key(ctx, key, expr)
@@ -1404,8 +1407,7 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
         case TOKEN_TRUE:  return get_node_bool(ctx, true, expr)
         case TOKEN_FALSE: return get_node_bool(ctx, false, expr)
         case TOKEN_IDENT: {
-            let world = world_get(ctx, world_id)
-            assert(world != null, 'Used a null world id')
+            let world = world_get_assert(ctx, world_id)
 
             let text  = token_string(src, expr.tok)
             let ident = ident_id(ctx, text)
@@ -1443,7 +1445,6 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
     case EXPR_BINARY: {
         switch (expr.op.kind) {
         case TOKEN_ADD:
-        case TOKEN_OR:
         case TOKEN_MUL:
         case TOKEN_AND:
         case TOKEN_SUB:
@@ -1455,6 +1456,20 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
             if (!lhs || !rhs) return null
 
             return get_node_binary(ctx, expr.op.kind, lhs, rhs, expr)
+        }
+        case TOKEN_OR: {
+            // Create separate worlds for each side
+            let lhs_world_id = world_clone(ctx, world_id)
+            let rhs_world_id = world_clone(ctx, world_id)
+
+            let lhs = node_from_expr(ctx, lhs_world_id, expr.lhs, src, scope_id)
+            let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id)
+            if (!lhs || !rhs) return null
+
+            return get_node_binary(ctx, expr.op.kind,
+                get_node_world(ctx, lhs_world_id, lhs),
+                get_node_world(ctx, rhs_world_id, rhs),
+            expr)
         }
         // a != b  ->  a = !b, b = !a
         case TOKEN_NOT_EQ: {
@@ -1490,7 +1505,6 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
             scope_id = new_scope_id(ctx)
             let body: Node_Id | null
             if (expr.body) {
-                // TODO: How to get scope id before processing body?
                 body = node_from_expr(ctx, world_id, expr.body, src, scope_id)
                 body ??= get_node_any(ctx, expr)
             } else {
@@ -1579,9 +1593,8 @@ const node_equals = (
     case NODE_WORLD: {
         b = b as typeof a
 
-        let a_world = world_get(ctx, a.id)
-        let b_world = world_get(ctx, b.id)
-        assert(a_world != null && b_world != null, 'Used a null world id')
+        let a_world = world_get_assert(ctx, a.id)
+        let b_world = world_get_assert(ctx, b.id)
 
         if (a_world.vars.size !== b_world.vars.size) return false
 
@@ -1613,47 +1626,46 @@ const node_equals = (
 
 const var_get_val = (ctx: Context, world_id: World_Id, var_id: Node_Id): Node_Id | null => {
 
-    let world = world_get(ctx, world_id)
-    assert(world != null, 'Used a null world id')
-
     let var_node = get_node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return null
 
-    for (let w: World | null = world; w != null; w = w.parent) {
+    for (let w: World_Id | null = world_id; w != null;) {
+        let world = world_get_assert(ctx, w)
 
-        let vars = w.vars.get(var_node.lhs)
-        if (vars == null) continue
+        check: {
+            let vars = world.vars.get(var_node.lhs)
+            if (vars == null) break check
 
-        let val = vars.get(var_node.rhs)
-        if (val == null) continue
+            let val = vars.get(var_node.rhs)
+            if (val == null) break check
 
-        return val
+            return val
+        }
+
+        w = world.parent
     }
 
     return null
 }
 const var_exists = (ctx: Context, world_id: World_Id, var_id: Node_Id): boolean => {
 
-    let world = world_get(ctx, world_id)
-    assert(world != null, 'Used a null world id')
-
     let var_node = get_node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return false
 
-    for (let w: World | null = world; w != null; w = world.parent) {
+    for (let w: World_Id | null = world_id; w != null;) {
+        let world = world_get_assert(ctx, w)
 
-        let vars = w.vars.get(var_node.lhs)
-        if (vars == null) continue
+        let vars = world.vars.get(var_node.lhs)
+        if (vars != null && vars.has(var_node.rhs)) return true
 
-        if (vars.has(var_node.rhs)) return true
+        w = world.parent
     }
 
     return false
 }
 const var_set_val = (ctx: Context, world_id: World_Id, var_id: Node_Id, value_id: Node_Id): void => {
 
-    let world = world_get(ctx, world_id)
-    assert(world != null, 'Used a null world id')
+    let world = world_get_assert(ctx, world_id)
 
     let var_node = get_node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return
@@ -1674,9 +1686,6 @@ export const reduce = (ctx: Context) => {
 }
 
 const eq_var_reduce = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id: World_Id, scope_id: Scope_Id): Node_Id | null => {
-
-    let world = world_get(ctx, world_id)
-    assert(world != null, 'Used a null world id')
 
     let lhs = get_node_by_id(ctx, lhs_id)!
 
@@ -1778,8 +1787,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             ), world_id, scope_id, visited)
         }
 
-        let world = world_get(ctx, world_id)
-        assert(world != null, 'Used a null world id')
+        let world = world_get_assert(ctx, world_id)
 
         // Reduce vars
         let vars = world.vars.get(node.id)
@@ -1800,8 +1808,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             return get_node_never(ctx)
         }
 
-        let world = world_get(ctx, node.id)
-        assert(world != null, 'Used a null world id')
+        let world = world_get_assert(ctx, node.id)
 
         // Reduce vars
         let vars = world.vars.get(scope_id)
@@ -2047,14 +2054,10 @@ const _node_display = (ctx: Context, world_id: World_Id, scope_id: Scope_Id, nod
         return _scope_display(ctx, world_id, node_id, '{', '}', visited)
 
     case NODE_WORLD: {
-        let world = world_get(ctx, node.id)
-        assert(world != null, 'Used a null world id')
-
         let bl = '', br = ''
         if (node.id !== WORLD_ID_ROOT) {
             bl = '('; br = ')'
         }
-
         let scope = get_node_scope(ctx, scope_id, node.node)
         return _scope_display(ctx, node.id, scope, bl, br, visited)
     }
@@ -2072,8 +2075,7 @@ export const node_display = (ctx: Context, world_id: World_Id, scope_id: Scope_I
 
 const _scope_display = (ctx: Context, world_id: World_Id, node_id: Node_Id, bl: string, br: string, visited: Set<Node_Id>): string => {
 
-    let world = world_get(ctx, world_id)
-    assert(world != null, 'Used a null world id')
+    let world = world_get_assert(ctx, world_id)
 
     let node = get_node_by_id(ctx, node_id)
     if (node == null) return '<node = null>'
