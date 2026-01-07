@@ -1434,11 +1434,17 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
         if (rhs == null) return null
 
         switch (expr.op.kind) {
-        // `+x` -> `false + x` -> `x` (OR identity)
+        // `+x` -> `(x = true, true) | (x = false, false)`
         case TOKEN_ADD:
-            return get_node_binary(ctx, TOKEN_ADD,
-                get_node_bool(ctx, false, expr),
-                rhs,
+            return get_node_or(ctx,
+                get_node_and(ctx,
+                    get_node_eq(ctx, rhs, get_node_bool(ctx, true, expr), expr),
+                    get_node_bool(ctx, true, expr),
+                expr),
+                get_node_and(ctx,
+                    get_node_eq(ctx, rhs, get_node_bool(ctx, false, expr), expr),
+                    get_node_bool(ctx, false, expr),
+                expr),
             expr)
         // `-x` -> `(x = true, false) | (x = false, true)`
         case TOKEN_SUB:
