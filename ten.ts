@@ -1365,10 +1365,15 @@ export const get_node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = nul
     let key = node_neg_encode(rhs)
     return store_node_key(ctx, key, expr)
 }
+
 export const get_node_binary = (ctx: Context, op: Token_Kind, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
     let key = node_binary_encode(op, lhs, rhs)
     return store_node_key(ctx, key, expr)
 }
+export const get_node_and = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => get_node_binary(ctx, TOKEN_AND, lhs, rhs, expr)
+export const get_node_or  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => get_node_binary(ctx, TOKEN_OR, lhs, rhs, expr)
+export const get_node_eq  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => get_node_binary(ctx, TOKEN_EQ, lhs, rhs, expr)
+
 export const get_node_selector = (ctx: Context, lhs: Node_Id, rhs: Ident_Id, expr: Expr | null = null): Node_Id => {
     let key = node_selector_encode(lhs, rhs)
     return store_node_key(ctx, key, expr)
@@ -1428,15 +1433,28 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
         let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
         if (rhs == null) return null
 
-        let lhs = get_node_bool(ctx, false, expr)
-
         switch (expr.op.kind) {
         // `+x` -> `false + x` -> `x` (OR identity)
-        case TOKEN_ADD: return get_node_binary(ctx, TOKEN_ADD, lhs, rhs, expr)
-        // `-x` -> `false - x` -> `NOT x` (XNOR negation)
-        case TOKEN_SUB: return get_node_binary(ctx, TOKEN_SUB, lhs, rhs, expr)
+        case TOKEN_ADD:
+            return get_node_binary(ctx, TOKEN_ADD,
+                get_node_bool(ctx, false, expr),
+                rhs,
+            expr)
+        // `-x` -> `(x = true, false) | (x = false, true)`
+        case TOKEN_SUB:
+            return get_node_or(ctx,
+                get_node_and(ctx,
+                    get_node_eq(ctx, rhs, get_node_bool(ctx, true, expr), expr),
+                    get_node_bool(ctx, false, expr),
+                expr),
+                get_node_and(ctx,
+                    get_node_eq(ctx, rhs, get_node_bool(ctx, false, expr), expr),
+                    get_node_bool(ctx, true, expr),
+                expr),
+            expr)
         // `!x`
-        case TOKEN_NEG: return get_node_neg(ctx, rhs, expr)
+        case TOKEN_NEG:
+            return get_node_neg(ctx, rhs, expr)
         }
 
         return null
@@ -1477,9 +1495,9 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
             let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
             if (!lhs || !rhs) return null
 
-            return get_node_binary(ctx, TOKEN_AND,
-                get_node_binary(ctx, TOKEN_EQ, lhs, get_node_neg(ctx, rhs), expr),
-                get_node_binary(ctx, TOKEN_EQ, rhs, get_node_neg(ctx, lhs), expr),
+            return get_node_and(ctx,
+                get_node_eq(ctx, lhs, get_node_neg(ctx, rhs), expr),
+                get_node_eq(ctx, rhs, get_node_neg(ctx, lhs), expr),
             )
         }
         }
@@ -1690,14 +1708,14 @@ const eq_var_reduce = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id:
     let lhs = get_node_by_id(ctx, lhs_id)!
 
     if (lhs.kind === NODE_SELECTOR) {
-        return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+        return get_node_eq(ctx, lhs_id, rhs_id)
     }
 
     if (lhs.kind === NODE_VAR) {
         let val_id = var_get_val(ctx, world_id, lhs_id)
         if (val_id != null) {
             // return get_node_any_or_never(ctx, node_equals(world, rhs_id, val_id))
-            return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+            return get_node_eq(ctx, lhs_id, rhs_id)
         }
 
         // Write var if it's from this scope
@@ -1706,7 +1724,7 @@ const eq_var_reduce = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id:
             return get_node_any(ctx)
         }
 
-        return get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id)
+        return get_node_eq(ctx, lhs_id, rhs_id)
     }
 
     return null
@@ -1757,7 +1775,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         }
 
         if (lhs.kind === NODE_BINARY && lhs.op == TOKEN_OR) {
-            return node_reduce(ctx, get_node_binary(ctx, TOKEN_OR,
+            return node_reduce(ctx, get_node_or(ctx,
                 get_node_selector(ctx, lhs.lhs, node.rhs),
                 get_node_selector(ctx, lhs.rhs, node.rhs),
             ), world_id, scope_id, visited)
@@ -1781,7 +1799,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         }
 
         if (body != null && body.kind === NODE_BINARY && body.op == TOKEN_OR) {
-            return node_reduce(ctx, get_node_binary(ctx, TOKEN_OR,
+            return node_reduce(ctx, get_node_or(ctx,
                 get_node_scope(ctx, node.id, body.lhs),
                 get_node_scope(ctx, node.id, body.rhs),
             ), world_id, scope_id, visited)
@@ -1880,7 +1898,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), lhs_world, scope_id, rhs_world, scope_id)) return get_node_any(ctx)
             if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), rhs_world, scope_id, lhs_world, scope_id)) return get_node_any(ctx)
 
-            return get_node_binary(ctx, TOKEN_OR, lhs_id, rhs_id)
+            return get_node_or(ctx, lhs_id, rhs_id)
         }
 
         let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
@@ -1892,13 +1910,13 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         // Handle OR lhs/rhs
         // `lhs op (rhs.lhs | rhs.rhs)`  ->  `(lhs op rhs.lhs) | (lhs op rhs.rhs)`
         if (lhs.kind === NODE_BINARY && lhs.op === TOKEN_OR) {
-            return node_reduce(ctx, get_node_binary(ctx, TOKEN_OR,
+            return node_reduce(ctx, get_node_or(ctx,
                 get_node_binary(ctx, node.op, rhs_id, lhs.lhs),
                 get_node_binary(ctx, node.op, rhs_id, lhs.rhs),
             ), world_id, scope_id, visited)
         }
         if (rhs.kind === NODE_BINARY && rhs.op === TOKEN_OR) {
-            return node_reduce(ctx, get_node_binary(ctx, TOKEN_OR,
+            return node_reduce(ctx, get_node_or(ctx,
                 get_node_binary(ctx, node.op, lhs_id, rhs.lhs),
                 get_node_binary(ctx, node.op, lhs_id, rhs.rhs),
             ), world_id, scope_id, visited)
@@ -1977,7 +1995,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             if (node_equals(ctx, lhs_id, get_node_neg(ctx, rhs_id), world_id, scope_id)) return get_node_never(ctx)
             if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), world_id, scope_id)) return get_node_never(ctx)
 
-            return get_node_binary(ctx, TOKEN_AND, lhs_id, rhs_id)
+            return get_node_and(ctx, lhs_id, rhs_id)
         }
         }
 
