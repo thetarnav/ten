@@ -1331,13 +1331,6 @@ export const store_node = (ctx: Context, node: Node, expr: Expr | null = null): 
     let key = node_encode(node)
     store_node_key(ctx, key, expr)
 }
-
-export const get_node = (ctx: Context, key: Node_Key): Node | null => {
-    let node_id = ctx.nodes.get(key)
-    if (node_id == null) return null
-    return ctx.all_nodes[node_id]
-}
-
 export const get_node_by_id = (ctx: Context, node_id: Node_Id): Node | null => {
     return ctx.all_nodes[node_id]
 }
@@ -1353,10 +1346,14 @@ export const get_node_never = (ctx: Context, expr: Expr | null = null): Node_Id 
 export const get_node_any_or_never = (ctx: Context, condition: boolean, expr: Expr | null = null): Node_Id => {
     return condition ? get_node_any(ctx) : get_node_never(ctx)
 }
+
 export const get_node_bool = (ctx: Context, value: boolean, expr: Expr | null = null): Node_Id => {
     let key = node_bool_encode(value)
     return store_node_key(ctx, key, expr)
 }
+export const get_node_true  = (ctx: Context, expr: Expr | null = null): Node_Id => get_node_bool(ctx, true, expr)
+export const get_node_false = (ctx: Context, expr: Expr | null = null): Node_Id => get_node_bool(ctx, false, expr)
+
 export const get_node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
     let rhs_node = get_node_by_id(ctx, rhs)
     if (rhs_node != null && rhs_node.kind === NODE_NEG) {
@@ -1405,12 +1402,27 @@ export const add_expr = (ctx: Context, expr: Expr, src: string): void => {
     ctx.root = node
 }
 
+const _do_bool_token_op = (ctx: Context, op: Token_Kind, lhs: boolean, rhs: boolean): boolean => {
+    switch (op) {
+    case TOKEN_AND:    return lhs && rhs
+    case TOKEN_COMMA:  return lhs && rhs
+    case TOKEN_OR:     return lhs || rhs
+    case TOKEN_EQ:     return lhs === rhs
+    case TOKEN_NOT_EQ: return lhs !== rhs
+    case TOKEN_ADD:    return lhs || rhs
+    case TOKEN_SUB:    return lhs && !rhs
+    case TOKEN_MUL:    return lhs && rhs
+    case TOKEN_POW:    return lhs !== rhs
+    }
+    return false
+}
+
 const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: string, scope_id: Scope_Id): Node_Id | null => {
     switch (expr.kind) {
     case EXPR_TOKEN:
         switch (expr.tok.kind) {
-        case TOKEN_TRUE:  return get_node_bool(ctx, true, expr)
-        case TOKEN_FALSE: return get_node_bool(ctx, false, expr)
+        case TOKEN_TRUE:  return get_node_true(ctx, expr)
+        case TOKEN_FALSE: return get_node_false(ctx, expr)
         case TOKEN_IDENT: {
             let world = world_get_assert(ctx, world_id)
 
@@ -1440,11 +1452,11 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
         case TOKEN_SUB:
             return get_node_or(ctx,
                 get_node_and(ctx,
-                    get_node_eq(ctx, rhs, get_node_bool(ctx, true, expr), expr),
+                    get_node_eq(ctx, rhs, get_node_true(ctx, expr), expr),
                     get_node_bool(ctx, expr.op.kind === TOKEN_ADD, expr),
                 expr),
                 get_node_and(ctx,
-                    get_node_eq(ctx, rhs, get_node_bool(ctx, false, expr), expr),
+                    get_node_eq(ctx, rhs, get_node_false(ctx, expr), expr),
                     get_node_bool(ctx, expr.op.kind !== TOKEN_ADD, expr),
                 expr),
             expr)
@@ -1460,16 +1472,73 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
         switch (expr.op.kind) {
         case TOKEN_ADD:
         case TOKEN_MUL:
-        case TOKEN_AND:
         case TOKEN_SUB:
         case TOKEN_POW:
+        case TOKEN_AND:
+        case TOKEN_COMMA:
         case TOKEN_EQ:
-        case TOKEN_COMMA: {
+        case TOKEN_NOT_EQ: {
             let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
             let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
             if (!lhs || !rhs) return null
 
-            return get_node_binary(ctx, expr.op.kind, lhs, rhs, expr)
+            switch (expr.op.kind) {
+            // a != b  ->  a = !b, b = !a
+            case TOKEN_NOT_EQ:
+                return get_node_and(ctx,
+                    get_node_eq(ctx, lhs, get_node_neg(ctx, rhs), expr),
+                    get_node_eq(ctx, rhs, get_node_neg(ctx, lhs), expr),
+                )
+            case TOKEN_AND:
+            case TOKEN_COMMA:
+            case TOKEN_EQ:
+                return get_node_binary(ctx, expr.op.kind, lhs, rhs, expr)
+            // a OP b  ->  (a = true,  b = true,  true  OP true)  |
+            //             (a = true,  b = false, true  OP false) |
+            //             (a = false, b = true,  false OP true)  |
+            //             (a = false, b = false, false OP false)
+            case TOKEN_ADD:
+            case TOKEN_MUL:
+            case TOKEN_SUB:
+            case TOKEN_POW:
+                return get_node_or(ctx,
+                    get_node_or(ctx,
+                        get_node_and(ctx,
+                            get_node_eq(ctx, lhs, get_node_true(ctx, expr), expr),
+                            get_node_and(ctx,
+                                get_node_eq(ctx, rhs, get_node_true(ctx, expr), expr),
+                                get_node_bool(ctx, _do_bool_token_op(ctx, expr.op.kind, true, true), expr),
+                            expr),
+                        expr),
+                        get_node_and(ctx,
+                            get_node_eq(ctx, lhs, get_node_true(ctx, expr), expr),
+                            get_node_and(ctx,
+                                get_node_eq(ctx, rhs, get_node_false(ctx, expr), expr),
+                                get_node_bool(ctx, _do_bool_token_op(ctx, expr.op.kind, true, false), expr),
+                            expr),
+                        expr),
+                    expr),
+                    get_node_or(ctx,
+                        get_node_and(ctx,
+                            get_node_eq(ctx, lhs, get_node_false(ctx, expr), expr),
+                            get_node_and(ctx,
+                                get_node_eq(ctx, rhs, get_node_true(ctx, expr), expr),
+                                get_node_bool(ctx, _do_bool_token_op(ctx, expr.op.kind, false, true), expr),
+                            expr),
+                        expr),
+                        get_node_and(ctx,
+                            get_node_eq(ctx, lhs, get_node_false(ctx, expr), expr),
+                            get_node_and(ctx,
+                                get_node_eq(ctx, rhs, get_node_false(ctx, expr), expr),
+                                get_node_bool(ctx, _do_bool_token_op(ctx, expr.op.kind, false, false), expr),
+                            expr),
+                        expr),
+                    expr),
+                expr)
+            default:
+                expr.op.kind satisfies never // exhaustive check
+                return null
+            }
         }
         case TOKEN_OR: {
             // Create separate worlds for each side
@@ -1480,21 +1549,10 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
             let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id)
             if (!lhs || !rhs) return null
 
-            return get_node_binary(ctx, expr.op.kind,
+            return get_node_or(ctx,
                 get_node_world(ctx, lhs_world_id, lhs),
                 get_node_world(ctx, rhs_world_id, rhs),
             expr)
-        }
-        // a != b  ->  a = !b, b = !a
-        case TOKEN_NOT_EQ: {
-            let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
-            let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
-            if (!lhs || !rhs) return null
-
-            return get_node_and(ctx,
-                get_node_eq(ctx, lhs, get_node_neg(ctx, rhs), expr),
-                get_node_eq(ctx, rhs, get_node_neg(ctx, lhs), expr),
-            )
         }
         }
         return null
@@ -1919,40 +1977,8 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         }
 
         switch (node.op) {
-        /* Boolean operators */
-        case TOKEN_ADD:
-        case TOKEN_SUB:
-        case TOKEN_MUL:
-        case TOKEN_POW: {
-            // * Require both sides to be bools for now
-            // TODO: for vars it should split worlds {x: bool, res = true} | {res = !()}
-            if (lhs.kind !== NODE_BOOL) {
-                if (lhs.kind === NODE_SELECTOR || lhs.kind === NODE_VAR) {
-                    return node_id // Cannot resolve now
-                }
-                return get_node_never(ctx) // Boolean operation on non-boolean
-            }
-            if (rhs.kind !== NODE_BOOL) {
-                if (rhs.kind === NODE_SELECTOR || rhs.kind === NODE_VAR) {
-                    return node_id // Cannot resolve now
-                }
-                return get_node_never(ctx) // Boolean operation on non-boolean
-            }
-
-            switch (node.op) {
-            // a + b
-            case TOKEN_ADD: return get_node_bool(ctx, lhs.value || rhs.value)
-            // a * b
-            case TOKEN_MUL: return get_node_bool(ctx, lhs.value && rhs.value)
-            // Sub is XNOR (for negation: false - x = NOT x, which is !x = false XNOR x)
-            case TOKEN_SUB: return get_node_bool(ctx, lhs.value === rhs.value)
-            // Pow is XOR
-            case TOKEN_POW: return get_node_bool(ctx, lhs.value !== rhs.value)
-            }
-        }
-
         /* Logical Equality */
-        case TOKEN_EQ: {
+        case TOKEN_EQ:
             // a = a  ->  ()
             if (node_equals(ctx, lhs_id, rhs_id, world_id, scope_id)) return get_node_any(ctx)
 
@@ -1963,11 +1989,10 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             return eq_var_reduce(ctx, lhs_id, rhs_id, world_id, scope_id)
                 || eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id)
                 || get_node_never(ctx)
-        }
 
         /* Logical conjunction */
         case TOKEN_COMMA:
-        case TOKEN_AND: {
+        case TOKEN_AND:
             // After evaluating rhs (which may set new constraints), re-reduce lhs from the
             // original node to pick up those constraints
             lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
@@ -1992,7 +2017,6 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             if (node_equals(ctx, rhs_id, get_node_neg(ctx, lhs_id), world_id, scope_id)) return get_node_never(ctx)
 
             return get_node_and(ctx, lhs_id, rhs_id)
-        }
         }
 
         return node_id
