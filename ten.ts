@@ -1,8 +1,8 @@
-// function assert(condition: boolean, message?: string): asserts condition {
-//     if (!condition) {
-//         throw new Error(message || 'Assertion failed')
-//     }
-// }
+function assert(condition: boolean, message?: string): asserts condition {
+    if (!condition) {
+        throw new Error(message || 'Assertion failed')
+    }
+}
 // function unreachable(): never {
 //     throw new Error('Should\'t reach here')
 // }
@@ -875,10 +875,11 @@ export const
     NODE_SELECTOR   = 205 as const,
     NODE_VAR        = 206 as const,
     NODE_SCOPE      = 207 as const,
+    NODE_WORLD      = 208 as const,
     NODE_TOP        = NODE_ANY,
     NODE_BOTTOM     = NODE_NEVER,
     NODE_ENUM_START = NODE_ANY,
-    NODE_ENUM_END   = NODE_SCOPE,
+    NODE_ENUM_END   = NODE_WORLD,
     NODE_ENUM_RANGE = NODE_ENUM_END - NODE_ENUM_START + 1
 
 export const Node_Kind = {
@@ -890,6 +891,7 @@ export const Node_Kind = {
     Selector: NODE_SELECTOR,
     Var:      NODE_VAR,
     Scope:    NODE_SCOPE,
+    World:    NODE_WORLD,
 } as const
 
 export type Node_Kind = typeof Node_Kind[keyof typeof Node_Kind]
@@ -904,6 +906,7 @@ export const node_kind_string = (kind: Node_Kind): string => {
     case NODE_SELECTOR: return "Selector"
     case NODE_VAR:      return "Var"
     case NODE_SCOPE:    return "Scope"
+    case NODE_WORLD:    return "World"
     default:
         kind satisfies never // exhaustive check
         return "Unknown"
@@ -919,6 +922,7 @@ export type Node =
     | Node_Selector
     | Node_Var
     | Node_Scope
+    | Node_World
 
 export class Node_Any {
     kind = NODE_ANY
@@ -953,65 +957,171 @@ export class Node_Selector {
 }
 export class Node_Var {
     kind = NODE_VAR
-    lhs:   Scope_Id    = SCOPE_ID_NONE
+    lhs:   Scope_Id    = SCOPE_ID_ROOT
     rhs:   Ident_Id    = IDENT_ID_NONE // Field(.foo)
     expr:  Expr | null = null
 }
 export class Node_Scope {
     kind = NODE_SCOPE
-    id:    Scope_Id    = SCOPE_ID_NONE
+    id:    Scope_Id    = SCOPE_ID_ROOT
     body:  Node_Id     = NODE_ID_NONE
+    expr:  Expr | null = null
+}
+export class Node_World {
+    kind = NODE_WORLD
+    id:    World_Id = WORLD_ID_ROOT
+    node:  Node_Id  = NODE_ID_NONE
     expr:  Expr | null = null
 }
 
 export class World {
-    ctx:    Context = null as any as Context
-    parent: World | null = null
-    scope:  Scope_Id = 0 as Scope_Id
-    node:   Node_Id = NODE_ID_NONE
+    parent: World_Id | null = null
     vars:   Map<Scope_Id, Map<Ident_Id, Node_Id | null>> = new Map()
 }
 
 export class Context {
-    worlds:        Worlds = []
+    next_node_id:  Node_Id  = NODE_ID_NONE+1 as Node_Id
+    next_ident_id: Ident_Id = IDENT_ID_NONE+1 as Ident_Id
+    next_scope_id: Scope_Id = SCOPE_ID_ROOT+1 as Scope_Id
+    next_world_id: World_Id = WORLD_ID_ROOT
+
+    worlds:        World[] = []
+    root:          Node_Id = NODE_ID_NONE
 
     all_nodes:     Node[] = [new Node_Any()]
-    /** Node Key -> Node Id */
     nodes:         Map<Node_Key, Node_Id> = new Map()
 
-    next_node_id:  Node_Id  = 1 as Node_Id
-    next_ident_id: Ident_Id = 1 as Ident_Id
-    next_scope_id: Scope_Id = 1 as Scope_Id
-
     ident_map:     Map<string, Ident_Id> = new Map()
-    ident_rev_map: Map<Ident_Id, string> = new Map()
+    ident_src:     string[] = ['']
+}
+
+const new_node_id = (ctx: Context): Node_Id => {
+    let node_id = ctx.next_node_id
+    ctx.next_node_id++
+    if (ctx.next_node_id >= MAX_ID) {
+        throw new Error("Exceeded maximum number of nodes")
+    }
+    return node_id
+}
+const new_ident_id = (ctx: Context): Ident_Id => {
+    let ident_id = ctx.next_ident_id
+    ctx.next_ident_id++
+    if (ctx.next_ident_id >= MAX_ID) {
+        throw new Error("Exceeded maximum number of identifiers")
+    }
+    return ident_id
+}
+const new_scope_id = (ctx: Context): Scope_Id => {
+    let scope_id = ctx.next_scope_id
+    ctx.next_scope_id++
+    if (ctx.next_scope_id >= MAX_ID) {
+        throw new Error("Exceeded maximum number of scopes")
+    }
+    return scope_id
+}
+const new_world_id = (ctx: Context): World_Id => {
+    let world_id = ctx.next_world_id
+    ctx.next_world_id++
+    if (ctx.next_world_id >= MAX_ID) {
+        throw new Error("Exceeded maximum number of worlds")
+    }
+    return world_id
+}
+
+const ident_id = (ctx: Context, name: string): Ident_Id => {
+    let ident = ctx.ident_map.get(name)
+    if (ident == null) {
+        ident = new_ident_id(ctx)
+        ctx.ident_map.set(name, ident)
+        ctx.ident_src[ident] = name
+    }
+    return ident
+}
+
+export const ident_string = (ctx: Context, ident: Ident_Id): string | null => {
+    return ctx.ident_src[ident] ?? null
+}
+
+export const world_get = (ctx: Context, id: World_Id): World | null => {
+    return ctx.worlds[id] ?? null
+}
+export const world_get_assert = (ctx: Context, id: World_Id): World => {
+    let world = world_get(ctx, id)
+    assert(world != null, 'Couldn\'t get world object from id')
+    return world
 }
 
 export const context_make = (): Context => {
-    let ctx = new Context()
-    let world = new World()
-    world.ctx   = ctx
-    world.scope = new_scope_id(ctx)
-    ctx.worlds.push(world)
+    let ctx = new Context
+    world_make(ctx)
+    ctx.root = NODE_ID_NONE
     return ctx
 }
 
-export const world_clone = (world: World): World => {
-    let clone = new World()
-    clone.ctx    = world.ctx
-    clone.scope  = world.scope
-    clone.parent = world
-    clone.node   = world.node
-    return clone
+export const world_make = (ctx: Context): World_Id => {
+    let id = new_world_id(ctx)
+    let w = new World()
+    ctx.worlds[id] = w
+    return id
+}
+
+export const world_clone = (ctx: Context, id: World_Id): World_Id => {
+
+    let clone_id = world_make(ctx)
+
+    let clone = world_get_assert(ctx, clone_id)
+
+    clone.parent = id
+
+    return clone_id
+}
+
+export const world_add = (ctx: Context, dst_id: World_Id, src_id: World_Id): void => {
+
+    let dst = world_get_assert(ctx, dst_id)
+    let src = world_get_assert(ctx, src_id)
+
+    for (let [scope_id, var_map] of src.vars) {
+        let dest_var_map = dst.vars.get(scope_id)
+        if (!dest_var_map) {
+            dst.vars.set(scope_id, new Map(var_map))
+        } else {
+            for (let [ident, val] of var_map) {
+                dest_var_map.set(ident, val)
+            }
+        }
+    }
+}
+
+export const world_is_empty = (ctx: Context, id: World_Id): boolean => {
+
+    let world = world_get_assert(ctx, id)
+
+    return world.vars.size === 0
+}
+
+export const world_unwrap = (ctx: Context, dst_id: World_Id, src_id: World_Id, node_id: Node_Id): Node_Id => {
+
+    if (dst_id !== src_id) {
+        let node = node_by_id(ctx, node_id)
+        if (node != null && node.kind === NODE_WORLD && node.id === src_id) {
+            world_add(ctx, dst_id, src_id)
+            return node.node
+        }
+    }
+
+    return node_id
 }
 
 export type Ident_Id = number & {__var_id: void}
 export type Node_Id  = number & {__node_id: void}
 export type Scope_Id = number & {__scope_id: void}
+export type World_Id = number & {__world_id: void}
 
 const NODE_ID_NONE  = 0 as Node_Id
 const IDENT_ID_NONE = 0 as Ident_Id
-const SCOPE_ID_NONE = 0 as Scope_Id
+const SCOPE_ID_ROOT = 0 as Scope_Id
+const WORLD_ID_ROOT = 0 as World_Id
 
 export const MAX_ID = 4194304 // 2^22
 
@@ -1078,6 +1188,12 @@ export const node_scope_encode = (id: Scope_Id, body: Node_Id): Node_Key => {
     key += id * NODE_ENUM_RANGE
     return key as Node_Key
 }
+export const node_world_encode = (id: World_Id, node: Node_Id): Node_Key => {
+    let key = NODE_WORLD - NODE_ENUM_START
+    key += node * MAX_ID * NODE_ENUM_RANGE
+    key += id * NODE_ENUM_RANGE
+    return key as Node_Key
+}
 
 export const node_encode = (node: Node): Node_Key => {
     switch (node.kind) {
@@ -1089,6 +1205,7 @@ export const node_encode = (node: Node): Node_Key => {
     case NODE_SELECTOR: return node_selector_encode(node.lhs, node.rhs)
     case NODE_VAR:      return node_var_encode(node.lhs, node.rhs)
     case NODE_SCOPE:    return node_scope_encode(node.id, node.body)
+    case NODE_WORLD:    return node_world_encode(node.id, node.node)
     default:
         node satisfies never // exhaustive check
         return node_any_encode()
@@ -1175,6 +1292,19 @@ export const node_decode = (_key: Node_Key): Node => {
 
         return node
     }
+    case NODE_WORLD: {
+        let node = new Node_World()
+
+        // key layout after dividing by NODE_ENUM_RANGE:
+        // key = body * MAX_ID + id
+
+        node.id = (key % MAX_ID) as World_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.node = (key % MAX_ID) as Node_Id
+
+        return node
+    }
     default:
         kind satisfies never // exhaustive check
         return new Node_Any()
@@ -1184,45 +1314,6 @@ export const node_decode = (_key: Node_Key): Node => {
 
 export const node_key      = node_encode
 export const node_from_key = node_decode
-
-const new_node_id = (ctx: Context): Node_Id => {
-    let node_id = ctx.next_node_id
-    ctx.next_node_id++
-    if (ctx.next_node_id >= MAX_ID) {
-        throw new Error("Exceeded maximum number of nodes")
-    }
-    return node_id
-}
-const new_ident_id = (ctx: Context): Ident_Id => {
-    let ident_id = ctx.next_ident_id
-    ctx.next_ident_id++
-    if (ctx.next_ident_id >= MAX_ID) {
-        throw new Error("Exceeded maximum number of identifiers")
-    }
-    return ident_id
-}
-const new_scope_id = (ctx: Context): Scope_Id => {
-    let scope_id = ctx.next_scope_id
-    ctx.next_scope_id++
-    if (ctx.next_scope_id >= MAX_ID) {
-        throw new Error("Exceeded maximum number of scopes")
-    }
-    return scope_id
-}
-
-const ident_id = (ctx: Context, name: string): Ident_Id => {
-    let ident = ctx.ident_map.get(name)
-    if (ident == null) {
-        ident = new_ident_id(ctx)
-        ctx.ident_map.set(name, ident)
-        ctx.ident_rev_map.set(ident, name)
-    }
-    return ident
-}
-
-export const ident_string = (ctx: Context, ident: Ident_Id): string | null => {
-    return ctx.ident_rev_map.get(ident) ?? null
-}
 
 export const store_node_key = (ctx: Context, key: Node_Key, expr: Expr | null = null): Node_Id => {
     if (!ctx.nodes.has(key)) {
@@ -1240,72 +1331,101 @@ export const store_node = (ctx: Context, node: Node, expr: Expr | null = null): 
     let key = node_encode(node)
     store_node_key(ctx, key, expr)
 }
-
-export const get_node = (ctx: Context, key: Node_Key): Node | null => {
-    let node_id = ctx.nodes.get(key)
-    if (node_id == null) return null
+export const node_by_id = (ctx: Context, node_id: Node_Id): Node | null => {
     return ctx.all_nodes[node_id]
 }
 
-export const get_node_by_id = (ctx: Context, node_id: Node_Id): Node | null => {
-    return ctx.all_nodes[node_id]
-}
-
-export const get_node_any = (ctx: Context, expr: Expr | null = null): Node_Id => {
+export const node_any = (ctx: Context, expr: Expr | null = null): Node_Id => {
     let key = node_any_encode()
     return store_node_key(ctx, key, expr)
 }
-export const get_node_never = (ctx: Context, expr: Expr | null = null): Node_Id => {
+export const node_never = (ctx: Context, expr: Expr | null = null): Node_Id => {
     let key = node_never_encode()
     return store_node_key(ctx, key, expr)
 }
-export const get_node_any_or_never = (ctx: Context, condition: boolean, expr: Expr | null = null): Node_Id => {
-    return condition ? get_node_any(ctx, expr) : get_node_never(ctx, expr)
+export const node_any_or_never = (ctx: Context, condition: boolean, expr: Expr | null = null): Node_Id => {
+    return condition ? node_any(ctx, expr) : node_never(ctx, expr)
 }
-export const get_node_bool = (ctx: Context, value: boolean, expr: Expr | null = null): Node_Id => {
+
+export const node_bool = (ctx: Context, value: boolean, expr: Expr | null = null): Node_Id => {
     let key = node_bool_encode(value)
     return store_node_key(ctx, key, expr)
 }
-export const get_node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
-    let rhs_node = get_node_by_id(ctx, rhs)
+export const node_true  = (ctx: Context, expr: Expr | null = null): Node_Id => node_bool(ctx, true, expr)
+export const node_false = (ctx: Context, expr: Expr | null = null): Node_Id => node_bool(ctx, false, expr)
+
+export const node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
+    let rhs_node = node_by_id(ctx, rhs)
     if (rhs_node != null && rhs_node.kind === NODE_NEG) {
         return rhs_node.rhs /*  !!x  ->  x  */
     }
     let key = node_neg_encode(rhs)
     return store_node_key(ctx, key, expr)
 }
-export const get_node_binary = (ctx: Context, op: Token_Kind, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
+
+export const node_binary = (ctx: Context, op: Token_Kind, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
     let key = node_binary_encode(op, lhs, rhs)
     return store_node_key(ctx, key, expr)
 }
-export const get_node_selector = (ctx: Context, lhs: Node_Id, rhs: Ident_Id, expr: Expr | null = null): Node_Id => {
+export const node_and = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => node_binary(ctx, TOKEN_AND, lhs, rhs, expr)
+export const node_or  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => node_binary(ctx, TOKEN_OR, lhs, rhs, expr)
+export const node_eq  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => node_binary(ctx, TOKEN_EQ, lhs, rhs, expr)
+
+export const node_selector = (ctx: Context, lhs: Node_Id, rhs: Ident_Id, expr: Expr | null = null): Node_Id => {
     let key = node_selector_encode(lhs, rhs)
     return store_node_key(ctx, key, expr)
 }
-export const get_node_var = (ctx: Context, lhs: Scope_Id, rhs: Ident_Id, expr: Expr | null = null): Node_Id => {
+export const node_var = (ctx: Context, lhs: Scope_Id, rhs: Ident_Id, expr: Expr | null = null): Node_Id => {
     let key = node_var_encode(lhs, rhs)
     return store_node_key(ctx, key, expr)
 }
-export const get_node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id, expr: Expr | null = null): Node_Id => {
+export const node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id, expr: Expr | null = null): Node_Id => {
     let key = node_scope_encode(scope_id, body)
+    return store_node_key(ctx, key, expr)
+}
+export const node_world = (ctx: Context, world_id: World_Id, node_id: Node_Id, expr: Expr | null = null): Node_Id => {
+    let node = node_by_id(ctx, node_id)
+    if (node != null && node.kind === NODE_WORLD) {
+        if (node.id === world_id) {
+            return node_id
+        }
+        world_add(ctx, world_id, node.id)
+        return node_world(ctx, world_id, node.node, expr)
+    }
+    let key = node_world_encode(world_id, node_id)
     return store_node_key(ctx, key, expr)
 }
 
 export const add_expr = (ctx: Context, expr: Expr, src: string): void => {
-    for (let world of ctx.worlds) {
-        world.node = node_from_expr(world, expr, src, world.scope) ?? NODE_ID_NONE
-    }
+    let node = node_from_expr(ctx, WORLD_ID_ROOT, expr, src, SCOPE_ID_ROOT)
+    assert(node != null, 'node_from_expr produced no result')
+    ctx.root = node
 }
 
-const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_Id): Node_Id | null => {
-    let ctx = world.ctx
+const _do_bool_token_op = (op: Token_Kind, lhs: boolean, rhs: boolean): boolean => {
+    switch (op) {
+    case TOKEN_AND:    return lhs && rhs
+    case TOKEN_COMMA:  return lhs && rhs
+    case TOKEN_OR:     return lhs || rhs
+    case TOKEN_EQ:     return lhs === rhs
+    case TOKEN_NOT_EQ: return lhs !== rhs
+    case TOKEN_ADD:    return lhs || rhs
+    case TOKEN_SUB:    return lhs && !rhs
+    case TOKEN_MUL:    return lhs && rhs
+    case TOKEN_POW:    return lhs !== rhs
+    }
+    return false
+}
 
+const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: string, scope_id: Scope_Id): Node_Id | null => {
     switch (expr.kind) {
     case EXPR_TOKEN:
         switch (expr.tok.kind) {
-        case TOKEN_TRUE:  return get_node_bool(ctx, true, expr)
-        case TOKEN_FALSE: return get_node_bool(ctx, false, expr)
+        case TOKEN_TRUE:  return node_true(ctx, expr)
+        case TOKEN_FALSE: return node_false(ctx, expr)
         case TOKEN_IDENT: {
+            let world = world_get_assert(ctx, world_id)
+
             let text  = token_string(src, expr.tok)
             let ident = ident_id(ctx, text)
             let vars  = world.vars.get(scope_id)
@@ -1315,25 +1435,34 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
             }
             vars.set(ident, null)
 
-            return get_node_var(ctx, scope_id, ident, expr)
+            return node_var(ctx, scope_id, ident, expr)
         }
         }
         return null
 
     case EXPR_UNARY: {
         // Convert unary to binary
-        let rhs = node_from_expr(world, expr.rhs, src, scope_id)
+        let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
         if (rhs == null) return null
 
-        let lhs = get_node_bool(ctx, false, expr)
-
         switch (expr.op.kind) {
-        // `+x` -> `false + x` -> `x` (OR identity)
-        case TOKEN_ADD: return get_node_binary(ctx, TOKEN_ADD, lhs, rhs, expr)
-        // `-x` -> `false - x` -> `NOT x` (XNOR negation)
-        case TOKEN_SUB: return get_node_binary(ctx, TOKEN_SUB, lhs, rhs, expr)
+        // `+x` -> `(x = true, true)  | (x = false, false)`
+        // `-x` -> `(x = true, false) | (x = false, true)`
+        case TOKEN_ADD:
+        case TOKEN_SUB:
+            return node_or(ctx,
+                node_and(ctx,
+                    node_eq(ctx, rhs, node_true(ctx, expr), expr),
+                    node_bool(ctx, expr.op.kind === TOKEN_ADD, expr),
+                expr),
+                node_and(ctx,
+                    node_eq(ctx, rhs, node_false(ctx, expr), expr),
+                    node_bool(ctx, expr.op.kind !== TOKEN_ADD, expr),
+                expr),
+            expr)
         // `!x`
-        case TOKEN_NEG: return get_node_neg(ctx, rhs, expr)
+        case TOKEN_NEG:
+            return node_neg(ctx, rhs, expr)
         }
 
         return null
@@ -1342,29 +1471,88 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
     case EXPR_BINARY: {
         switch (expr.op.kind) {
         case TOKEN_ADD:
-        case TOKEN_OR:
         case TOKEN_MUL:
-        case TOKEN_AND:
         case TOKEN_SUB:
         case TOKEN_POW:
+        case TOKEN_AND:
+        case TOKEN_COMMA:
         case TOKEN_EQ:
-        case TOKEN_COMMA: {
-            let lhs = node_from_expr(world, expr.lhs, src, scope_id)
-            let rhs = node_from_expr(world, expr.rhs, src, scope_id)
-            if (!lhs || !rhs) return null
-
-            return get_node_binary(ctx, expr.op.kind, lhs, rhs, expr)
-        }
-        // a != b  ->  a = !b, b = !a
         case TOKEN_NOT_EQ: {
-            let lhs = node_from_expr(world, expr.lhs, src, scope_id)
-            let rhs = node_from_expr(world, expr.rhs, src, scope_id)
+            let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
+            let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
             if (!lhs || !rhs) return null
 
-            return get_node_binary(ctx, TOKEN_AND,
-                get_node_binary(ctx, TOKEN_EQ, lhs, get_node_neg(ctx, rhs), expr),
-                get_node_binary(ctx, TOKEN_EQ, rhs, get_node_neg(ctx, lhs), expr),
-            )
+            switch (expr.op.kind) {
+            // a != b  ->  a = !b, b = !a
+            case TOKEN_NOT_EQ:
+                return node_and(ctx,
+                    node_eq(ctx, lhs, node_neg(ctx, rhs), expr),
+                    node_eq(ctx, rhs, node_neg(ctx, lhs), expr),
+                )
+            case TOKEN_AND:
+            case TOKEN_COMMA:
+            case TOKEN_EQ:
+                return node_binary(ctx, expr.op.kind, lhs, rhs, expr)
+            // a OP b  ->  (a = true,  b = true,  true  OP true)  |
+            //             (a = true,  b = false, true  OP false) |
+            //             (a = false, b = true,  false OP true)  |
+            //             (a = false, b = false, false OP false)
+            case TOKEN_ADD:
+            case TOKEN_MUL:
+            case TOKEN_SUB:
+            case TOKEN_POW:
+                return node_or(ctx,
+                    node_or(ctx,
+                        node_and(ctx,
+                            node_eq(ctx, lhs, node_true(ctx, expr), expr),
+                            node_and(ctx,
+                                node_eq(ctx, rhs, node_true(ctx, expr), expr),
+                                node_bool(ctx, _do_bool_token_op(expr.op.kind, true, true), expr),
+                            expr),
+                        expr),
+                        node_and(ctx,
+                            node_eq(ctx, lhs, node_true(ctx, expr), expr),
+                            node_and(ctx,
+                                node_eq(ctx, rhs, node_false(ctx, expr), expr),
+                                node_bool(ctx, _do_bool_token_op(expr.op.kind, true, false), expr),
+                            expr),
+                        expr),
+                    expr),
+                    node_or(ctx,
+                        node_and(ctx,
+                            node_eq(ctx, lhs, node_false(ctx, expr), expr),
+                            node_and(ctx,
+                                node_eq(ctx, rhs, node_true(ctx, expr), expr),
+                                node_bool(ctx, _do_bool_token_op(expr.op.kind, false, true), expr),
+                            expr),
+                        expr),
+                        node_and(ctx,
+                            node_eq(ctx, lhs, node_false(ctx, expr), expr),
+                            node_and(ctx,
+                                node_eq(ctx, rhs, node_false(ctx, expr), expr),
+                                node_bool(ctx, _do_bool_token_op(expr.op.kind, false, false), expr),
+                            expr),
+                        expr),
+                    expr),
+                expr)
+            default:
+                expr.op.kind satisfies never // exhaustive check
+                return null
+            }
+        }
+        case TOKEN_OR: {
+            // Create separate worlds for each side
+            let lhs_world_id = world_clone(ctx, world_id)
+            let rhs_world_id = world_clone(ctx, world_id)
+
+            let lhs = node_from_expr(ctx, lhs_world_id, expr.lhs, src, scope_id)
+            let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id)
+            if (!lhs || !rhs) return null
+
+            return node_or(ctx,
+                node_world(ctx, lhs_world_id, lhs),
+                node_world(ctx, rhs_world_id, rhs),
+            expr)
         }
         }
         return null
@@ -1375,13 +1563,13 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
 
         // foo.bar
         // foo.bar.baz...
-        let lhs = node_from_expr(world, expr.lhs, src, scope_id)
+        let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
         if (!lhs) return null
 
         let text  = token_string(src, expr.rhs).substring(1) // Remove '.'
         let ident = ident_id(ctx, text)
 
-        return get_node_selector(ctx, lhs, ident, expr)
+        return node_selector(ctx, lhs, ident, expr)
 
     case EXPR_PAREN: {
         if (expr.open.kind === TOKEN_BRACE_L) {
@@ -1389,17 +1577,16 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
             scope_id = new_scope_id(ctx)
             let body: Node_Id | null
             if (expr.body) {
-                // TODO: How to get scope id before processing body?
-                body = node_from_expr(world, expr.body, src, scope_id)
-                body ??= get_node_any(ctx, expr)
+                body = node_from_expr(ctx, world_id, expr.body, src, scope_id)
+                body ??= node_any(ctx, expr)
             } else {
-                body = get_node_any(ctx, expr)
+                body = node_any(ctx, expr)
             }
-            return get_node_scope(ctx, scope_id, body, expr)
+            return node_scope(ctx, scope_id, body, expr)
         }
         // Regular paren (...)
-        if (!expr.body) return get_node_any(ctx, expr)
-        return node_from_expr(world, expr.body, src, scope_id)
+        if (!expr.body) return node_any(ctx, expr)
+        return node_from_expr(ctx, world_id, expr.body, src, scope_id)
     }
 
     case EXPR_INVALID:
@@ -1408,112 +1595,54 @@ const node_from_expr = (world: World, expr: Expr, src: string, scope_id: Scope_I
     }
 }
 
-function scope_vars_collect(world: World, scope_id: Scope_Id): Map<Ident_Id, Node_Id | null> | null {
-    let out: Map<Ident_Id, Node_Id | null> | null = null
-    let chain: Worlds = []
-    for (let w: World | null = world; w != null; w = w.parent) {
-        chain.push(w)
-    }
-    for (let i = chain.length - 1; i >= 0; --i) {
-        let w = chain[i]
-        let map = w.vars.get(scope_id)
-        if (map == null) continue
-        if (out == null) out = new Map()
-        for (let [ident, val] of map) {
-            if (val == null) {
-                out.set(ident, val)
-            } else {
-                let reduced = node_reduce(val, world, scope_id, new Set())
-                out.set(ident, reduced)
-            }
-        }
-    }
-    return out
-}
+const nodes_equal = (
+    ctx:        Context,
+    a_id:       Node_Id,
+    b_id:       Node_Id,
+    a_world_id: World_Id,
+    a_scope_id: Scope_Id,
+    b_world_id: World_Id = a_world_id,
+    b_scope_id: Scope_Id = a_scope_id,
+): boolean => {
 
-const scopes_conflict = (world: World, lhs: Node_Scope, rhs: Node_Scope): boolean => {
-    let lhs_vars = scope_vars_collect(world, lhs.id) ?? new Map()
-    let rhs_vars = scope_vars_collect(world, rhs.id) ?? new Map()
-
-    for (let [ident, lhs_val] of lhs_vars) {
-        if (!rhs_vars.has(ident)) continue
-        let rhs_val = rhs_vars.get(ident)!
-        if (lhs_val == null || rhs_val == null) continue
-        if (!node_equals(world, lhs_val, rhs_val)) return true
-    }
-
-    for (let [ident, lhs_val] of lhs_vars) {
-        if (rhs_vars.has(ident)) continue
-        if (lhs_val != null) return true
-    }
-    for (let [ident, rhs_val] of rhs_vars) {
-        if (lhs_vars.has(ident)) continue
-        if (rhs_val != null) return true
-    }
-
-    let lhs_body = node_reduce(lhs.body, world, lhs.id, new Set())
-    let rhs_body = node_reduce(rhs.body, world, rhs.id, new Set())
-
-    let lhs_body_node = get_node_by_id(world.ctx, lhs_body)
-    let rhs_body_node = get_node_by_id(world.ctx, rhs_body)
-
-    if (lhs_body_node != null && rhs_body_node != null) {
-        if (lhs_body_node.kind === NODE_NEVER || rhs_body_node.kind === NODE_NEVER) {
-            if (!(lhs_body_node.kind === NODE_NEVER && rhs_body_node.kind === NODE_NEVER)) return true
-        } else if (!node_equals(world, lhs_body, rhs_body)) {
-            return true
-        }
-    }
-
-    return false
-}
-
-const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
-    let ctx = world.ctx
-
-    if (a_id === b_id) return true
-
-    let a = get_node_by_id(ctx, a_id)!
-    let b = get_node_by_id(ctx, b_id)!
+    let a = node_by_id(ctx, a_id)!
+    let b = node_by_id(ctx, b_id)!
 
     if (a.kind !== b.kind) return false
 
     switch (a.kind) {
     case NODE_ANY:
     case NODE_NEVER:
-        return true
     case NODE_BOOL:
-        b = b as typeof a
-        return a.value === b.value
+    case NODE_VAR:
+        return a_id === b_id
 
     case NODE_NEG:
         b = b as typeof a
-        return node_equals(world, a.rhs, b.rhs)
+        return nodes_equal(ctx, a.rhs, b.rhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
     case NODE_BINARY:
         b = b as typeof a
         return a.op === b.op &&
-               node_equals(world, a.lhs, b.lhs) &&
-               node_equals(world, a.rhs, b.rhs)
+               nodes_equal(ctx, a.lhs, b.lhs, a_world_id, a_scope_id, b_world_id, b_scope_id) &&
+               nodes_equal(ctx, a.rhs, b.rhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
     case NODE_SELECTOR:
         b = b as typeof a
         return a.rhs === b.rhs &&
-               node_equals(world, a.lhs, b.lhs)
-
-    case NODE_VAR:
-        b = b as typeof a
-        return a.rhs === b.rhs &&
-               a.lhs === b.lhs
+               nodes_equal(ctx, a.lhs, b.lhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
     case NODE_SCOPE: {
         b = b as typeof a
-        if (!node_equals(world, a.body, b.body)) return false
+        if (!nodes_equal(ctx, a.body, b.body, a_world_id, a_scope_id, b_world_id, b_scope_id)) return false
 
         // Compare vars
-        let a_vars = scope_vars_collect(world, a.id)
-        let b_vars = scope_vars_collect(world, b.id)
+        let a_world = world_get(ctx, a_world_id)
+        let b_world = world_get(ctx, b_world_id)
+        assert(a_world != null && b_world != null, 'Used a null world id')
 
+        let a_vars = a_world.vars.get(a.id)
+        let b_vars = b_world.vars.get(b.id)
         if (a_vars == null && b_vars == null) return true
         if (a_vars == null || b_vars == null) return false
         if (a_vars.size !== b_vars.size) return false
@@ -1524,60 +1653,93 @@ const node_equals = (world: World, a_id: Node_Id, b_id: Node_Id): boolean => {
             if (a_val_id == null && b_val_id == null) continue
             if (a_val_id == null || b_val_id == null) return false
 
-            a_val_id = node_reduce(a_val_id, world, a.id)
-            b_val_id = node_reduce(b_val_id, world, b.id)
+            a_val_id = node_reduce(ctx, a_val_id, a_world_id, a.id, new Set)
+            b_val_id = node_reduce(ctx, b_val_id, a_world_id, b.id, new Set)
 
-            if (!node_equals(world, a_val_id, b_val_id)) return false
+            if (!nodes_equal(ctx, a_val_id, b_val_id, a_world_id, a.id, b_world_id, b.id)) return false
         }
 
         return true
     }
 
+    case NODE_WORLD: {
+        b = b as typeof a
+
+        let a_world = world_get_assert(ctx, a.id)
+        let b_world = world_get_assert(ctx, b.id)
+
+        if (a_world.vars.size !== b_world.vars.size) return false
+
+        let a_vars = a_world.vars.get(a_scope_id)
+        let b_vars = b_world.vars.get(b_scope_id)
+
+        if (a_vars != null && b_vars != null) {
+            for (let [var_id, a_val_id] of a_vars) {
+                let b_val_id = b_vars.get(var_id)
+
+                if (a_val_id == null && b_val_id == null) continue
+                if (a_val_id == null || b_val_id == null) return false
+
+                a_val_id = node_reduce(ctx, a_val_id, a.id, a_scope_id, new Set)
+                b_val_id = node_reduce(ctx, b_val_id, b.id, b_scope_id, new Set)
+
+                if (!nodes_equal(ctx, a_val_id, b_val_id, a.id, a_scope_id, b.id, b_scope_id)) return false
+            }
+        }
+
+        return nodes_equal(ctx, a.node, b.node, a.id, a_scope_id, b.id, b_scope_id)
+    }
+
     default:
         a satisfies never // exhaustive check
-        return true // TODO: shouldn't this just return false as id is being compared, then some checks could be removed
+        return false
     }
 }
 
-const var_get_val = (world: World, var_id: Node_Id): Node_Id | null => {
-    let ctx = world.ctx
+const var_get_val = (ctx: Context, world_id: World_Id, var_id: Node_Id): Node_Id | null => {
 
-    let var_node = get_node_by_id(ctx, var_id)!
+    let var_node = node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return null
 
-    for (let w: World | null = world; w != null; w = w.parent) {
+    for (let w: World_Id | null = world_id; w != null;) {
+        let world = world_get_assert(ctx, w)
 
-        let vars = w.vars.get(var_node.lhs)
-        if (vars == null) continue
+        check: {
+            let vars = world.vars.get(var_node.lhs)
+            if (vars == null) break check
 
-        let val = vars.get(var_node.rhs)
-        if (val === undefined) continue
+            let val = vars.get(var_node.rhs)
+            if (val == null) break check
 
-        return val
+            return val
+        }
+
+        w = world.parent
     }
 
     return null
 }
-const var_exists = (world: World, var_id: Node_Id): boolean => {
-    let ctx = world.ctx
+const var_exists = (ctx: Context, world_id: World_Id, var_id: Node_Id): boolean => {
 
-    let var_node = get_node_by_id(ctx, var_id)!
+    let var_node = node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return false
 
-    for (let w: World | null = world; w != null; w = w.parent) {
+    for (let w: World_Id | null = world_id; w != null;) {
+        let world = world_get_assert(ctx, w)
 
-        let vars = w.vars.get(var_node.lhs)
-        if (vars == null) continue
+        let vars = world.vars.get(var_node.lhs)
+        if (vars != null && vars.has(var_node.rhs)) return true
 
-        if (vars.has(var_node.rhs)) return true
+        w = world.parent
     }
 
     return false
 }
-const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => {
-    let ctx = world.ctx
+const var_set_val = (ctx: Context, world_id: World_Id, var_id: Node_Id, value_id: Node_Id): void => {
 
-    let var_node = get_node_by_id(ctx, var_id)!
+    let world = world_get_assert(ctx, world_id)
+
+    let var_node = node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return
 
     let vars = world.vars.get(var_node.lhs)
@@ -1588,664 +1750,287 @@ const var_set_val = (world: World, var_id: Node_Id, value_id: Node_Id): void => 
     vars.set(var_node.rhs, value_id)
 }
 
-export type Worlds = World[]
-
-const worlds_push = (out: Worlds, world: World, node_id: Node_Id): World => {
-    // fork world, attach new node id
-    let w = world_clone(world)
-    w.node = node_id
-    out.push(w)
-    return w
-}
-
-const world_compare_node = (world: World): Node_Id => {
-    // compare via scope node if root isn't already a scope
-    let ctx = world.ctx
-    let node = get_node_by_id(ctx, world.node)
-    if (node != null && node.kind === NODE_SCOPE) {
-        return world.node
-    }
-    return get_node_scope(ctx, world.scope, world.node)
-}
-
-const scope_state = (world: World, scope: Node_Scope): [Map<Ident_Id, Node_Id | null>, Node_Id] => {
-    // normalize scope by reducing all vars and body for comparison
-    let vars_raw = scope_vars_collect(world, scope.id) ?? new Map()
-    let vars = new Map<Ident_Id, Node_Id | null>()
-    for (let [ident, val] of vars_raw) {
-        if (val == null) {
-            vars.set(ident, null)
-            continue
-        }
-        vars.set(ident, node_reduce(val, world, scope.id))
-    }
-    let body = node_reduce(scope.body, world, scope.id)
-    return [vars, body]
-}
-
-const scopes_equal_cross = (world_a: World, scope_a: Node_Scope, world_b: World, scope_b: Node_Scope): boolean => {
-    let [vars_a, body_a] = scope_state(world_a, scope_a)
-    let [vars_b, body_b] = scope_state(world_b, scope_b)
-
-    let idents = new Set<Ident_Id>()
-    for (let id of vars_a.keys()) idents.add(id)
-    for (let id of vars_b.keys()) idents.add(id)
-
-    for (let ident of idents) {
-        let a_val = vars_a.get(ident)
-        let b_val = vars_b.get(ident)
-
-        if (a_val == null && b_val == null) continue
-        if (a_val == null || b_val == null) return false
-
-        if (!nodes_equal_cross(world_a, a_val, world_b, b_val)) return false
-    }
-
-    return nodes_equal_cross(world_a, body_a, world_b, body_b)
-}
-
-const nodes_equal_cross = (world_a: World, node_a: Node_Id, world_b: World, node_b: Node_Id): boolean => {
-    let a_node = get_node_by_id(world_a.ctx, node_a)
-    let b_node = get_node_by_id(world_b.ctx, node_b)
-
-    if (a_node?.kind === NODE_SCOPE && b_node?.kind === NODE_SCOPE) {
-        return scopes_equal_cross(world_a, a_node, world_b, b_node)
-    }
-
-    return node_equals(world_a, node_a, node_b) && node_equals(world_b, node_b, node_a)
-}
-
-const worlds_equal = (a: World, b: World): boolean => {
-    let a_node = world_compare_node(a)
-    let b_node = world_compare_node(b)
-
-    let a_scope = get_node_by_id(a.ctx, a_node)
-    let b_scope = get_node_by_id(b.ctx, b_node)
-
-    if (a_scope == null || b_scope == null) return false
-    if (a_scope.kind !== NODE_SCOPE || b_scope.kind !== NODE_SCOPE) return false
-
-    return scopes_equal_cross(a, a_scope, b, b_scope)
-}
-
-const worlds_dedupe = (worlds: Worlds, out: Worlds = []): Worlds => {
-    // x | x  ->  x
-    outer: for (let w of worlds) {
-        for (let existing of out) {
-            if (worlds_equal(existing, w)) continue outer
-        }
-        out.push(w)
-    }
-    return out
-}
-
 export const reduce = (ctx: Context) => {
-    let next_worlds:  Worlds = []
-    let never_worlds: Worlds = []
 
-    for (let world of ctx.worlds) {
-        let res = node_reduce_many(world.node, world, world.scope)
-        if (res.length === 0) {
-            worlds_push(never_worlds, world, get_node_never(ctx))
-            continue
-        }
-        for (let r of res) {
-            let node = get_node_by_id(ctx, r.node)
-            if (node != null && node.kind === NODE_NEVER) {
-                never_worlds.push(r)
-            } else {
-                next_worlds.push(r)
-            }
-        }
-    }
+    let node = node_world(ctx, WORLD_ID_ROOT, ctx.root)
 
-    let final_worlds = worlds_dedupe(next_worlds)
-    if (final_worlds.length === 0 && never_worlds.length > 0) {
-        final_worlds = [never_worlds[0]]
-    }
-
-    ctx.worlds = final_worlds
+    ctx.root = node_reduce(ctx, node, WORLD_ID_ROOT, SCOPE_ID_ROOT, new Set)
 }
 
-const eq_rhs_branches = (world: World, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>, out: Worlds = []): Worlds => {
+const eq_var_reduce = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id: World_Id, scope_id: Scope_Id): Node_Id | null => {
 
-    let rhs_node = get_node_by_id(world.ctx, rhs_id)
-    if (rhs_node != null && rhs_node.kind === NODE_BINARY && rhs_node.op === TOKEN_OR) {
-        // expand a | b into separate worlds
-        for (let w of node_reduce_many(rhs_node.lhs, world_clone(world), scope_id, visited)) {
-            eq_rhs_branches(w, w.node, scope_id, visited, out)
-        }
-        for (let w of node_reduce_many(rhs_node.rhs, world_clone(world), scope_id, visited)) {
-            eq_rhs_branches(w, w.node, scope_id, visited, out)
-        }
-    } else {
-        worlds_push(out, world, rhs_id)
+    let lhs = node_by_id(ctx, lhs_id)!
+
+    if (lhs.kind === NODE_SELECTOR) {
+        return node_eq(ctx, lhs_id, rhs_id)
     }
 
-    return out
+    if (lhs.kind === NODE_VAR) {
+        let val_id = var_get_val(ctx, world_id, lhs_id)
+        if (val_id != null) {
+            // return node_any_or_never(ctx, node_equals(world, rhs_id, val_id))
+            return node_eq(ctx, lhs_id, rhs_id)
+        }
+
+        // Write var if it's from this scope
+        if (lhs.lhs === scope_id) {
+            var_set_val(ctx, world_id, lhs_id, rhs_id)
+            return node_any(ctx)
+        }
+
+        return node_eq(ctx, lhs_id, rhs_id)
+    }
+
+    return null
 }
 
-function eq_var_reduce(world: World, lhs_id: Node_Id, rhs_id: Node_Id, scope_id: Scope_Id, visited: Set<Node_Id>, out: Worlds = []): Worlds {
-    let ctx = world.ctx
+const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_id: Scope_Id, visited: Set<Node_Id>): Node_Id => {
 
-    // only vars participate in assignment
-    let lhs = get_node_by_id(ctx, lhs_id)
-    if (lhs == null || lhs.kind !== NODE_VAR) return out
-
-    // collect all OR branches of rhs (each in its own world)
-    let rhs_branches = eq_rhs_branches(world, rhs_id, scope_id, visited)
-
-    let val_id = var_get_val(world, lhs_id)
-    if (val_id != null) {
-        // lhs already known -> try to match/propagate into rhs branches
-        let val_node = get_node_by_id(ctx, val_id)
-
-        let matches: Worlds = []
-
-        for (let br of rhs_branches) {
-            let br_node = get_node_by_id(ctx, br.node)
-
-            // rhs equals lhs value -> satisfied
-            if (node_equals(br, val_id, br.node)) {
-                worlds_push(matches, br, get_node_any(ctx))
-                continue
-            }
-
-            if (val_node != null && val_node.kind === NODE_BOOL && br_node != null) {
-                switch (br_node.kind) {
-                case NODE_VAR: {
-                    if (br_node.lhs !== scope_id) break
-                    // assign rhs var to known value
-                    var_set_val(worlds_push(out, br, get_node_any(ctx)), br.node, val_id)
-                    break
-                }
-                case NODE_NEG: {
-                    /* !(var) equals known bool -> assign inverse */
-                    let inner = get_node_by_id(ctx, br_node.rhs)
-                    if (inner != null && inner.kind === NODE_VAR && inner.lhs === scope_id) {
-                        var_set_val(worlds_push(out, br, get_node_any(ctx)), br_node.rhs, get_node_bool(ctx, !val_node.value))
-                    }
-                    break
-                }
-                case NODE_BINARY: {
-                    if (br_node.op === TOKEN_SUB) {
-                        let lhs_node = get_node_by_id(ctx, br_node.lhs)
-                        let rhs_node = get_node_by_id(ctx, br_node.rhs)
-
-                        // bool XNOR var = known -> assign var accordingly
-                        if (lhs_node != null && lhs_node.kind === NODE_BOOL && rhs_node != null && rhs_node.kind === NODE_VAR && rhs_node.lhs === scope_id) {
-                            let desired = val_node.value ? lhs_node.value : !lhs_node.value
-                            var_set_val(worlds_push(out, br, get_node_any(ctx)), br_node.rhs, get_node_bool(ctx, desired))
-                        } else if (rhs_node != null && rhs_node.kind === NODE_BOOL && lhs_node != null && lhs_node.kind === NODE_VAR && lhs_node.lhs === scope_id) {
-                            let desired = val_node.value ? rhs_node.value : !rhs_node.value
-                            var_set_val(worlds_push(out, br, get_node_any(ctx)), br_node.lhs, get_node_bool(ctx, desired))
-                        }
-                    }
-                    break
-                }
-                }
-            }
-        }
-
-        if (matches.length > 0) return matches
-        return out
-    }
-
-    // assign lhs to each viable branch
-    for (let br of rhs_branches) {
-        var_set_val(worlds_push(out, br, get_node_any(ctx)), lhs_id, br.node)
-    }
-
-    return out
-}
-
-function node_reduce_many(node_id: Node_Id, world: World, scope_id: Scope_Id, visited: Set<Node_Id> = new Set(), out: Worlds = []): Worlds {
-    let ctx = world.ctx
-
-    let node = get_node_by_id(ctx, node_id)
-    if (node == null) return []
+    let node = node_by_id(ctx, node_id)
+    assert(node != null, 'Used a null node id')
 
     switch (node.kind) {
     case NODE_ANY:
     case NODE_NEVER:
     case NODE_BOOL:
-        // literals pass through unchanged
-        worlds_push(out, world, node_id)
-        return out
+        return node_id
 
     case NODE_VAR: {
-        // stop on self-reference
-        if (visited.has(node_id)) {
-            worlds_push(out, world, node_id)
-            return out
+        if (visited.has(node_id)) return node_id
+
+        if (!var_exists(ctx, world_id, node_id)) {
+            return node_never(ctx) // Variable not defined in this scope
         }
 
-        // missing var -> impossible
-        if (!var_exists(world, node_id)) {
-            worlds_push(out, world, get_node_never(ctx))
-            return out
-        }
-
-        // follow known value (track visited)
-        let val = var_get_val(world, node_id)
+        // Return the variable's value if known, otherwise keep as variable
+        let val = var_get_val(ctx, world_id, node_id)
         if (val != null) {
-            let next_visited = new Set(visited)
-            next_visited.add(node_id)
-            return node_reduce_many(val, world, scope_id, next_visited, out)
+            visited.add(node_id)
+            let res = node_reduce(ctx, val, world_id, scope_id, visited)
+            visited.delete(node_id)
+            return res
         }
 
-        // unresolved var stays symbolic
-        worlds_push(out, world, node_id)
-        return out
+        return node_id
     }
 
     case NODE_SELECTOR: {
-        let lhs_node = get_node_by_id(ctx, node.lhs)!
-        let lhs_results: Worlds = []
+        let lhs_id = node.lhs
+        let lhs = node_by_id(ctx, lhs_id)!
 
-        if (lhs_node.kind === NODE_SELECTOR || lhs_node.kind === NODE_VAR) {
-            node_reduce_many(node.lhs, world, scope_id, visited, lhs_results)
-        } else {
-            worlds_push(lhs_results, world, node.lhs)
+        if (lhs.kind === NODE_SELECTOR || lhs.kind === NODE_VAR) {
+            lhs_id = node_reduce(ctx, lhs_id, world_id, scope_id, visited)
+            lhs = node_by_id(ctx, lhs_id)!
         }
 
-        for (let lhs_res of lhs_results) {
-            let lhs_reduced = get_node_by_id(ctx, lhs_res.node)
-            if (lhs_reduced == null) continue
-
-            // scope.field -> resolve var
-            if (lhs_reduced.kind === NODE_SCOPE) {
-                let var_id = get_node_var(ctx, lhs_reduced.id, node.rhs)
-                node_reduce_many(var_id, lhs_res, scope_id, visited, out)
-                continue
-            }
-
-            // invalid target
-            if (lhs_reduced.kind !== NODE_SELECTOR && lhs_reduced.kind !== NODE_VAR) {
-                worlds_push(out, lhs_res, get_node_never(ctx))
-                continue
-            }
-
-            worlds_push(out, lhs_res, get_node_selector(ctx, lhs_res.node, node.rhs))
+        if (lhs.kind === NODE_SCOPE) {
+            let var_id = node_var(ctx, lhs.id, node.rhs)
+            return node_reduce(ctx, var_id, world_id, scope_id, visited)
         }
 
-        return out
+        if (lhs.kind === NODE_BINARY && lhs.op == TOKEN_OR) {
+            return node_reduce(ctx, node_or(ctx,
+                node_selector(ctx, lhs.lhs, node.rhs),
+                node_selector(ctx, lhs.rhs, node.rhs),
+            ), world_id, scope_id, visited)
+        }
+
+        if (lhs.kind !== NODE_SELECTOR && lhs.kind !== NODE_VAR) {
+            return node_never(ctx)
+        }
+
+        return node_selector(ctx, lhs_id, node.rhs)
     }
 
     case NODE_SCOPE: {
-        let body_results = node_reduce_many(node.body, world, node.id, visited)
+        assert(node.body != node_id, 'Prevent recursion')
+        let body_id = node_reduce(ctx, node.body, world_id, node.id, visited)
 
-        for (let body_res of body_results) {
+        // Incorrect scope condition
+        let body = node_by_id(ctx, body_id)
+        if (body == null || body.kind === NODE_NEVER) {
+            return node_never(ctx)
+        }
 
-            // dead body -> dead scope
-            let body_node = get_node_by_id(ctx, body_res.node)
-            if (body_node == null || body_node.kind === NODE_NEVER) {
-                worlds_push(out, body_res, get_node_never(ctx))
-                continue
-            }
+        if (body != null && body.kind === NODE_BINARY && body.op == TOKEN_OR) {
+            return node_reduce(ctx, node_or(ctx,
+                node_scope(ctx, node.id, body.lhs),
+                node_scope(ctx, node.id, body.rhs),
+            ), world_id, scope_id, visited)
+        }
 
-            let vars = body_res.vars.get(node.id)
-            let worlds: Worlds = [body_res]
+        let world = world_get_assert(ctx, world_id)
 
-            if (vars != null) for (let [ident, val_id] of vars) {
-                let next_worlds: Worlds = []
-                for (let w of worlds) {
-                    if (val_id == null) {
-                        // keep unresolved var
-                        let w_copy = world_clone(w)
-                        let map = w_copy.vars.get(node.id) ?? new Map(w_copy.vars.get(node.id))
-                        map.set(ident, null)
-                        w_copy.vars.set(node.id, map)
-                        next_worlds.push(w_copy)
-                        continue
-                    }
-                    // fork per reduced value
-                    let reduced_vals = node_reduce_many(val_id, w, node.id, visited)
-                    for (let reduced of reduced_vals) {
-                        let w_copy = world_clone(reduced)
-                        let map = w_copy.vars.get(node.id) ?? new Map()
-                        map.set(ident, reduced.node)
-                        w_copy.vars.set(node.id, map)
-                        next_worlds.push(w_copy)
-                    }
-                }
-                worlds = next_worlds
-            }
+        // Reduce vars
+        let vars = world.vars.get(node.id)
+        if (vars != null) for (let [ident, val_id] of vars) if (val_id != null) {
+            let reduced = node_reduce(ctx, val_id, world_id, node.id, visited)
+            vars.set(ident, reduced)
+        }
 
-            if (worlds.length === 0) {
-                worlds_push(out, body_res, get_node_never(ctx))
-                continue
-            }
+        return node_scope(ctx, node.id, body_id)
+    }
 
-            for (let w of worlds) {
-                // rebuild scope with resolved vars/body
-                let scope_id = get_node_scope(ctx, node.id, body_res.node)
-                worlds_push(out, w, scope_id)
+    case NODE_WORLD: {
+        let body_id = node_reduce(ctx, node.node, node.id, scope_id, visited)
+
+        // Incorrect world condition
+        let body = node_by_id(ctx, body_id)
+        if (body == null || body.kind === NODE_NEVER) {
+            return node_never(ctx)
+        }
+
+        let world = world_get_assert(ctx, node.id)
+
+        // Reduce vars
+        let vars = world.vars.get(scope_id)
+        if (vars != null) for (let [ident, val_id] of vars) if (val_id != null) {
+            val_id = node_reduce(ctx, val_id, node.id, scope_id, visited)
+            vars.set(ident, val_id)
+
+            // Check for contradictions with parent world
+            let var_id = node_var(ctx, scope_id, ident)
+            let parent_val_id = var_get_val(ctx, world_id, var_id)
+            if (parent_val_id != null && !nodes_equal(ctx, val_id, parent_val_id, node.id, scope_id, world_id, scope_id)) {
+                return node_never(ctx)
             }
         }
 
-        return out
+        if (world_is_empty(ctx, node.id)) {
+            return body_id // TODO: world reusing? it shouldn't ever be referenced if unwrapped
+        }
+
+        // Unwrap if possible
+        if (world_id !== node.id) {
+            world_add(ctx, world_id, node.id)
+            return body_id
+        }
+
+        return node_world(ctx, node.id, body_id)
     }
 
     case NODE_NEG: {
-        let rhs_results = node_reduce_many(node.rhs, world, scope_id, visited)
-
-        for (let rhs_res of rhs_results) {
-            let rhs_node = get_node_by_id(ctx, rhs_res.node)!
-            switch (rhs_node.kind) {
-            case NODE_ANY:   /* !() -> !()     */ worlds_push(out, rhs_res, get_node_never(ctx))                 ;break
-            case NODE_NEVER: /* !!() -> ()     */ worlds_push(out, rhs_res, get_node_any(ctx))                   ;break
-            case NODE_BOOL:  /* !true -> false */ worlds_push(out, rhs_res, get_node_bool(ctx, !rhs_node.value)) ;break
-            case NODE_NEG:   /* !!x -> x       */ worlds_push(out, rhs_res, rhs_node.rhs)                        ;break
-            default:         /* keep structure */ worlds_push(out, rhs_res, get_node_neg(ctx, rhs_res.node))     ;break
-            }
+        let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, visited)
+        let rhs = node_by_id(ctx, rhs_id)!
+        switch (rhs.kind) {
+        case NODE_ANY:   return node_never(ctx)
+        case NODE_NEVER: return node_any(ctx)
+        case NODE_BOOL:  return node_bool(ctx, !rhs.value)
+        case NODE_NEG:   return rhs.rhs
+        default:         return node_neg(ctx, rhs_id)
         }
-
-        return out
     }
 
     case NODE_BINARY: {
-        switch (node.op) {
-        /* Boolean operators */
-        case TOKEN_ADD:
-        case TOKEN_SUB:
-        case TOKEN_MUL:
-        case TOKEN_POW: {
-            let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
-
-            for (let lhs_res of lhs_results) {
-
-                let rhs_results = node_reduce_many(node.rhs, lhs_res, scope_id, visited)
-                for (let rhs_res of rhs_results) {
-                    let lhs_node = get_node_by_id(ctx, lhs_res.node)!
-                    let rhs_node = get_node_by_id(ctx, rhs_res.node)!
-
-                    if (lhs_node.kind !== NODE_BOOL || rhs_node.kind !== NODE_BOOL) {
-                        // symbolic bool op -> keep structure
-                        if (lhs_node.kind === NODE_SELECTOR || lhs_node.kind === NODE_VAR ||
-                            rhs_node.kind === NODE_SELECTOR || rhs_node.kind === NODE_VAR) {
-                            worlds_push(out, rhs_res, get_node_binary(ctx, node.op, lhs_res.node, rhs_res.node))
-                        }
-                        // non-boolean operands -> impossible
-                        else {
-                            worlds_push(out, rhs_res, get_node_never(ctx))
-                        }
-                        continue
-                    }
-
-                    let res = get_node_never(ctx)
-                    switch (node.op) {
-                    case TOKEN_ADD: /* OR  */ res = get_node_bool(ctx, lhs_node.value || rhs_node.value); break
-                    case TOKEN_MUL: /* AND */ res = get_node_bool(ctx, lhs_node.value && rhs_node.value); break
-                    case TOKEN_SUB: /* XNOR*/ res = get_node_bool(ctx, lhs_node.value === rhs_node.value); break
-                    case TOKEN_POW: /* XOR */ res = get_node_bool(ctx, lhs_node.value !== rhs_node.value); break
-                    }
-
-                    worlds_push(out, rhs_res, res)
-                }
-            }
-
-            return out
-        }
-
-        /* Logical Equality */
-        case TOKEN_EQ: {
-
-            let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
-            for (let lhs_res of lhs_results) {
-
-                // if either side is an OR, expand/assign here so disjunction branches are captured before rhs reduction
-                let lhs_raw = get_node_by_id(ctx, node.lhs)
-                let rhs_raw = get_node_by_id(ctx, node.rhs)
-                // (a = b | c) / (a | b = c) -> delegate to eq_var_reduce to fork branches early
-                if ((lhs_raw != null && lhs_raw.kind === NODE_BINARY && lhs_raw.op === TOKEN_OR) ||
-                    (rhs_raw != null && rhs_raw.kind === NODE_BINARY && rhs_raw.op === TOKEN_OR)) {
-                    let direct = eq_var_reduce(lhs_res, node.lhs, node.rhs, scope_id, visited)
-                    if (direct.length === 0) {
-                        direct = eq_var_reduce(lhs_res, node.rhs, node.lhs, scope_id, visited)
-                    }
-                    if (direct.length > 0) {
-                        out.push(...direct)
-                        continue
-                    }
-                }
-
-                let rhs_results = node_reduce_many(node.rhs, lhs_res, scope_id, visited)
-                for (let rhs_res of rhs_results) {
-                    let lhs_id = lhs_res.node
-                    let rhs_id = rhs_res.node
-                    let lhs_node = get_node_by_id(ctx, lhs_id)!
-                    let rhs_node = get_node_by_id(ctx, rhs_id)!
-
-                    // () = x -> () only if x is ()
-                    if (lhs_node.kind === NODE_ANY || rhs_node.kind === NODE_ANY) {
-                        worlds_push(out, rhs_res, get_node_any_or_never(ctx, lhs_node.kind === NODE_ANY && rhs_node.kind === NODE_ANY))
-                        continue
-                    }
-
-                    // !() = x -> !() unless both !()
-                    if (lhs_node.kind === NODE_NEVER || rhs_node.kind === NODE_NEVER) {
-                        worlds_push(out, rhs_res, get_node_any_or_never(ctx, lhs_node.kind === NODE_NEVER && rhs_node.kind === NODE_NEVER))
-                        continue
-                    }
-
-                    // scope vs literal (non-symbolic) -> impossible
-                    if ((lhs_node.kind === NODE_SCOPE) !== (rhs_node.kind === NODE_SCOPE) &&
-                        lhs_node.kind !== NODE_VAR && lhs_node.kind !== NODE_SELECTOR &&
-                        rhs_node.kind !== NODE_VAR && rhs_node.kind !== NODE_SELECTOR)
-                    {
-                        worlds_push(out, rhs_res, get_node_never(ctx))
-                        continue
-                    }
-
-                    // conflicting scopes -> impossible
-                    if (lhs_node.kind === NODE_SCOPE &&
-                        rhs_node.kind === NODE_SCOPE &&
-                        scopes_conflict(rhs_res, lhs_node, rhs_node))
-                    {
-                        worlds_push(out, rhs_res, get_node_never(ctx))
-                        continue
-                    }
-
-                    // literal bool equality
-                    if (lhs_node.kind === NODE_BOOL && rhs_node.kind === NODE_BOOL) {
-                        worlds_push(out, rhs_res, get_node_any_or_never(ctx, lhs_node.value === rhs_node.value))
-                        continue
-                    }
-
-                    // x = x -> ()
-                    if (node_equals(rhs_res, lhs_id, rhs_id)) {
-                        worlds_push(out, rhs_res, get_node_any(ctx))
-                        continue
-                    }
-
-                    // x = !x -> !()
-                    if (node_equals(rhs_res, lhs_id, get_node_neg(ctx, rhs_id)) ||
-                        node_equals(rhs_res, rhs_id, get_node_neg(ctx, lhs_id)))
-                    {
-                        worlds_push(out, rhs_res, get_node_never(ctx))
-                        continue
-                    }
-
-                    // try assigning vars both ways (including original operands)
-                    let assigned = eq_var_reduce(rhs_res, lhs_id, rhs_id, scope_id, visited)
-                    if (assigned.length === 0 && lhs_id !== node.lhs) {
-                        assigned = eq_var_reduce(rhs_res, node.lhs, rhs_id, scope_id, visited)
-                    }
-                    if (assigned.length === 0) {
-                        assigned = eq_var_reduce(rhs_res, rhs_id, lhs_id, scope_id, visited)
-                    }
-                    if (assigned.length === 0 && rhs_id !== node.rhs) {
-                        assigned = eq_var_reduce(rhs_res, node.rhs, lhs_id, scope_id, visited)
-                    }
-
-                    // cannot resolve further; keep equality
-                    if (assigned.length === 0) {
-                        worlds_push(out, rhs_res, get_node_binary(ctx, TOKEN_EQ, lhs_id, rhs_id))
-                        continue
-                    }
-
-                    out.push(...assigned)
-                }
-            }
-
-            return out
-        }
 
         /* Logical disjunction */
-        case TOKEN_OR: {
-            let lhs_results = node_reduce_many(node.lhs, world_clone(world), scope_id, visited)
-            let rhs_results = node_reduce_many(node.rhs, world_clone(world), scope_id, visited)
+        if (node.op === TOKEN_OR) {
+            // For OR/disjunction operators, each side needs its own variable scope
+            // since they represent alternative realities
+            let lhs_world = world_clone(ctx, world_id)
+            let rhs_world = world_clone(ctx, world_id)
 
-            scope_branches: {
-                if (lhs_results.length === 0 || rhs_results.length === 0) break scope_branches
+            let lhs_id = node_world(ctx, lhs_world, node.lhs)
+            let rhs_id = node_world(ctx, rhs_world, node.rhs)
 
-                for (let lhs_res of lhs_results) {
-                    let lhs_node = get_node_by_id(ctx, lhs_res.node)
-                    if (lhs_node == null || lhs_node.kind !== NODE_SCOPE) break scope_branches
-                }
-                for (let rhs_res of rhs_results) {
-                    let rhs_node = get_node_by_id(ctx, rhs_res.node)
-                    if (rhs_node == null || rhs_node.kind !== NODE_SCOPE) break scope_branches
-                }
+            lhs_id = node_reduce(ctx, lhs_id, lhs_world, scope_id, visited)
+            rhs_id = node_reduce(ctx, rhs_id, rhs_world, scope_id, visited)
 
-                // pure scope branches stay separate
-                out.push(...lhs_results, ...rhs_results)
-                return out
-            }
+            let lhs = node_by_id(ctx, lhs_id)!
+            let rhs = node_by_id(ctx, rhs_id)!
 
-            for (let lhs_res of lhs_results) {
-                let lhs_node = get_node_by_id(ctx, lhs_res.node)!
+            if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_world, rhs_id)
+            if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
 
-                /* !() | rhs -> rhs */
-                if (lhs_node.kind === NODE_NEVER) {
-                    out.push(...rhs_results)
-                    continue
-                }
+            if (lhs.kind === NODE_ANY) return node_any(ctx)
+            if (rhs.kind === NODE_ANY) return node_any(ctx)
 
-                // () | x -> ()
-                if (lhs_node.kind === NODE_ANY) {
-                    worlds_push(out, lhs_res, get_node_any(ctx))
-                }
+            // true | true  ->  true
+            if (nodes_equal(ctx, lhs_id, rhs_id, lhs_world, scope_id, rhs_world, scope_id)) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
 
-                for (let rhs_res of rhs_results) {
-                    let rhs_node = get_node_by_id(ctx, rhs_res.node)!
+            // a | !a  ->  ()
+            if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), lhs_world, scope_id, rhs_world, scope_id)) return node_any(ctx)
+            if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), rhs_world, scope_id, lhs_world, scope_id)) return node_any(ctx)
 
-                    // x | !() -> x
-                    if (rhs_node.kind === NODE_NEVER) {
-                        if (lhs_node.kind !== NODE_ANY) {
-                            worlds_push(out, lhs_res, lhs_res.node)
-                        }
-                        continue
-                    }
-
-                    // x | () -> ()
-                    if (rhs_node.kind === NODE_ANY) {
-                        worlds_push(out, rhs_res, get_node_any(ctx))
-                        continue
-                    }
-
-                    if (lhs_node.kind === NODE_ANY) continue
-
-                    if (node_equals(rhs_res, lhs_res.node, get_node_neg(ctx, rhs_res.node)) ||
-                        node_equals(rhs_res, rhs_res.node, get_node_neg(ctx, lhs_res.node))) {
-                        // x | !x -> ()
-                        worlds_push(out, rhs_res, get_node_any(ctx))
-                        continue
-                    }
-
-                    if (node_equals(rhs_res, lhs_res.node, rhs_res.node)) {
-                        // x | x -> x
-                        worlds_push(out, rhs_res, lhs_res.node)
-                        continue
-                    }
-
-                    // keep disjunction
-                    worlds_push(out, rhs_res, get_node_binary(ctx, TOKEN_OR, lhs_res.node, rhs_res.node))
-                }
-            }
-
-            return out
+            return node_or(ctx, lhs_id, rhs_id)
         }
+
+        let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
+        let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, visited)
+
+        let lhs = node_by_id(ctx, lhs_id)!
+        let rhs = node_by_id(ctx, rhs_id)!
+
+        // Handle OR lhs/rhs
+        // `lhs op (rhs.lhs | rhs.rhs)`  ->  `(lhs op rhs.lhs) | (lhs op rhs.rhs)`
+        if (lhs.kind === NODE_BINARY && lhs.op === TOKEN_OR) {
+            return node_reduce(ctx, node_or(ctx,
+                node_binary(ctx, node.op, rhs_id, lhs.lhs),
+                node_binary(ctx, node.op, rhs_id, lhs.rhs),
+            ), world_id, scope_id, visited)
+        }
+        if (rhs.kind === NODE_BINARY && rhs.op === TOKEN_OR) {
+            return node_reduce(ctx, node_or(ctx,
+                node_binary(ctx, node.op, lhs_id, rhs.lhs),
+                node_binary(ctx, node.op, lhs_id, rhs.rhs),
+            ), world_id, scope_id, visited)
+        }
+
+        switch (node.op) {
+        /* Logical Equality */
+        case TOKEN_EQ:
+            // a = a  ->  ()
+            if (nodes_equal(ctx, lhs_id, rhs_id, world_id, scope_id)) return node_any(ctx)
+
+            // a = !a  ->  !()
+            if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), world_id, scope_id)) return node_never(ctx)
+            if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), world_id, scope_id)) return node_never(ctx)
+
+            return eq_var_reduce(ctx, lhs_id, rhs_id, world_id, scope_id)
+                || eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id)
+                || node_never(ctx)
 
         /* Logical conjunction */
         case TOKEN_COMMA:
-        case TOKEN_AND: {
-            let lhs_results = node_reduce_many(node.lhs, world, scope_id, visited)
+        case TOKEN_AND:
+            // After evaluating rhs (which may set new constraints), re-reduce lhs from the
+            // original node to pick up those constraints
+            lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
+            lhs = node_by_id(ctx, lhs_id)!
 
-            for (let lhs_res of lhs_results) {
-                let rhs_results = node_reduce_many(node.rhs, lhs_res, scope_id, visited)
+            if (lhs.kind === NODE_NEVER) return node_never(ctx)
+            if (rhs.kind === NODE_NEVER) return node_never(ctx)
 
-                for (let rhs_res of rhs_results) {
-                    let lhs_node = get_node_by_id(ctx, lhs_res.node)!
-                    let rhs_node = get_node_by_id(ctx, rhs_res.node)!
+            if (lhs.kind === NODE_ANY) return rhs_id
+            if (rhs.kind === NODE_ANY) return lhs_id
 
-                    // false branch -> !()
-                    if (lhs_node.kind === NODE_NEVER || rhs_node.kind === NODE_NEVER) {
-                        worlds_push(out, rhs_res, get_node_never(ctx))
-                        continue
-                    }
-
-                    // () & x -> x
-                    if (lhs_node.kind === NODE_ANY) {
-                        let reduced_rhs = node_reduce(rhs_res.node, rhs_res, scope_id, visited)
-                        worlds_push(out, rhs_res, reduced_rhs)
-                        continue
-                    }
-                    // x & () -> x
-                    if (rhs_node.kind === NODE_ANY) {
-                        let reduced_lhs = node_reduce(lhs_res.node, rhs_res, scope_id, visited)
-                        worlds_push(out, rhs_res, reduced_lhs)
-                        continue
-                    }
-
-                    // x & !x -> !()
-                    if (node_equals(rhs_res, lhs_res.node, get_node_neg(ctx, rhs_res.node)) ||
-                        node_equals(rhs_res, rhs_res.node, get_node_neg(ctx, lhs_res.node))) {
-                        worlds_push(out, rhs_res, get_node_never(ctx))
-                        continue
-                    }
-
-                    // true & false -> !()
-                    if (lhs_node.kind === NODE_BOOL && rhs_node.kind === NODE_BOOL && lhs_node.value !== rhs_node.value) {
-                        worlds_push(out, rhs_res, get_node_never(ctx))
-                        continue
-                    }
-
-                    // x & x -> x
-                    if (node_equals(rhs_res, lhs_res.node, rhs_res.node)) {
-                        worlds_push(out, rhs_res, lhs_res.node)
-                        continue
-                    }
-
-                    // keep conjunction
-                    worlds_push(out, rhs_res, get_node_binary(ctx, TOKEN_AND, lhs_res.node, rhs_res.node))
-                }
+            // true & false  ->  !()
+            if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL && lhs.value !== rhs.value) {
+                return node_never(ctx)
             }
 
-            return out
-        }
+            // true & true  ->  true
+            if (nodes_equal(ctx, lhs_id, rhs_id, world_id, scope_id)) return lhs_id
+
+            // a & !a  ->  !()
+            if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), world_id, scope_id)) return node_never(ctx)
+            if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), world_id, scope_id)) return node_never(ctx)
+
+            return node_and(ctx, lhs_id, rhs_id)
         }
 
-        return []
+        return node_id
     }
 
     default:
         node satisfies never // exhaustive check
-        return []
+        return node_id
     }
 }
 
-function node_reduce(node_id: Node_Id, world: World, scope_id: Scope_Id, visited: Set<Node_Id> = new Set()): Node_Id {
-    let res = node_reduce_many(node_id, world, scope_id, visited)
-    if (res.length === 0) return get_node_never(world.ctx)
-    return res[0].node
-}
+const _node_display = (ctx: Context, world_id: World_Id, scope_id: Scope_Id, node_id: Node_Id, parent_prec: number, is_right: boolean, visited: Set<Node_Id>): string => {
 
-const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_right: boolean, visited: Set<Node_Id>): string => {
-    let ctx = world.ctx
-
-    let node = get_node_by_id(ctx, node_id)
+    let node = node_by_id(ctx, node_id)
     if (node == null) return '<node = null>'
 
     switch (node.kind) {
@@ -2259,7 +2044,7 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
         return node.value ? 'true' : 'false'
 
     case NODE_NEG:
-        let rhs = _node_display(world, node.rhs, 0, true, visited)
+        let rhs = _node_display(ctx, world_id, scope_id, node.rhs, 0, true, visited)
         return '!'+rhs
 
     case NODE_BINARY: {
@@ -2269,8 +2054,8 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
             (!is_right && node.op === TOKEN_POW))
         )
 
-        let lhs = _node_display(world, node.lhs, prec, false, visited)
-        let rhs = _node_display(world, node.rhs, prec, true, visited)
+        let lhs = _node_display(ctx, world_id, scope_id, node.lhs, prec, false, visited)
+        let rhs = _node_display(ctx, world_id, scope_id, node.rhs, prec, true, visited)
 
         let op: string
         switch (node.op) {
@@ -2293,7 +2078,7 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
 
     case NODE_SELECTOR: {
         let rhs = ident_string(ctx, node.rhs) ?? '<null>'
-        let lhs_str = _node_display(world, node.lhs, 99, false, visited)
+        let lhs_str = _node_display(ctx, world_id, scope_id, node.lhs, 99, false, visited)
         return lhs_str + `.` + rhs
     }
 
@@ -2304,7 +2089,16 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
     }
 
     case NODE_SCOPE:
-        return _scope_display(world, node_id, true, false, visited)
+        return _scope_display(ctx, world_id, node_id, '{', '}', visited)
+
+    case NODE_WORLD: {
+        let bl = '', br = ''
+        if (node.id !== WORLD_ID_ROOT) {
+            bl = '('; br = ')'
+        }
+        let scope = node_scope(ctx, scope_id, node.node)
+        return _scope_display(ctx, node.id, scope, bl, br, visited)
+    }
 
     default:
         node satisfies never // exhaustive check
@@ -2313,81 +2107,65 @@ const _node_display = (world: World, node_id: Node_Id, parent_prec: number, is_r
     }
 }
 
-export const node_display = (world: World, node_id: Node_Id): string => {
-    return _node_display(world, node_id, 0, false, new Set())
+export const node_display = (ctx: Context, world_id: World_Id, scope_id: Scope_Id, node_id: Node_Id): string => {
+    return _node_display(ctx, world_id, scope_id, node_id, 0, false, new Set())
 }
 
-const _scope_display = (world: World, node_id: Node_Id, brackets: boolean, is_root: boolean, visited: Set<Node_Id>, sort_keys: boolean = false): string => {
-    let ctx = world.ctx
+const _scope_display = (ctx: Context, world_id: World_Id, node_id: Node_Id, bl: string, br: string, visited: Set<Node_Id>): string => {
 
-    let node = get_node_by_id(ctx, node_id)
+    let world = world_get_assert(ctx, world_id)
+
+    let node = node_by_id(ctx, node_id)
     if (node == null) return '<node = null>'
+
     if (node.kind !== NODE_SCOPE) return '<node.kind != SCOPE>'
 
-    let vars = scope_vars_collect(world, node.id)
-    let body = get_node_by_id(ctx, node.body)!
-    if (body.kind === NODE_NEVER) return '!()'
+    let vars = world.vars.get(node.id)
+    let body = node_by_id(ctx, node.body)!
 
-    let parts: string[] = []
+    if (body.kind === NODE_NEVER) {
+        return '!()'
+    }
+
+    let out = ''
+
     if (vars != null && vars.size > 0) {
-        let keys = sort_keys
-            ? Array.from(vars.keys()).sort((a, b) => (ident_string(ctx, a) ?? '').localeCompare(ident_string(ctx, b) ?? ''))
-            : Array.from(vars.keys())
-
-        for (let ident of keys) {
-            let var_id = get_node_var(ctx, node.id, ident)
+        let first = true
+        for (let ident of vars.keys()) {
+            let var_id = node_var(ctx, node.id, ident)
             let value = vars.get(ident)
+            if (!first) {
+                out += ', '
+            }
+            first = false
             let lhs = ident_string(ctx, ident)!
             let rhs: string
             if (value == null || visited.has(var_id)) {
                 rhs = lhs
             } else {
-                let next_visited = new Set(visited)
-                next_visited.add(var_id)
-                rhs = _node_display(world, value, 0, false, next_visited)
+                rhs = _node_display(ctx, world_id, node.id, value, 0, false, visited)
             }
-            parts.push(`${lhs} = ${rhs}`)
+            out += `${lhs} = ${rhs}`
         }
+
+        if (body.kind !== NODE_ANY) {
+            out += ', '
+            out += _node_display(ctx, world_id, node.id, node.body, 0, false, visited)
+        }
+    } else if (body.kind !== NODE_ANY) {
+        out = _node_display(ctx, world_id, node.id, node.body, 0, false, visited)
     }
 
-    if (body.kind !== NODE_ANY) {
-        parts.push(_node_display(world, node.body, 0, false, visited))
-    }
-
-    let out = parts.join(', ')
-
-    let show_brackets = brackets && (!is_root || (vars != null && vars.size > 0) || body.kind === NODE_SCOPE)
+    out = bl+out+br
 
     if (out === '') {
-        return show_brackets ? '{}' : '()'
+        return '()'
     }
 
-    return show_brackets ? `{${out}}` : out
-}
-
-export const world_display = (world: World, brackets: boolean = true): string => {
-    let ctx = world.ctx
-    let node = get_node_by_id(ctx, world.node)
-
-    if (node != null && node.kind === NODE_SCOPE) {
-        return _scope_display(world, world.node, true, false, new Set())
-    }
-
-    let scope_node = get_node_scope(ctx, world.scope, world.node)
-    return _scope_display(world, scope_node, brackets, true, new Set())
+    return out
 }
 
 export const display = (ctx: Context): string => {
-    if (ctx.worlds.length === 0) return '!()'
-    if (ctx.worlds.length === 1) return world_display(ctx.worlds[0], false)
-    let out = ''
-    let first = true
-    for (let world of ctx.worlds) {
-        if (!first) {
-            out += ' | '
-        }
-        first = false
-        out += world_display(world, true)
-    }
-    return out
+    let node = node_world(ctx, WORLD_ID_ROOT, ctx.root)
+    return node_display(ctx, WORLD_ID_ROOT, SCOPE_ID_ROOT, node)
 }
