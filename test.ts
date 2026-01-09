@@ -961,3 +961,50 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`foo = {a = true} | {a = false}, foo.a = false`,
         `foo = {a = false}`)
 })
+
+/*--------------------------------------------------------------*
+
+    Node canonicalization tests
+*/
+
+test.describe('node canonicalization', {concurrency: true}, () => {
+    test.test('and chain ids are order-invariant', () => {
+        let ctx = ten.context_make()
+
+        let a = ten.node_true(ctx)
+        let b = ten.node_false(ctx)
+        let c = ten.node_any(ctx)
+        let d = ten.node_never(ctx)
+
+        let lhs = ten.node_and(ctx,
+            ten.node_and(ctx, a, c),
+            ten.node_and(ctx, b, d),
+        )
+        let rhs = ten.node_and(ctx,
+            ten.node_and(ctx, a, b),
+            ten.node_and(ctx, c, d),
+        )
+
+        expect(lhs === rhs, 'And chain id mismatch', `${rhs}`, `${lhs}`)
+    })
+
+    test.test('or chain ids are order-invariant', () => {
+        let ctx = ten.context_make()
+
+        let a = ten.node_true(ctx)
+        let b = ten.node_false(ctx)
+        let c = ten.node_any(ctx)
+        let d = ten.node_never(ctx)
+
+        let lhs = ten.node_or(ctx,
+            ten.node_or(ctx, a, c),
+            ten.node_or(ctx, b, d),
+        )
+        let rhs = ten.node_or(ctx,
+            ten.node_or(ctx, a, b),
+            ten.node_or(ctx, c, d),
+        )
+
+        expect(lhs === rhs, 'Or chain id mismatch', `${rhs}`, `${lhs}`)
+    })
+})
