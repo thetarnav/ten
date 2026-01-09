@@ -709,20 +709,6 @@ export const token_is_binary = (tok: Token): boolean => {
     return token_kind_is_binary(tok.kind)
 }
 
-// `|, &, ...`
-export const token_kind_is_logical = (kind: Token_Kind): boolean => {
-    switch (kind) {
-    case TOKEN_OR:    return true
-    case TOKEN_AND:   return true
-    case TOKEN_COMMA: return true
-    }
-    return false
-}
-// `|, &, ...`
-export const token_is_logical = (tok: Token): boolean => {
-    return token_kind_is_logical(tok.kind)
-}
-
 export type Parser = {
     src:    string
     t:      Tokenizer
@@ -871,11 +857,13 @@ export const
     NODE_NEVER      = 201 as const,
     NODE_NEG        = 202 as const,
     NODE_BOOL       = 203 as const,
-    NODE_BINARY     = 204 as const,
-    NODE_SELECTOR   = 205 as const,
-    NODE_VAR        = 206 as const,
-    NODE_SCOPE      = 207 as const,
-    NODE_WORLD      = 208 as const,
+    NODE_AND        = 204 as const,
+    NODE_OR         = 205 as const,
+    NODE_EQ         = 206 as const,
+    NODE_SELECTOR   = 207 as const,
+    NODE_VAR        = 208 as const,
+    NODE_SCOPE      = 209 as const,
+    NODE_WORLD      = 210 as const,
     NODE_TOP        = NODE_ANY,
     NODE_BOTTOM     = NODE_NEVER,
     NODE_ENUM_START = NODE_ANY,
@@ -887,7 +875,9 @@ export const Node_Kind = {
     Never:    NODE_NEVER,
     Neg:      NODE_NEG,
     Bool:     NODE_BOOL,
-    Binary:   NODE_BINARY,
+    And:      NODE_AND,
+    Or:       NODE_OR,
+    Eq:       NODE_EQ,
     Selector: NODE_SELECTOR,
     Var:      NODE_VAR,
     Scope:    NODE_SCOPE,
@@ -902,7 +892,9 @@ export const node_kind_string = (kind: Node_Kind): string => {
     case NODE_NEVER:    return "Never"
     case NODE_NEG:      return "Neg"
     case NODE_BOOL:     return "Bool"
-    case NODE_BINARY:   return "Binary"
+    case NODE_AND:      return "And"
+    case NODE_OR:       return "Or"
+    case NODE_EQ:       return "Eq"
     case NODE_SELECTOR: return "Selector"
     case NODE_VAR:      return "Var"
     case NODE_SCOPE:    return "Scope"
@@ -918,7 +910,9 @@ export type Node =
     | Node_Never
     | Node_Neg
     | Node_Bool
-    | Node_Binary
+    | Node_And
+    | Node_Or
+    | Node_Eq
     | Node_Selector
     | Node_Var
     | Node_Scope
@@ -942,9 +936,20 @@ export class Node_Bool {
     value: boolean     = false
     expr:  Expr | null = null
 }
-export class Node_Binary {
-    kind = NODE_BINARY
-    op:    Token_Kind  = 0
+export class Node_And {
+    kind = NODE_AND
+    lhs:   Node_Id     = NODE_ID_NONE
+    rhs:   Node_Id     = NODE_ID_NONE
+    expr:  Expr | null = null
+}
+export class Node_Or {
+    kind = NODE_OR
+    lhs:   Node_Id     = NODE_ID_NONE
+    rhs:   Node_Id     = NODE_ID_NONE
+    expr:  Expr | null = null
+}
+export class Node_Eq {
+    kind = NODE_EQ
     lhs:   Node_Id     = NODE_ID_NONE
     rhs:   Node_Id     = NODE_ID_NONE
     expr:  Expr | null = null
@@ -1134,8 +1139,8 @@ export const MAX_ID = 4194304 // 2^22
  * Layout:
  *                                        [kind]
  *                               [rhs id] * NODE_ENUM_RANGE
- *                      [lhs id] * MAX_NODE_ID * NODE_ENUM_RANGE
- *     [value/ident/op] * MAX_NODE_ID * MAX_NODE_ID * NODE_ENUM_RANGE
+ *                      [lhs/id] * MAX_ID * NODE_ENUM_RANGE
+ *            [value/ident] * MAX_ID * MAX_ID * NODE_ENUM_RANGE
  */
 export type Node_Key = number & {__node_key: void}
 
@@ -1157,15 +1162,29 @@ export const node_neg_encode = (rhs: Node_Id) => {
     key += rhs * NODE_ENUM_RANGE
     return key as Node_Key
 }
-export const node_binary_encode = (op: Token_Kind, lhs: Node_Id, rhs: Node_Id): Node_Key => {
-    let key = NODE_BINARY - NODE_ENUM_START
-    key += (op - TOKEN_ENUM_START) * MAX_ID * MAX_ID * NODE_ENUM_RANGE
-
-    // Normalize order for logical operators that are symmetrical
-    if (token_kind_is_logical(op) && lhs > rhs) {
+export const node_and_encode = (lhs: Node_Id, rhs: Node_Id): Node_Key => {
+    if (lhs > rhs) {
         [lhs, rhs] = [rhs, lhs]
     }
-
+    let key = NODE_AND - NODE_ENUM_START
+    key += lhs * MAX_ID * NODE_ENUM_RANGE
+    key += rhs * NODE_ENUM_RANGE
+    return key as Node_Key
+}
+export const node_or_encode = (lhs: Node_Id, rhs: Node_Id): Node_Key => {
+    if (lhs > rhs) {
+        [lhs, rhs] = [rhs, lhs]
+    }
+    let key = NODE_OR - NODE_ENUM_START
+    key += lhs * MAX_ID * NODE_ENUM_RANGE
+    key += rhs * NODE_ENUM_RANGE
+    return key as Node_Key
+}
+export const node_eq_encode = (lhs: Node_Id, rhs: Node_Id): Node_Key => {
+    if (lhs > rhs) {
+        [lhs, rhs] = [rhs, lhs]
+    }
+    let key = NODE_EQ - NODE_ENUM_START
     key += lhs * MAX_ID * NODE_ENUM_RANGE
     key += rhs * NODE_ENUM_RANGE
     return key as Node_Key
@@ -1201,7 +1220,9 @@ export const node_encode = (node: Node): Node_Key => {
     case NODE_NEVER:    return node_never_encode()
     case NODE_NEG:      return node_neg_encode(node.rhs)
     case NODE_BOOL:     return node_bool_encode(node.value)
-    case NODE_BINARY:   return node_binary_encode(node.op, node.lhs, node.rhs)
+    case NODE_AND:      return node_and_encode(node.lhs, node.rhs)
+    case NODE_OR:       return node_or_encode(node.lhs, node.rhs)
+    case NODE_EQ:       return node_eq_encode(node.lhs, node.rhs)
     case NODE_SELECTOR: return node_selector_encode(node.lhs, node.rhs)
     case NODE_VAR:      return node_var_encode(node.lhs, node.rhs)
     case NODE_SCOPE:    return node_scope_encode(node.id, node.body)
@@ -1238,19 +1259,31 @@ export const node_decode = (_key: Node_Key): Node => {
 
         return node
     }
-    case NODE_BINARY: {
-        let node = new Node_Binary()
-
-        // key layout after dividing by NODE_ENUM_RANGE:
-        // key = (op - TOKEN_ENUM_START) * MAX_ID^2 + lhs * MAX_ID + rhs
+    case NODE_AND: {
+        let node = new Node_And()
 
         node.rhs = (key % MAX_ID) as Node_Id
         key = Math.floor(key / MAX_ID)
 
         node.lhs = (key % MAX_ID) as Node_Id
+        return node
+    }
+    case NODE_OR: {
+        let node = new Node_Or()
+
+        node.rhs = (key % MAX_ID) as Node_Id
         key = Math.floor(key / MAX_ID)
 
-        node.op = ((key % TOKEN_ENUM_RANGE) + TOKEN_ENUM_START) as Token_Kind
+        node.lhs = (key % MAX_ID) as Node_Id
+        return node
+    }
+    case NODE_EQ: {
+        let node = new Node_Eq()
+
+        node.rhs = (key % MAX_ID) as Node_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.lhs = (key % MAX_ID) as Node_Id
         return node
     }
     case NODE_SELECTOR: {
@@ -1363,13 +1396,18 @@ export const node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = null): 
     return store_node_key(ctx, key, expr)
 }
 
-export const node_binary = (ctx: Context, op: Token_Kind, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
-    let key = node_binary_encode(op, lhs, rhs)
+export const node_and = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
+    let key = node_and_encode(lhs, rhs)
     return store_node_key(ctx, key, expr)
 }
-export const node_and = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => node_binary(ctx, TOKEN_AND, lhs, rhs, expr)
-export const node_or  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => node_binary(ctx, TOKEN_OR, lhs, rhs, expr)
-export const node_eq  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => node_binary(ctx, TOKEN_EQ, lhs, rhs, expr)
+export const node_or  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
+    let key = node_or_encode(lhs, rhs)
+    return store_node_key(ctx, key, expr)
+}
+export const node_eq  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
+    let key = node_eq_encode(lhs, rhs)
+    return store_node_key(ctx, key, expr)
+}
 
 export const node_selector = (ctx: Context, lhs: Node_Id, rhs: Ident_Id, expr: Expr | null = null): Node_Id => {
     let key = node_selector_encode(lhs, rhs)
@@ -1491,8 +1529,9 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
                 )
             case TOKEN_AND:
             case TOKEN_COMMA:
+                return node_and(ctx, lhs, rhs, expr)
             case TOKEN_EQ:
-                return node_binary(ctx, expr.op.kind, lhs, rhs, expr)
+                return node_eq(ctx, lhs, rhs, expr)
             // a OP b  ->  (a = true,  b = true,  true  OP true)  |
             //             (a = true,  b = false, true  OP false) |
             //             (a = false, b = true,  false OP true)  |
@@ -1621,10 +1660,11 @@ const nodes_equal = (
         b = b as typeof a
         return nodes_equal(ctx, a.rhs, b.rhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
-    case NODE_BINARY:
+    case NODE_AND:
+    case NODE_OR:
+    case NODE_EQ:
         b = b as typeof a
-        return a.op === b.op &&
-               nodes_equal(ctx, a.lhs, b.lhs, a_world_id, a_scope_id, b_world_id, b_scope_id) &&
+        return nodes_equal(ctx, a.lhs, b.lhs, a_world_id, a_scope_id, b_world_id, b_scope_id) &&
                nodes_equal(ctx, a.rhs, b.rhs, a_world_id, a_scope_id, b_world_id, b_scope_id)
 
     case NODE_SELECTOR:
@@ -1828,7 +1868,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             return node_reduce(ctx, var_id, world_id, scope_id, visited)
         }
 
-        if (lhs.kind === NODE_BINARY && lhs.op == TOKEN_OR) {
+        if (lhs.kind === NODE_OR) {
             return node_reduce(ctx, node_or(ctx,
                 node_selector(ctx, lhs.lhs, node.rhs),
                 node_selector(ctx, lhs.rhs, node.rhs),
@@ -1852,7 +1892,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             return node_never(ctx)
         }
 
-        if (body != null && body.kind === NODE_BINARY && body.op == TOKEN_OR) {
+        if (body != null && body.kind === NODE_OR) {
             return node_reduce(ctx, node_or(ctx,
                 node_scope(ctx, node.id, body.lhs),
                 node_scope(ctx, node.id, body.rhs),
@@ -1921,105 +1961,115 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         }
     }
 
-    case NODE_BINARY: {
+    case NODE_OR: {
+        // For OR/disjunction operators, each side needs its own variable scope
+        // since they represent alternative realities
+        let lhs_world = world_clone(ctx, world_id)
+        let rhs_world = world_clone(ctx, world_id)
 
-        /* Logical disjunction */
-        if (node.op === TOKEN_OR) {
-            // For OR/disjunction operators, each side needs its own variable scope
-            // since they represent alternative realities
-            let lhs_world = world_clone(ctx, world_id)
-            let rhs_world = world_clone(ctx, world_id)
+        let lhs_id = node_world(ctx, lhs_world, node.lhs)
+        let rhs_id = node_world(ctx, rhs_world, node.rhs)
 
-            let lhs_id = node_world(ctx, lhs_world, node.lhs)
-            let rhs_id = node_world(ctx, rhs_world, node.rhs)
+        lhs_id = node_reduce(ctx, lhs_id, lhs_world, scope_id, visited)
+        rhs_id = node_reduce(ctx, rhs_id, rhs_world, scope_id, visited)
 
-            lhs_id = node_reduce(ctx, lhs_id, lhs_world, scope_id, visited)
-            rhs_id = node_reduce(ctx, rhs_id, rhs_world, scope_id, visited)
+        let lhs = node_by_id(ctx, lhs_id)!
+        let rhs = node_by_id(ctx, rhs_id)!
 
-            let lhs = node_by_id(ctx, lhs_id)!
-            let rhs = node_by_id(ctx, rhs_id)!
+        if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_world, rhs_id)
+        if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
 
-            if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_world, rhs_id)
-            if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
+        if (lhs.kind === NODE_ANY) return node_any(ctx)
+        if (rhs.kind === NODE_ANY) return node_any(ctx)
 
-            if (lhs.kind === NODE_ANY) return node_any(ctx)
-            if (rhs.kind === NODE_ANY) return node_any(ctx)
+        // true | true  ->  true
+        if (nodes_equal(ctx, lhs_id, rhs_id, lhs_world, scope_id, rhs_world, scope_id)) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
 
-            // true | true  ->  true
-            if (nodes_equal(ctx, lhs_id, rhs_id, lhs_world, scope_id, rhs_world, scope_id)) return world_unwrap(ctx, world_id, lhs_world, lhs_id)
+        // a | !a  ->  ()
+        if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), lhs_world, scope_id, rhs_world, scope_id)) return node_any(ctx)
+        if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), rhs_world, scope_id, lhs_world, scope_id)) return node_any(ctx)
 
-            // a | !a  ->  ()
-            if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), lhs_world, scope_id, rhs_world, scope_id)) return node_any(ctx)
-            if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), rhs_world, scope_id, lhs_world, scope_id)) return node_any(ctx)
+        return node_or(ctx, lhs_id, rhs_id, node.expr)
+    }
 
-            return node_or(ctx, lhs_id, rhs_id)
-        }
-
+    case NODE_EQ: {
         let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
         let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, visited)
 
         let lhs = node_by_id(ctx, lhs_id)!
         let rhs = node_by_id(ctx, rhs_id)!
 
-        // Handle OR lhs/rhs
-        // `lhs op (rhs.lhs | rhs.rhs)`  ->  `(lhs op rhs.lhs) | (lhs op rhs.rhs)`
-        if (lhs.kind === NODE_BINARY && lhs.op === TOKEN_OR) {
+        // `lhs = (rhs.lhs | rhs.rhs)`  ->  `(lhs = rhs.lhs) | (lhs = rhs.rhs)`
+        if (lhs.kind === NODE_OR) {
             return node_reduce(ctx, node_or(ctx,
-                node_binary(ctx, node.op, rhs_id, lhs.lhs),
-                node_binary(ctx, node.op, rhs_id, lhs.rhs),
+                node_eq(ctx, rhs_id, lhs.lhs, node.expr),
+                node_eq(ctx, rhs_id, lhs.rhs, node.expr),
             ), world_id, scope_id, visited)
         }
-        if (rhs.kind === NODE_BINARY && rhs.op === TOKEN_OR) {
+        if (rhs.kind === NODE_OR) {
             return node_reduce(ctx, node_or(ctx,
-                node_binary(ctx, node.op, lhs_id, rhs.lhs),
-                node_binary(ctx, node.op, lhs_id, rhs.rhs),
+                node_eq(ctx, lhs_id, rhs.lhs, node.expr),
+                node_eq(ctx, lhs_id, rhs.rhs, node.expr),
             ), world_id, scope_id, visited)
         }
 
-        switch (node.op) {
-        /* Logical Equality */
-        case TOKEN_EQ:
-            // a = a  ->  ()
-            if (nodes_equal(ctx, lhs_id, rhs_id, world_id, scope_id)) return node_any(ctx)
+        // a = a  ->  ()
+        if (nodes_equal(ctx, lhs_id, rhs_id, world_id, scope_id)) return node_any(ctx)
 
-            // a = !a  ->  !()
-            if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), world_id, scope_id)) return node_never(ctx)
-            if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), world_id, scope_id)) return node_never(ctx)
+        // a = !a  ->  !()
+        if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), world_id, scope_id)) return node_never(ctx)
+        if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), world_id, scope_id)) return node_never(ctx)
 
-            return eq_var_reduce(ctx, lhs_id, rhs_id, world_id, scope_id)
-                || eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id)
-                || node_never(ctx)
+        return eq_var_reduce(ctx, lhs_id, rhs_id, world_id, scope_id)
+            || eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id)
+            || node_never(ctx)
+    }
 
-        /* Logical conjunction */
-        case TOKEN_COMMA:
-        case TOKEN_AND:
-            // After evaluating rhs (which may set new constraints), re-reduce lhs from the
-            // original node to pick up those constraints
-            lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
-            lhs = node_by_id(ctx, lhs_id)!
+    case NODE_AND: {
+        let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
+        let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, visited)
 
-            if (lhs.kind === NODE_NEVER) return node_never(ctx)
-            if (rhs.kind === NODE_NEVER) return node_never(ctx)
+        let lhs = node_by_id(ctx, lhs_id)!
+        let rhs = node_by_id(ctx, rhs_id)!
 
-            if (lhs.kind === NODE_ANY) return rhs_id
-            if (rhs.kind === NODE_ANY) return lhs_id
-
-            // true & false  ->  !()
-            if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL && lhs.value !== rhs.value) {
-                return node_never(ctx)
-            }
-
-            // true & true  ->  true
-            if (nodes_equal(ctx, lhs_id, rhs_id, world_id, scope_id)) return lhs_id
-
-            // a & !a  ->  !()
-            if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), world_id, scope_id)) return node_never(ctx)
-            if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), world_id, scope_id)) return node_never(ctx)
-
-            return node_and(ctx, lhs_id, rhs_id)
+        // `lhs & (rhs.lhs | rhs.rhs)`  ->  `(lhs & rhs.lhs) | (lhs & rhs.rhs)`
+        if (lhs.kind === NODE_OR) {
+            return node_reduce(ctx, node_or(ctx,
+                node_and(ctx, rhs_id, lhs.lhs, node.expr),
+                node_and(ctx, rhs_id, lhs.rhs, node.expr),
+            ), world_id, scope_id, visited)
+        }
+        if (rhs.kind === NODE_OR) {
+            return node_reduce(ctx, node_or(ctx,
+                node_and(ctx, lhs_id, rhs.lhs, node.expr),
+                node_and(ctx, lhs_id, rhs.rhs, node.expr),
+            ), world_id, scope_id, visited)
         }
 
-        return node_id
+        // After evaluating rhs (which may set new constraints), re-reduce lhs from the
+        // original node to pick up those constraints
+        lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, visited)
+        lhs = node_by_id(ctx, lhs_id)!
+
+        if (lhs.kind === NODE_NEVER) return node_never(ctx)
+        if (rhs.kind === NODE_NEVER) return node_never(ctx)
+
+        if (lhs.kind === NODE_ANY) return rhs_id
+        if (rhs.kind === NODE_ANY) return lhs_id
+
+        // true & false  ->  !()
+        if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL && lhs.value !== rhs.value) {
+            return node_never(ctx)
+        }
+
+        // true & true  ->  true
+        if (nodes_equal(ctx, lhs_id, rhs_id, world_id, scope_id)) return lhs_id
+
+        // a & !a  ->  !()
+        if (nodes_equal(ctx, lhs_id, node_neg(ctx, rhs_id), world_id, scope_id)) return node_never(ctx)
+        if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), world_id, scope_id)) return node_never(ctx)
+
+        return node_and(ctx, lhs_id, rhs_id, node.expr)
     }
 
     default:
@@ -2047,29 +2097,29 @@ const _node_display = (ctx: Context, world_id: World_Id, scope_id: Scope_Id, nod
         let rhs = _node_display(ctx, world_id, scope_id, node.rhs, 0, true, visited)
         return '!'+rhs
 
-    case NODE_BINARY: {
-        let prec = token_kind_precedence(node.op)
-        let needs_parens = prec < parent_prec || (prec === parent_prec && (
-            (is_right && node.op !== TOKEN_POW) ||
-            (!is_right && node.op === TOKEN_POW))
-        )
+    case NODE_AND:
+    case NODE_OR:
+    case NODE_EQ: {
+        let prec = 0
+        switch (node.kind) {
+        case NODE_OR:  prec = token_kind_precedence(TOKEN_OR)  ;break
+        case NODE_AND: prec = token_kind_precedence(TOKEN_AND) ;break
+        case NODE_EQ:  prec = token_kind_precedence(TOKEN_EQ)  ;break
+        }
+
+        let needs_parens = prec < parent_prec || (prec === parent_prec && is_right)
 
         let lhs = _node_display(ctx, world_id, scope_id, node.lhs, prec, false, visited)
         let rhs = _node_display(ctx, world_id, scope_id, node.rhs, prec, true, visited)
 
         let op: string
-        switch (node.op) {
-        case TOKEN_EQ:     op = ` = `  ;break
-        case TOKEN_NOT_EQ: op = ` != ` ;break
-        case TOKEN_ADD:    op = ` + `  ;break
-        case TOKEN_SUB:    op = ` - `  ;break
-        case TOKEN_MUL:    op = ` * `  ;break
-        case TOKEN_DIV:    op = ` / `  ;break
-        case TOKEN_POW:    op = ` ^ `  ;break
-        case TOKEN_AND:    op = ` & `  ;break
-        case TOKEN_OR:     op = ` | `  ;break
-        case TOKEN_COMMA:  op = `, `   ;break
-        default:           op = ` ${token_kind_string(node.op)} ` ;break
+        if (node.kind === NODE_OR) {
+            op = ` | `
+        } else if (node.kind === NODE_AND) {
+            let expr_op = node.expr != null && node.expr.kind === EXPR_BINARY ? node.expr.op.kind : null
+            op = expr_op === TOKEN_COMMA ? `, ` : ` & `
+        } else {
+            op = ` = `
         }
 
         let result = `${lhs}${op}${rhs}`
