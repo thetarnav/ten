@@ -1418,21 +1418,21 @@ function node_chain_get(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_A
 }
 function node_chain_pick(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_Id {
     // Pick treap root candidate from a tree (min-priority leaf).
+
     let node = node_chain_get(ctx, kind, node_id)
-    if (node != null) {
-        let lhs_pick = node_chain_pick(ctx, kind, node.lhs)
-        let rhs_pick = node_chain_pick(ctx, kind, node.rhs)
-        return node_chain_pick_best(lhs_pick, rhs_pick)
-    }
-    return node_id
+    if (node == null) return node_id
+
+    let lhs_pick = node_chain_pick(ctx, kind, node.lhs)
+    let rhs_pick = node_chain_pick(ctx, kind, node.rhs)
+    return node_chain_pick_best(lhs_pick, rhs_pick)
 }
 function node_chain_max(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_Id {
     // Rightmost leaf id (BST max) for split pivots.
+
     let node = node_chain_get(ctx, kind, node_id)
-    if (node != null) {
-        return node_chain_max(ctx, kind, node.rhs)
-    }
-    return node_id
+    if (node == null) return node_id
+
+    return node_chain_max(ctx, kind, node.rhs)
 }
 function node_chain_node(
     ctx:  Context,
@@ -1557,9 +1557,11 @@ export const node_scope = (ctx: Context, scope_id: Scope_Id, body: Node_Id, expr
 export const node_world = (ctx: Context, world_id: World_Id, node_id: Node_Id, expr: Expr | null = null): Node_Id => {
     let node = node_by_id(ctx, node_id)
     if (node != null && node.kind === NODE_WORLD) {
+        // Unwrap nested same-world nodes
         if (node.id === world_id) {
             return node_id
         }
+        // Merge single worlds
         world_add(ctx, world_id, node.id)
         return node_world(ctx, world_id, node.node, expr)
     }
