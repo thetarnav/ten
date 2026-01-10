@@ -671,6 +671,11 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}a = !b, a = b${br}`,
             `!()`)
 
+        test_reducer(`${bl}a = !b, b = !c, c = true${br}`,
+            `${bl}a = true, b = false, c = true${br}`)
+        test_reducer(`${bl}a = !b, b = !c, c = {a = a}${br}`,
+            `${bl}a = {a = a}, b = !{a = a}, c = {a = a}${br}`)
+
         // Nested variable operations with constraint propagation
         test_reducer(`${bl}(a = b) & (b = false) & (a = true)${br}`,
             `!()`)
