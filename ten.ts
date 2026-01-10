@@ -1391,7 +1391,7 @@ export const node_neg = (ctx: Context, rhs: Node_Id, expr: Expr | null = null): 
 }
 
 function node_chain_priority(value: number): number {
-    // Treap priority for a leaf id (deterministic mix).
+    // Treap priority for a leaf id (deterministic mix)
     let x = value | 0
     x ^= x >>> 16
     x = Math.imul(x, 0x7feb352d)
@@ -1401,7 +1401,7 @@ function node_chain_priority(value: number): number {
     return x >>> 0
 }
 function node_chain_pick_best(lhs: Node_Id, rhs: Node_Id): Node_Id {
-    // Treap root choice: smaller priority wins; tie-breaker on id.
+    // Treap root choice: smaller priority wins; tie-breaker on id
     let lhs_priority = node_chain_priority(lhs)
     let rhs_priority = node_chain_priority(rhs)
     if (lhs_priority < rhs_priority) return lhs
@@ -1409,7 +1409,7 @@ function node_chain_pick_best(lhs: Node_Id, rhs: Node_Id): Node_Id {
     return lhs < rhs ? lhs : rhs
 }
 function node_chain_get(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_And | Node_Or | null {
-    // Treap node access for this chain kind.
+    // Treap node access for this chain kind
     let node = node_by_id(ctx, node_id)
     if (node != null && node.kind === kind) {
         return node as Node_And | Node_Or
@@ -1417,7 +1417,7 @@ function node_chain_get(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_A
     return null
 }
 function node_chain_pick(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_Id {
-    // Pick treap root candidate from a tree (min-priority leaf).
+    // Pick treap root candidate from a tree (min-priority leaf)
 
     let node = node_chain_get(ctx, kind, node_id)
     if (node == null) return node_id
@@ -1427,7 +1427,7 @@ function node_chain_pick(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_
     return node_chain_pick_best(lhs_pick, rhs_pick)
 }
 function node_chain_max(ctx: Context, kind: Node_Kind, node_id: Node_Id): Node_Id {
-    // Rightmost leaf id (BST max) for split pivots.
+    // Rightmost leaf id (BST max) for split pivots
 
     let node = node_chain_get(ctx, kind, node_id)
     if (node == null) return node_id
@@ -1441,7 +1441,7 @@ function node_chain_node(
     rhs:  Node_Id | null,
     expr: Expr | null = null,
 ): Node_Id | null {
-    // Treap node constructor (binary op node).
+    // Treap node constructor (binary op node)
     if (lhs == null) return rhs
     if (rhs == null) return lhs
     switch (kind) {
@@ -1467,7 +1467,7 @@ function node_chain_split(
 
     let node = node_chain_get(ctx, kind, node_id)
     if (node == null) {
-        // Leaf split: route to side or drop duplicates.
+        // Leaf split: route to side or drop duplicates
         if (node_id < key) {
             out.l = node_id
             out.r = null
@@ -1481,16 +1481,16 @@ function node_chain_split(
     } else {
         let pivot = node_chain_max(ctx, kind, node.lhs)
         if (key <= pivot) {
-            // Split descends into left subtree.
+            // Split descends into left subtree
             node_chain_split(ctx, kind, node.lhs, key, out)
 
-            // Everything >= key goes right.
+            // Everything >= key goes right
             out.r = node_chain_node(ctx, kind, out.r, node.rhs)
         } else {
-            // Split descends into right subtree.
+            // Split descends into right subtree
             node_chain_split(ctx, kind, node.rhs, key, out)
 
-            // Everything < key goes left.
+            // Everything < key goes left
             out.l = node_chain_node(ctx, kind, node.lhs, out.l)
         }
     }
@@ -1504,7 +1504,7 @@ function node_chain_join(
     rhs:  Node_Id | null,
     expr: Expr | null = null,
 ): Node_Id | null {
-    // Treap union: choose a pivot leaf, split both sides, then stitch.
+    // Treap union: choose a pivot leaf, split both sides, then stitch
     if (lhs == null) return rhs
     if (rhs == null) return lhs
 
@@ -1512,11 +1512,11 @@ function node_chain_join(
     let rhs_pick = node_chain_pick(ctx, kind, rhs)
     let pick = node_chain_pick_best(lhs_pick, rhs_pick)
 
-    // Partition both trees around the chosen pivot id.
+    // Partition both trees around the chosen pivot id
     let {l: lhs_l, r: lhs_r} = node_chain_split(ctx, kind, lhs, pick)
     let {l: rhs_l, r: rhs_r} = node_chain_split(ctx, kind, rhs, pick)
 
-    // Recurse into partitions and attach pivot between them.
+    // Recurse into partitions and attach pivot between them
     return node_chain_node(ctx, kind,
         node_chain_node(ctx, kind, node_chain_join(ctx, kind, lhs_l, rhs_l), pick),
         node_chain_join(ctx, kind, lhs_r, rhs_r),
@@ -1524,15 +1524,15 @@ function node_chain_join(
 }
 
 export const node_and = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
-    // Canonical treap merge for AND chains.
-    // `lhs` and `rhs` should already be normalized.
+    // Canonical treap merge for AND chains
+    // `lhs` and `rhs` should already be normalized
     let merged = node_chain_join(ctx, NODE_AND, lhs, rhs, expr)
     assert(merged != null, 'Expected AND chain result')
     return merged
 }
 export const node_or  = (ctx: Context, lhs: Node_Id, rhs: Node_Id, expr: Expr | null = null): Node_Id => {
-    // Canonical treap merge for OR chains.
-    // `lhs` and `rhs` should already be normalized.
+    // Canonical treap merge for OR chains
+    // `lhs` and `rhs` should already be normalized
     let merged = node_chain_join(ctx, NODE_OR, lhs, rhs, expr)
     assert(merged != null, 'Expected OR chain result')
     return merged
