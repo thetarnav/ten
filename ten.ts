@@ -1431,15 +1431,14 @@ function node_chain_node(
     // Treap node constructor (binary op node)
     if (lhs == null) return rhs
     if (rhs == null) return lhs
+    let key: Node_Key
     switch (kind) {
-    case NODE_AND: {
-        let key = node_and_encode(lhs, rhs)
+    case NODE_AND:
+        key = node_and_encode(lhs, rhs)
         return store_node_key(ctx, key)
-    }
-    case NODE_OR: {
-        let key = node_or_encode(lhs, rhs)
+    case NODE_OR:
+        key = node_or_encode(lhs, rhs)
         return store_node_key(ctx, key)
-    }
     }
     unreachable()
 }
