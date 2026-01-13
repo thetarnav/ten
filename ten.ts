@@ -1485,14 +1485,14 @@ export const node_and = (ctx: Context, lhs: Node_Id, rhs: Node_Id): Node_Id => {
     assert(merged != null, 'Expected AND chain result')
     return merged
 }
-export const node_or  = (ctx: Context, lhs: Node_Id, rhs: Node_Id): Node_Id => {
+export const node_or = (ctx: Context, lhs: Node_Id, rhs: Node_Id): Node_Id => {
     // Canonical treap merge for OR chains
     // `lhs` and `rhs` should already be normalized
     let merged = node_chain_join(ctx, NODE_OR, lhs, rhs)
     assert(merged != null, 'Expected OR chain result')
     return merged
 }
-export const node_eq  = (ctx: Context, lhs: Node_Id, rhs: Node_Id): Node_Id => {
+export const node_eq = (ctx: Context, lhs: Node_Id, rhs: Node_Id): Node_Id => {
     let key = node_eq_encode(lhs, rhs)
     return store_node_key(ctx, key)
 }
@@ -1998,7 +1998,10 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             vars.set(ident, reduced)
         }
 
-        return node_scope(ctx, node.id, body_id)
+        // Directly mutate scope body
+        node.body = body_id
+        ctx.nodes.set(node_scope_encode(node.id, body_id), node_id)
+        return node_id
     }
 
     case NODE_WORLD: {
@@ -2036,7 +2039,10 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
             return body_id
         }
 
-        return node_world(ctx, node.id, body_id)
+        // Directly mutate world body
+        node.node = body_id
+        ctx.nodes.set(node_world_encode(node.id, body_id), node_id)
+        return node_id
     }
 
     case NODE_NEG: {
