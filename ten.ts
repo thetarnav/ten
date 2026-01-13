@@ -1048,7 +1048,6 @@ export const world_get_assert = (ctx: Context, id: World_Id): World => {
 export const context_make = (): Context => {
     let ctx = new Context
     world_make(ctx)
-    ctx.root = NODE_ID_NONE
     return ctx
 }
 
@@ -1133,10 +1132,6 @@ export const MAX_ID = 4194304 // 2^22
  */
 export type Node_Key = number & {__node_key: void}
 
-export const node_any_encode = (): Node_Key => {
-    let key = NODE_ANY - NODE_ENUM_START
-    return key as Node_Key
-}
 export const node_never_encode = (): Node_Key => {
     let key = NODE_NEVER - NODE_ENUM_START
     return key as Node_Key
@@ -1195,25 +1190,6 @@ export const node_world_encode = (id: World_Id, node: Node_Id): Node_Key => {
     key += node * MAX_ID * NODE_ENUM_RANGE
     key += id * NODE_ENUM_RANGE
     return key as Node_Key
-}
-
-export const node_encode = (node: Node): Node_Key => {
-    switch (node.kind) {
-    case NODE_ANY:      return node_any_encode()
-    case NODE_NEVER:    return node_never_encode()
-    case NODE_NEG:      return node_neg_encode(node.rhs)
-    case NODE_BOOL:     return node_bool_encode(node.value)
-    case NODE_AND:      return node_and_encode(node.lhs, node.rhs)
-    case NODE_OR:       return node_or_encode(node.lhs, node.rhs)
-    case NODE_EQ:       return node_eq_encode(node.lhs, node.rhs)
-    case NODE_SELECTOR: return node_selector_encode(node.lhs, node.rhs)
-    case NODE_VAR:      return node_var_encode(node.lhs, node.rhs)
-    case NODE_SCOPE:    return node_scope_encode(node.id, node.body)
-    case NODE_WORLD:    return node_world_encode(node.id, node.node)
-    default:
-        node satisfies never // exhaustive check
-        return node_any_encode()
-    }
 }
 
 export const node_decode = (_key: Node_Key): Node => {
@@ -1328,7 +1304,6 @@ export const node_decode = (_key: Node_Key): Node => {
 }
 
 
-export const node_key      = node_encode
 export const node_from_key = node_decode
 
 export const store_node_key = (ctx: Context, key: Node_Key): Node_Id => {
@@ -1342,17 +1317,12 @@ export const store_node_key = (ctx: Context, key: Node_Key): Node_Id => {
     }
     return ctx.nodes.get(key)!
 }
-export const store_node = (ctx: Context, node: Node): void => {
-    let key = node_encode(node)
-    store_node_key(ctx, key)
-}
 export const node_by_id = (ctx: Context, node_id: Node_Id): Node | null => {
     return ctx.all_nodes[node_id]
 }
 
-export const node_any = (ctx: Context): Node_Id => {
-    let key = node_any_encode()
-    return store_node_key(ctx, key)
+export const node_any = (_: Context): Node_Id => {
+    return NODE_ID_NONE
 }
 export const node_never = (ctx: Context): Node_Id => {
     let key = node_never_encode()
@@ -1638,7 +1608,7 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
         case TOKEN_NOT_EQ: {
             let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
             let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
-            if (!lhs || !rhs) return null
+            if (lhs == null || rhs == null) return null
 
             switch (expr.op.kind) {
             // a != b  ->  a = !b, b = !a
@@ -1706,7 +1676,7 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
 
             let lhs = node_from_expr(ctx, lhs_world_id, expr.lhs, src, scope_id)
             let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id)
-            if (!lhs || !rhs) return null
+            if (lhs == null || rhs == null) return null
 
             return node_or(ctx,
                 node_world(ctx, lhs_world_id, lhs),
@@ -1723,7 +1693,7 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
         // foo.bar
         // foo.bar.baz...
         let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
-        if (!lhs) return null
+        if (lhs == null) return null
 
         let text  = token_string(src, expr.rhs).substring(1) // Remove '.'
         let ident = ident_id(ctx, text)
@@ -1744,7 +1714,7 @@ const node_from_expr = (ctx: Context, world_id: World_Id, expr: Expr, src: strin
             return node_scope(ctx, scope_id, body)
         }
         // Regular paren (...)
-        if (!expr.body) return node_any(ctx)
+        if (expr.body == null) return node_any(ctx)
         return node_from_expr(ctx, world_id, expr.body, src, scope_id)
     }
 
@@ -2141,8 +2111,8 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: World_Id, scope_i
         if (nodes_equal(ctx, rhs_id, node_neg(ctx, lhs_id), world_id, scope_id)) return node_never(ctx)
 
         return eq_var_reduce(ctx, lhs_id, rhs_id, world_id, scope_id)
-            || eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id)
-            || node_never(ctx)
+            ?? eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id)
+            ?? node_never(ctx)
     }
 
     case NODE_AND: {
