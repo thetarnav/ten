@@ -839,6 +839,8 @@ test.describe('reducer', {concurrency: true}, () => {
             `${sl}${sr}`)
         test_reducer(`${bl}{a = false, a = c} = {c = a, a = false, c = false}${br}`,
             `${sl}${sr}`)
+        test_reducer(`${bl}{foo = {a = false, a = c}} = {foo = {c = a, a = false, c = false}}${br}`,
+            `${sl}${sr}`)
         test_reducer(`${bl}{a = false, a = c} = {a = false, c = false}${br}`,
             `${sl}${sr}`)
         test_reducer(`${bl}{a = false, a = c} = {c = a, a = false, c = true}${br}`,
@@ -963,6 +965,8 @@ test.describe('reducer', {concurrency: true}, () => {
         `foo = foo, (foo = {bar = {a = true}}) | (foo = {bar = {a = false}})`)
     test_reducer(`foo = {bar = {a = true}} | {bar = {a = true}}`,
         `foo = {bar = {a = true}}`)
+    test_reducer(`foo = {bar = {a = true}} | {bar = {a = a, a = true}}`,
+    `foo = {bar = {a = true}}`)
     test_reducer(`foo = {a = true} | {a = false}, foo.a = false`,
         `foo = {a = false}`)
 })
