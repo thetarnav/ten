@@ -1520,10 +1520,10 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
 
             let text  = token_string(src, expr.tok)
             let ident = ident_id(ctx, text)
-            let vars  = world.vars.get(scope_id)
+            let vars  = world.vars.get(NODE_ID_NONE)
 
             if (vars == null) {
-                world.vars.set(scope_id, vars = new Map())
+                world.vars.set(NODE_ID_NONE, vars = new Map())
             }
             vars.set(ident, null)
 
@@ -1929,17 +1929,26 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         let world = world_get_assert(ctx, node_id)
 
         // Reduce vars
-        let vars = world.vars.get(scope_id)
-        if (vars != null) for (let [ident, val_id] of vars) if (val_id != null) {
-            val_id = node_reduce(ctx, val_id, node_id, scope_id, false, visited)
-            vars.set(ident, val_id)
+        let vars = world.vars.get(NODE_ID_NONE)
+        if (vars != null) for (let [ident, val_id] of vars) {
+            if (val_id != null) {
+                val_id = node_reduce(ctx, val_id, node_id, scope_id, false, visited)
+                vars.set(ident, val_id)
 
-            // Check for contradictions with parent world
-            let var_id = node_var(ctx, scope_id, ident)
-            let parent_val_id = var_get_val(ctx, world_id, scope_id, var_id, false)
-            if (parent_val_id != null && !nodes_equal(val_id, parent_val_id)) {
-                return node_never()
+                // Check for contradictions with parent world
+                let var_id = node_var(ctx, scope_id, ident)
+                let parent_val_id = var_get_val(ctx, world_id, scope_id, var_id, false)
+                if (parent_val_id != null && !nodes_equal(val_id, parent_val_id)) {
+                    return node_never()
+                }
+            } else {
+                val_id = node_var(ctx, NODE_ID_NONE, ident)
             }
+
+            body_id = node_and(ctx, body_id, node_eq(ctx,
+                node_var(ctx, NODE_ID_NONE, ident),
+                val_id,
+            ))
         }
 
         if (world_is_empty(ctx, node_id)) {
@@ -2188,7 +2197,7 @@ export const display = (ctx: Context): string => {
     let node_id = ctx.root
 
     if (node_id !== NODE_ID_NEVER) {
-        let vars = world.vars.get(ctx.root_scope)
+        let vars = world.vars.get(NODE_ID_NONE)
         if (vars != null) for (let [ident, val_id] of vars) {
             node_id = node_and(ctx, node_id, node_eq(ctx,
                 node_var(ctx, NODE_ID_NONE, ident),
@@ -2198,4 +2207,181 @@ export const display = (ctx: Context): string => {
     }
 
     return node_display(ctx, ctx.root_world, ctx.root_scope, node_id)
+}
+
+const _debug_node_label = (
+    ctx:        Context,
+    node_id:    Node_Id,
+    node:       Node,
+    referenced: Set<Node_Id>,
+): string => {
+
+    let out = ''
+
+    if (node.kind === NODE_BOOL) {
+        out += node.value ? 'True' : 'False'
+    } else {
+        out += node_kind_string(node.kind)
+    }
+
+    out += ` #${node_id}`
+
+    switch (node.kind) {
+    case NODE_VAR: {
+        out += ` (#${node.lhs} ⟶ `
+        out += ident_string(ctx, node.rhs) ?? '<ident = null>'
+        out += `)`
+
+        if (node.lhs !== NODE_ID_NONE) {
+            referenced.add(node.lhs)
+        }
+
+        break
+    }
+    case NODE_SELECTOR: {
+        out += ` (#${node.lhs} ⟶ `
+        let rhs_str = ident_string(ctx, node.rhs)
+        if (rhs_str == null) {
+            out += '<ident = null>'
+        } else {
+            out += '.' + rhs_str
+        }
+        out += `)`
+        referenced.add(node.lhs)
+        break
+    }
+    case NODE_WORLD: {
+        let world = world_get(ctx, node_id)
+        if (world == null) break
+
+        out += ' ('
+
+        let scope_first = true
+        for (let [scope_id, var_map] of world.vars) {
+            referenced.add(scope_id)
+
+            if (!scope_first) out += ', '
+            scope_first = false
+
+            out += `#${scope_id} ⟶ {`
+
+            let var_first = true
+            for (let [ident, val_id] of var_map) {
+
+                if (!var_first) out += ', '
+                var_first = false
+
+                out += ident_string(ctx, ident) ?? '<ident = null>'
+                out += ' = '
+
+                if (val_id == null) {
+                    out += 'nil'
+                } else {
+                    out += `#${val_id}`
+                    referenced.add(val_id)
+                }
+            }
+
+            out += `}`
+        }
+
+        out += ')'
+        break
+    }
+    }
+
+    return out
+}
+
+const _debug_display_tree = (
+    ctx:        Context,
+    node_id:    Node_Id,
+    prefix:     string,
+    is_last:    boolean,
+    scope_id:   Node_Id,
+    lines:      string[],
+    displayed:  Set<Node_Id>,
+    referenced: Set<Node_Id>,
+    skip_children_if_displayed: boolean,
+    is_root:    boolean,
+): void => {
+    let line_prefix = is_root ? '' : prefix + (is_last ? '└ ' : '├ ')
+    let node = node_by_id(ctx, node_id)
+    if (node == null) {
+        lines.push(`${line_prefix}<node = null> #${node_id}`)
+        return
+    }
+
+    lines.push(line_prefix + _debug_node_label(ctx, node_id, node, referenced))
+    let was_displayed = displayed.has(node_id)
+    displayed.add(node_id)
+
+    let children: Node_Id[] = []
+    switch (node.kind) {
+    case NODE_NEG:
+        children = [node.rhs]
+        break
+    case NODE_AND:
+    case NODE_OR:
+    case NODE_EQ:
+        children = [node.lhs, node.rhs]
+        break
+    case NODE_SELECTOR:
+        children = [node.lhs]
+        break
+    case NODE_SCOPE:
+    case NODE_WORLD:
+        if (node.body !== NODE_ID_NONE) {
+            children = [node.body]
+        }
+        break
+    }
+
+    let child_prefix = is_root ? prefix : prefix + (is_last ? '  ' : '│ ')
+    if (skip_children_if_displayed && was_displayed) {
+        if (children.length > 0) {
+            lines.push(child_prefix + '└ …')
+        }
+        return
+    }
+
+    for (let i = 0; i < children.length; i++) {
+        _debug_display_tree(
+            ctx,
+            children[i],
+            child_prefix,
+            i === children.length - 1,
+            node.kind === NODE_SCOPE ? node_id : scope_id,
+            lines,
+            displayed,
+            referenced,
+            skip_children_if_displayed,
+            false,
+        )
+    }
+}
+
+export const debug_display = (ctx: Context, node_id: Node_Id, scope_id: Node_Id = ctx.root_scope): string => {
+    let lines: string[] = []
+    let displayed: Set<Node_Id> = new Set()
+    let referenced: Set<Node_Id> = new Set()
+
+    _debug_display_tree(ctx, node_id, '', true, scope_id, lines, displayed, referenced, false, true)
+
+    let has_extra = false
+    for (let ref_id of referenced) {
+        if (!displayed.has(ref_id)) {
+            has_extra = true
+            break
+        }
+    }
+    if (has_extra) {
+        lines.push('')
+    }
+    for (let ref_id of referenced) {
+        if (displayed.has(ref_id)) continue
+        _debug_display_tree(ctx, ref_id, '', true, scope_id, lines, displayed, referenced, true, true)
+    }
+
+    return lines.join('\n')
 }
