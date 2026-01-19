@@ -1489,7 +1489,7 @@ export const world_unwrap = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, nod
 }
 
 export const add_expr = (ctx: Context, expr: Expr, src: string): void => {
-    let node = node_from_expr(ctx, ctx.root_world, expr, src, ctx.root_scope)
+    let node = node_from_expr(ctx, ctx.root_world, expr, src, ctx.root_scope, false)
     assert(node != null, 'node_from_expr produced no result')
     ctx.root = (node_by_id(ctx, ctx.root_scope) as Node_Scope).body = node
 }
@@ -1509,7 +1509,7 @@ const _do_bool_token_op = (op: Token_Kind, lhs: boolean, rhs: boolean): boolean 
     return false
 }
 
-const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string, scope_id: Node_Id): Node_Id | null => {
+const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string, scope_id: Node_Id, is_nested: boolean): Node_Id | null => {
     switch (expr.kind) {
     case EXPR_TOKEN:
         switch (expr.tok.kind) {
@@ -1518,12 +1518,16 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
         case TOKEN_IDENT: {
             let world = world_get_assert(ctx, world_id)
 
+            if (!is_nested) {
+                scope_id = NODE_ID_NONE
+            }
+
             let text  = token_string(src, expr.tok)
             let ident = ident_id(ctx, text)
-            let vars  = world.vars.get(NODE_ID_NONE)
+            let vars  = world.vars.get(scope_id)
 
             if (vars == null) {
-                world.vars.set(NODE_ID_NONE, vars = new Map())
+                world.vars.set(scope_id, vars = new Map())
             }
             vars.set(ident, null)
 
@@ -1534,7 +1538,7 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
 
     case EXPR_UNARY: {
         // Convert unary to binary
-        let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
+        let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id, is_nested)
         if (rhs == null) return null
 
         switch (expr.op.kind) {
@@ -1570,8 +1574,8 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
         case TOKEN_COMMA:
         case TOKEN_EQ:
         case TOKEN_NOT_EQ: {
-            let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
-            let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id)
+            let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id, is_nested)
+            let rhs = node_from_expr(ctx, world_id, expr.rhs, src, scope_id, is_nested)
             if (lhs == null || rhs == null) return null
 
             switch (expr.op.kind) {
@@ -1647,8 +1651,8 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
             lhs_world_node.world.parent = world_id
             rhs_world_node.world.parent = world_id
 
-            let lhs = node_from_expr(ctx, lhs_world_id, expr.lhs, src, scope_id)
-            let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id)
+            let lhs = node_from_expr(ctx, lhs_world_id, expr.lhs, src, scope_id, false)
+            let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id, false)
             if (lhs == null || rhs == null) return null
 
             lhs_world_node.body = lhs
@@ -1665,7 +1669,7 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
 
         // foo.bar
         // foo.bar.baz...
-        let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id)
+        let lhs = node_from_expr(ctx, world_id, expr.lhs, src, scope_id, is_nested)
         if (lhs == null) return null
 
         let text  = token_string(src, expr.rhs).substring(1) // Remove '.'
@@ -1682,7 +1686,7 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
             scope_id = new_node_id(ctx)
             let scope = new Node_Scope
             ctx.all_nodes[scope_id] = scope
-            let body = node_from_expr(ctx, world_id, expr.body, src, scope_id)
+            let body = node_from_expr(ctx, world_id, expr.body, src, scope_id, true)
             assert(body != null, 'Expected body node in scope expression')
             scope.body = body
             let key = node_scope_encode(scope.body)
@@ -1695,7 +1699,7 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
         }
         // Regular paren (...)
         if (expr.body == null) return node_any()
-        return node_from_expr(ctx, world_id, expr.body, src, scope_id)
+        return node_from_expr(ctx, world_id, expr.body, src, scope_id, is_nested)
     }
 
     case EXPR_INVALID:
@@ -1758,22 +1762,27 @@ const var_exists = (ctx: Context, world_id: Node_Id, scope_id: Node_Id, var_id: 
 export const reduce = (ctx: Context) => {
     ctx.root = node_reduce(ctx, ctx.root, ctx.root_world, ctx.root_scope, false, new Set)
 
-    let world = world_get_assert(ctx, ctx.root_world)
-    let vars = world.vars.get(NODE_ID_NONE) // TODO: how to handle nested scopes?
+    if (ctx.root !== NODE_ID_NEVER) {
+        let world = world_get_assert(ctx, ctx.root_world)
+        let vars = world.vars.get(NODE_ID_NONE) // TODO: how to handle nested scopes?
 
-    // Reduce vars
-    if (vars != null) for (let [ident, val_id] of vars) {
-        if (val_id != null) {
-            val_id = node_reduce(ctx, val_id, ctx.root_world, ctx.root_scope, false, new Set)
-            vars.set(ident, val_id)
-        } else {
-            val_id = node_var(ctx, NODE_ID_NONE, ident)
+        // Reduce vars
+        if (vars != null) for (let [ident, val_id] of vars) {
+            if (val_id != null) {
+                val_id = node_reduce(ctx, val_id, ctx.root_world, ctx.root_scope, false, new Set)
+                vars.set(ident, val_id)
+            } else {
+                val_id = node_var(ctx, NODE_ID_NONE, ident)
+            }
+            ctx.root = node_and(ctx, ctx.root, node_eq(ctx,
+                node_var(ctx, NODE_ID_NONE, ident),
+                val_id,
+            ))
         }
-        ctx.root = node_and(ctx, ctx.root, node_eq(ctx,
-            node_var(ctx, NODE_ID_NONE, ident),
-            val_id,
-        ))
     }
+
+    let scope = node_by_id(ctx, ctx.root_scope) as Node_Scope
+    scope.body = ctx.root
 }
 
 const eq_var_reduce = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id: Node_Id, scope_id: Node_Id, is_nested: boolean): Node_Id | null => {
@@ -1792,14 +1801,13 @@ const eq_var_reduce = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id:
         }
 
         // Write var if it's from this scope
-        if (var_scope_id(lhs, scope_id, is_nested) === scope_id) {
+        let lhs_scope_id = var_scope_id(lhs, scope_id, is_nested)
+        if (lhs_scope_id === (is_nested ? scope_id : NODE_ID_NONE)) {
 
             let world = world_get_assert(ctx, world_id)
-
-            scope_id = var_scope_id(lhs, scope_id, is_nested)
-            let vars = world.vars.get(scope_id)
+            let vars = world.vars.get(lhs_scope_id)
             if (vars == null) {
-                world.vars.set(scope_id, vars = new Map())
+                world.vars.set(lhs_scope_id, vars = new Map())
             }
 
             vars.set(lhs.rhs, rhs_id)

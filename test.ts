@@ -534,9 +534,9 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}true | true${br}`,
             `${bl}true${br}`)
         test_reducer(`${bl}false | a${br}`,
-            `${bl}false${br} | (${bl}a = a, a${br})`)
+            `${bl}false${br} | (${bl}a, a = a${br})`)
         test_reducer(`${bl}true | a${br}`,
-            `${bl}true${br} | (${bl}a = a, a${br})`)
+            `${bl}true${br} | (${bl}a, a = a${br})`)
 
         // Logical AND (&)
         test_reducer(`${bl}true & false${br}`,
