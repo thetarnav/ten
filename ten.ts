@@ -1453,18 +1453,18 @@ const world_fork = (ctx: Context, parent: Node_Id, body: Node_Id): Node_Id => {
     }
     return node_id
 }
-const world_add = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, nested_scope_id: Node_Id = NODE_ID_NONE): void => {
+const world_add = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, scope_id: Node_Id, is_nested: boolean): void => {
 
     let dst = world_get_assert(ctx, dst_id)
     let src = world_get_assert(ctx, src_id)
 
-    for (let [scope_id, src_var_map] of src.vars) {
-        if (scope_id === NODE_ID_NONE) {
-            scope_id = nested_scope_id
+    for (let [src_scope_id, src_var_map] of src.vars) {
+        if (is_nested && src_scope_id === NODE_ID_NONE) {
+            src_scope_id = scope_id
         }
-        let dst_var_map = dst.vars.get(scope_id)
+        let dst_var_map = dst.vars.get(src_scope_id)
         if (!dst_var_map) {
-            dst.vars.set(scope_id, new Map(src_var_map))
+            dst.vars.set(src_scope_id, new Map(src_var_map))
         } else {
             for (let [ident, val] of src_var_map) {
                 dst_var_map.set(ident, val)
@@ -1478,12 +1478,12 @@ export const world_is_empty = (ctx: Context, id: Node_Id): boolean => {
 
     return world.vars.size === 0
 }
-export const world_unwrap = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, node_id: Node_Id): Node_Id => {
+export const world_unwrap = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, node_id: Node_Id, scope_id: Node_Id, is_nested: boolean): Node_Id => {
 
     if (dst_id !== src_id) {
         let node = node_by_id(ctx, node_id)
         if (node != null && node.kind === NODE_WORLD && node_id === src_id) {
-            world_add(ctx, dst_id, src_id)
+            world_add(ctx, dst_id, src_id, scope_id, is_nested)
             return node.body
         }
     }
@@ -1967,7 +1967,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
             return node_reduce(ctx, body_id, world_id, scope_id, is_nested, visited)
         }
         if (world_id !== node_id) {
-            world_add(ctx, world_id, node_id, is_nested ? scope_id : NODE_ID_NONE)
+            world_add(ctx, world_id, node_id, scope_id, is_nested)
             return node_reduce(ctx, body_id, world_id, scope_id, is_nested, visited)
         }
 
@@ -1975,7 +1975,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         if (new_id !== node_id) {
             let new_world = world_get_assert(ctx, new_id)
             new_world.parent = world.parent
-            world_add(ctx, new_id, node_id)
+            world_add(ctx, new_id, node_id, scope_id, false)
             ctx.nodes.set(node_world_encode(node.body), new_id)
         }
         return new_id
@@ -2005,14 +2005,14 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         let lhs = node_by_id(ctx, lhs_id)!
         let rhs = node_by_id(ctx, rhs_id)!
 
-        if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_id, rhs_id)
-        if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_id, lhs_id)
+        if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_id, rhs_id, scope_id, is_nested)
+        if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_id, lhs_id, scope_id, is_nested)
 
         if (lhs.kind === NODE_ANY) return node_any()
         if (rhs.kind === NODE_ANY) return node_any()
 
         // true | true  ->  true
-        if (nodes_equal(lhs_id, rhs_id)) return world_unwrap(ctx, world_id, lhs_id, lhs_id)
+        if (nodes_equal(lhs_id, rhs_id)) return world_unwrap(ctx, world_id, lhs_id, lhs_id, scope_id, is_nested)
 
         // a | !a  ->  ()
         if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return node_any()
