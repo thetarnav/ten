@@ -534,9 +534,9 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}true | true${br}`,
             `${bl}true${br}`)
         test_reducer(`${bl}false | a${br}`,
-            `${bl}false${br} | (${bl}a, a = a${br})`)
+            `${bl}false${br} | ${sl}a, a = a${sr}`)
         test_reducer(`${bl}true | a${br}`,
-            `${bl}true${br} | (${bl}a, a = a${br})`)
+            `${bl}true${br} | ${sl}a, a = a${sr}`)
 
         // Logical AND (&)
         test_reducer(`${bl}true & false${br}`,
@@ -906,9 +906,9 @@ test.describe('reducer', {concurrency: true}, () => {
 
     // Variables with boolean OR operations
     test_reducer(`a + false`,
-        `a = a, (a = true, true) | (a = false, false)`)
+        `(true, a = true) | (false, a = false), a = a`)
     test_reducer(`a + true`,
-        `a = a, (a = true, true) | (a = false, true)`)
+        `(true, a = true) | (true, a = false), a = a`)
     test_reducer(`{a + false}`,
         `({a = true, true}) | ({a = false, false})`)
     test_reducer(`{a + true}`,
@@ -916,9 +916,9 @@ test.describe('reducer', {concurrency: true}, () => {
 
     // Variables with boolean AND operations
     test_reducer(`a * true`,
-        `a = a, (a = true, true) | (a = false, false)`)
+        `(true, a = true) | (false, a = false), a = a`)
     test_reducer(`a * false`,
-        `a = a, (a = true, false) | (a = false, false)`)
+        `(false, a = true) | (false, a = false), a = a`)
     test_reducer(`{a * true}`,
         `({a = true, true}) | ({a = false, false})`)
     test_reducer(`{a * false}`,
@@ -926,7 +926,7 @@ test.describe('reducer', {concurrency: true}, () => {
 
     // Variables with boolean XOR operations
     test_reducer(`a ^ false`,
-        `a = a, (a = true, true) | (a = false, false)`)
+        `(true, a = true) | (false, a = false), a = a`)
     test_reducer(`{a ^ false}`,
         `({a = true, true}) | ({a = false, false})`)
 
@@ -958,11 +958,11 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`a = true | true`,
         `a = true`)
     test_reducer(`foo = {a = true} | {a = false}`,
-        `foo = foo, (foo = {a = true}) | (foo = {a = false})`)
+        `(foo = {a = true}) | (foo = {a = false}), foo = foo`)
     test_reducer(`foo = {a = true} | {a = true}`,
         `foo = {a = true}`)
     test_reducer(`foo = {bar = {a = true}} | {bar = {a = false}}`,
-        `foo = foo, (foo = {bar = {a = true}}) | (foo = {bar = {a = false}})`)
+        `(foo = {bar = {a = true}}) | (foo = {bar = {a = false}}), foo = foo`)
     test_reducer(`foo = {bar = {a = true}} | {bar = {a = true}}`,
         `foo = {bar = {a = true}}`)
     test_reducer(`foo = {bar = {a = true}} | {bar = {a = a, a = true}}`,
