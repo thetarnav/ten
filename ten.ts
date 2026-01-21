@@ -1445,7 +1445,7 @@ export const node_world = (ctx: Context, body_id: Node_Id): Node_Id => {
     let key = node_world_encode(body_id)
     return store_node_key(ctx, key)
 }
-export const world_fork = (ctx: Context, parent: Node_Id, body: Node_Id): Node_Id => {
+const world_fork = (ctx: Context, parent: Node_Id, body: Node_Id): Node_Id => {
     let node_id = node_world(ctx, body)
     if (node_id !== parent) {
         let world = world_get_assert(ctx, node_id)
@@ -1453,18 +1453,21 @@ export const world_fork = (ctx: Context, parent: Node_Id, body: Node_Id): Node_I
     }
     return node_id
 }
-export const world_add = (ctx: Context, dst_id: Node_Id, src_id: Node_Id): void => {
+const world_add = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, nested_scope_id: Node_Id = NODE_ID_NONE): void => {
 
     let dst = world_get_assert(ctx, dst_id)
     let src = world_get_assert(ctx, src_id)
 
-    for (let [scope_id, var_map] of src.vars) {
-        let dest_var_map = dst.vars.get(scope_id)
-        if (!dest_var_map) {
-            dst.vars.set(scope_id, new Map(var_map))
+    for (let [scope_id, src_var_map] of src.vars) {
+        if (scope_id === NODE_ID_NONE) {
+            scope_id = nested_scope_id
+        }
+        let dst_var_map = dst.vars.get(scope_id)
+        if (!dst_var_map) {
+            dst.vars.set(scope_id, new Map(src_var_map))
         } else {
-            for (let [ident, val] of var_map) {
-                dest_var_map.set(ident, val)
+            for (let [ident, val] of src_var_map) {
+                dst_var_map.set(ident, val)
             }
         }
     }
@@ -1965,7 +1968,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
 
         // Unwrap if possible
         if (world_id !== node_id) {
-            world_add(ctx, world_id, node_id)
+            world_add(ctx, world_id, node_id, is_nested ? scope_id : NODE_ID_NONE)
             return body_id
         }
 
