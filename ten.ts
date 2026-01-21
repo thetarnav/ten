@@ -1962,14 +1962,13 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
             ))
         }
 
-        if (world_is_empty(ctx, node_id)) {
-            return body_id // TODO: world reusing? it shouldn't ever be referenced if unwrapped
-        }
-
         // Unwrap if possible
+        if (world_is_empty(ctx, node_id)) {
+            return node_reduce(ctx, body_id, world_id, scope_id, is_nested, visited)
+        }
         if (world_id !== node_id) {
             world_add(ctx, world_id, node_id, is_nested ? scope_id : NODE_ID_NONE)
-            return body_id
+            return node_reduce(ctx, body_id, world_id, scope_id, is_nested, visited)
         }
 
         let new_id = node_world(ctx, body_id)
