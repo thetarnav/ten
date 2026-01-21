@@ -1432,16 +1432,10 @@ export const node_scope = (ctx: Context, body: Node_Id): Node_Id => {
 }
 
 export const node_world = (ctx: Context, body_id: Node_Id): Node_Id => {
-    // let node = node_by_id(ctx, body_id)
-    // if (node != null && node.kind === NODE_WORLD) {
-    //     // Unwrap nested same-world nodes
-    //     if (node.id === world_id) {
-    //         return body_id
-    //     }
-    //     // Merge single worlds
-    //     world_add(ctx, world_id, node.id)
-    //     return node_world(ctx, node.body)
-    // }
+    let node = node_by_id(ctx, body_id)
+    if (node != null && node.kind === NODE_WORLD) {
+        return body_id
+    }
     let key = node_world_encode(body_id)
     return store_node_key(ctx, key)
 }
@@ -1643,23 +1637,34 @@ const node_from_expr = (ctx: Context, world_id: Node_Id, expr: Expr, src: string
         case TOKEN_OR: {
             // Create separate worlds for each side
             let lhs_world_id = new_node_id(ctx)
-            let rhs_world_id = new_node_id(ctx)
-
             let lhs_world_node = new Node_World
-            let rhs_world_node = new Node_World
-
             ctx.all_nodes[lhs_world_id] = lhs_world_node
-            ctx.all_nodes[rhs_world_id] = rhs_world_node
-
             lhs_world_node.world.parent = world_id
-            rhs_world_node.world.parent = world_id
-
             let lhs = node_from_expr(ctx, lhs_world_id, expr.lhs, src, scope_id, false)
-            let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id, false)
-            if (lhs == null || rhs == null) return null
-
+            if (lhs == null) return null
             lhs_world_node.body = lhs
+            let lhs_key = node_world_encode(lhs)
+            let lhs_existing = ctx.nodes.get(lhs_key)
+            if (lhs_existing != null) {
+                lhs_world_id = lhs_existing
+            } else {
+                ctx.nodes.set(lhs_key, lhs_world_id)
+            }
+
+            let rhs_world_id = new_node_id(ctx)
+            let rhs_world_node = new Node_World
+            ctx.all_nodes[rhs_world_id] = rhs_world_node
+            rhs_world_node.world.parent = world_id
+            let rhs = node_from_expr(ctx, rhs_world_id, expr.rhs, src, scope_id, false)
+            if (rhs == null) return null
             rhs_world_node.body = rhs
+            let rhs_key = node_world_encode(rhs)
+            let rhs_existing = ctx.nodes.get(rhs_key)
+            if (rhs_existing != null) {
+                rhs_world_id = rhs_existing
+            } else {
+                ctx.nodes.set(rhs_key, rhs_world_id)
+            }
 
             return node_or(ctx, lhs_world_id, rhs_world_id)
         }
