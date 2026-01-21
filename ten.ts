@@ -1730,16 +1730,29 @@ const var_get_val = (ctx: Context, world_id: Node_Id, scope_id: Node_Id, var_id:
     let var_node = node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return null
 
-    let scope_key = var_scope_id(var_node, scope_id, is_nested)
+    let local_scope_id = var_scope_id(var_node, scope_id, is_nested)
     for (let w: Node_Id | null = world_id; w != null;) {
         let world = world_get_assert(ctx, w)
 
         check: {
-            let vars = world.vars.get(scope_key)
-            if (vars == null) break check
+            let vars = world.vars.get(local_scope_id)
+            if (vars == null) {
+                if (local_scope_id !== NODE_ID_NONE) break check
+                vars = world.vars.get(scope_id)
+                if (vars == null) break check
+            }
 
             let val = vars.get(var_node.rhs)
             if (val == null) break check
+
+            // * if val is VAR(NONE, x) change it to VAR(scope_id, x) for nested scopes
+            // TODO: messy, refactor
+            if (is_nested) {
+                let val_node = node_by_id(ctx, val)
+                if (val_node != null && val_node.kind === NODE_VAR && val_node.lhs === NODE_ID_NONE) {
+                    val = node_var(ctx, scope_id, val_node.rhs)
+                }
+            }
 
             return val
         }
@@ -1754,12 +1767,18 @@ const var_exists = (ctx: Context, world_id: Node_Id, scope_id: Node_Id, var_id: 
     let var_node = node_by_id(ctx, var_id)!
     if (var_node.kind !== NODE_VAR) return false
 
-    scope_id = var_scope_id(var_node, scope_id, is_nested)
+    let local_scope_id = var_scope_id(var_node, scope_id, is_nested)
     for (let w: Node_Id | null = world_id; w != null;) {
         let world = world_get_assert(ctx, w)
 
-        let vars = world.vars.get(scope_id)
-        if (vars != null && vars.has(var_node.rhs)) return true
+        let vars = world.vars.get(local_scope_id)
+        if (vars != null) {
+            if (vars.has(var_node.rhs)) return true
+        } else if (local_scope_id === NODE_ID_NONE) {
+            vars = world.vars.get(scope_id)
+            if (vars != null && vars.has(var_node.rhs)) return true
+        }
+
 
         w = world.parent
     }
@@ -1869,7 +1888,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         }
 
         if (lhs.kind === NODE_SCOPE) {
-            let var_id = node_var(ctx, NODE_ID_NONE, node.rhs)
+            let var_id = node_var(ctx, lhs_id, node.rhs) // TODO: when this should be none or lhs_id?
             return node_reduce(ctx, var_id, world_id, lhs_id, is_nested, visited)
         }
 
@@ -2340,9 +2359,6 @@ const _debug_display_tree = (
     case NODE_OR:
     case NODE_EQ:
         children = [node.lhs, node.rhs]
-        break
-    case NODE_SELECTOR:
-        children = [node.lhs]
         break
     case NODE_SCOPE:
     case NODE_WORLD:

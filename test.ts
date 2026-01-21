@@ -904,15 +904,21 @@ test.describe('reducer', {concurrency: true}, () => {
             `!()`)
     }
 
+    // Variable disjunctions
+    test_reducer(`a = true | false`,
+        `(a = true) | (a = false), a = a`)
+    test_reducer(`{a = true | false}`,
+        `{a = true} | {a = false}`)
+
     // Variables with boolean OR operations
     test_reducer(`a + false`,
         `(true, a = true) | (false, a = false), a = a`)
     test_reducer(`a + true`,
         `(true, a = true) | (true, a = false), a = a`)
     test_reducer(`{a + false}`,
-        `({a = true, true}) | ({a = false, false})`)
+        `{true, a = true} | {false, a = false}`)
     test_reducer(`{a + true}`,
-        `({a = true, true}) | ({a = false, true})`)
+        `{true, a = true} | {true, a = false}`)
 
     // Variables with boolean AND operations
     test_reducer(`a * true`,
@@ -920,15 +926,15 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`a * false`,
         `(false, a = true) | (false, a = false), a = a`)
     test_reducer(`{a * true}`,
-        `({a = true, true}) | ({a = false, false})`)
+        `{true, a = true} | {false, a = false}`)
     test_reducer(`{a * false}`,
-        `({a = true, false}) | ({a = false, false})`)
+        `{false, a = true} | {false, a = false}`)
 
     // Variables with boolean XOR operations
     test_reducer(`a ^ false`,
         `(true, a = true) | (false, a = false), a = a`)
     test_reducer(`{a ^ false}`,
-        `({a = true, true}) | ({a = false, false})`)
+        `{true, a = true} | {false, a = false}`)
 
     test_reducer('a = true, a = false | !()',
         '!()')
