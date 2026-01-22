@@ -954,7 +954,7 @@ export class Node_Selector {
 }
 export class Node_Var {
     kind = NODE_VAR
-    lhs:   Node_Id  = NODE_ID_NONE // NODE_ID_NONE = current scope
+    lhs:   Node_Id  = NODE_ID_NONE  // NODE_ID_NONE = current scope, or scope id for nested scopes
     rhs:   Ident_Id = IDENT_ID_NONE // Field(.foo)
 }
 export class Node_Scope {
@@ -969,6 +969,14 @@ export class Node_World {
 
 export class World {
     parent: Node_Id | null = null
+    /**
+     * scope node id -> (var ident id -> value node id | null)
+     *
+     * null value means the variable is declared but uninitialized
+     *
+     * NODE_ID_NONE scope is the current/global scope (scope is above world node in the tree)
+     * other scope ids are nested scopes within the world
+     */
     vars:   Map<Node_Id, Map<Ident_Id, Node_Id | null>> = new Map()
 }
 
@@ -1890,7 +1898,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         }
 
         if (lhs.kind === NODE_SCOPE) {
-            let var_id = node_var(ctx, lhs_id, node.rhs) // TODO: when this should be none or lhs_id?
+            let var_id = node_var(ctx, lhs_id, node.rhs) // TODO: when lhs should be none or lhs_id?
             return node_reduce(ctx, var_id, world_id, lhs_id, is_nested, visited)
         }
 
