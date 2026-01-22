@@ -2011,8 +2011,8 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, is_nested, visited)
         let rhs = node_by_id(ctx, rhs_id)!
         switch (rhs.kind) {
-        case NODE_ANY:   return node_never()
-        case NODE_NEVER: return node_any()
+        case NODE_ANY:   return NODE_ID_NEVER
+        case NODE_NEVER: return NODE_ID_ANY
         case NODE_BOOL:  return node_bool(ctx, !rhs.value)
         case NODE_NEG:   return rhs.rhs
         default:         return node_neg(ctx, rhs_id)
@@ -2028,21 +2028,18 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         let lhs_id = node_reduce(ctx, lhs_world, lhs_world, scope_id, is_nested, visited)
         let rhs_id = node_reduce(ctx, rhs_world, rhs_world, scope_id, is_nested, visited)
 
-        let lhs = node_by_id(ctx, lhs_id)!
-        let rhs = node_by_id(ctx, rhs_id)!
+        if (lhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, rhs_id, scope_id, is_nested, visited)
+        if (rhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, lhs_id, scope_id, is_nested, visited)
 
-        if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_id, scope_id, is_nested, visited)
-        if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_id, scope_id, is_nested, visited)
-
-        if (lhs.kind === NODE_ANY) return node_any()
-        if (rhs.kind === NODE_ANY) return node_any()
+        if (lhs_id === NODE_ID_ANY) return NODE_ID_ANY
+        if (rhs_id === NODE_ID_ANY) return NODE_ID_ANY
 
         // true | true  ->  true
         if (nodes_equal(lhs_id, rhs_id)) return world_unwrap(ctx, world_id, lhs_id, scope_id, is_nested, visited)
 
         // a | !a  ->  ()
-        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return node_any()
-        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return node_any()
+        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return NODE_ID_ANY
+        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return NODE_ID_ANY
 
         return node_or(ctx, lhs_id, rhs_id)
     }
@@ -2069,15 +2066,15 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         }
 
         // a = a  ->  ()
-        if (nodes_equal(lhs_id, rhs_id)) return node_any()
+        if (nodes_equal(lhs_id, rhs_id)) return NODE_ID_ANY
 
         // a = !a  ->  !()
-        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return node_never()
-        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return node_never()
+        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return NODE_ID_NEVER
+        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return NODE_ID_NEVER
 
         return eq_var_reduce(ctx, lhs_id, rhs_id, world_id, scope_id, is_nested)
             ?? eq_var_reduce(ctx, rhs_id, lhs_id, world_id, scope_id, is_nested)
-            ?? node_never()
+            ?? NODE_ID_NEVER
     }
 
     case NODE_AND: {
@@ -2106,23 +2103,22 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, is_nested, visited)
         lhs = node_by_id(ctx, lhs_id)!
 
-        if (lhs.kind === NODE_NEVER) return node_never()
-        if (rhs.kind === NODE_NEVER) return node_never()
-
-        if (lhs.kind === NODE_ANY) return rhs_id
-        if (rhs.kind === NODE_ANY) return lhs_id
+        if (lhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
+        if (rhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
+        if (lhs_id === NODE_ID_ANY) return rhs_id
+        if (rhs_id === NODE_ID_ANY) return lhs_id
 
         // true & false  ->  !()
         if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL && lhs.value !== rhs.value) {
-            return node_never()
+            return NODE_ID_NEVER
         }
 
         // true & true  ->  true
         if (nodes_equal(lhs_id, rhs_id)) return lhs_id
 
         // a & !a  ->  !()
-        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return node_never()
-        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return node_never()
+        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return NODE_ID_NEVER
+        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return NODE_ID_NEVER
 
         return node_and(ctx, lhs_id, rhs_id)
     }
