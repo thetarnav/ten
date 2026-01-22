@@ -1461,7 +1461,9 @@ const world_add = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, scope_id: Nod
             dst.vars.set(src_scope_id, new Map(src_var_map))
         } else {
             for (let [ident, val] of src_var_map) {
-                dst_var_map.set(ident, val)
+                if (val != null || !dst_var_map.has(ident)) {
+                    dst_var_map.set(ident, val)
+                }
             }
         }
     }
@@ -1472,17 +1474,17 @@ export const world_is_empty = (ctx: Context, id: Node_Id): boolean => {
 
     return world.vars.size === 0
 }
-export const world_unwrap = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, node_id: Node_Id, scope_id: Node_Id, is_nested: boolean): Node_Id => {
+export const world_unwrap = (ctx: Context, dst_id: Node_Id, src_id: Node_Id, scope_id: Node_Id, is_nested: boolean, visited: Set<Node_Id>): Node_Id => {
 
     if (dst_id !== src_id) {
-        let node = node_by_id(ctx, node_id)
-        if (node != null && node.kind === NODE_WORLD && node_id === src_id) {
+        let node = node_by_id(ctx, src_id)
+        if (node != null && node.kind === NODE_WORLD) {
             world_add(ctx, dst_id, src_id, scope_id, is_nested)
-            return node.body
+            return node_reduce(ctx, node.body, dst_id, scope_id, is_nested, visited)
         }
     }
 
-    return node_id
+    return src_id
 }
 
 export const add_expr = (ctx: Context, expr: Expr, src: string): void => {
@@ -2029,14 +2031,14 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         let lhs = node_by_id(ctx, lhs_id)!
         let rhs = node_by_id(ctx, rhs_id)!
 
-        if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_id, rhs_id, scope_id, is_nested)
-        if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_id, lhs_id, scope_id, is_nested)
+        if (lhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, rhs_id, scope_id, is_nested, visited)
+        if (rhs.kind === NODE_NEVER) return world_unwrap(ctx, world_id, lhs_id, scope_id, is_nested, visited)
 
         if (lhs.kind === NODE_ANY) return node_any()
         if (rhs.kind === NODE_ANY) return node_any()
 
         // true | true  ->  true
-        if (nodes_equal(lhs_id, rhs_id)) return world_unwrap(ctx, world_id, lhs_id, lhs_id, scope_id, is_nested)
+        if (nodes_equal(lhs_id, rhs_id)) return world_unwrap(ctx, world_id, lhs_id, scope_id, is_nested, visited)
 
         // a | !a  ->  ()
         if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return node_any()
