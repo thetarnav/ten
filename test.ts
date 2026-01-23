@@ -912,9 +912,9 @@ test.describe('reducer', {concurrency: true}, () => {
 
     // Variables with boolean OR operations
     test_reducer(`a + false`,
-        `(true, a = true) | (false, a = false), a = a`)
+        `(true, a = true) | (false, a = false)`)
     test_reducer(`a + true`,
-        `(true, a = true) | (true, a = false), a = a`)
+        `(true, a = true) | (true, a = false)`)
     test_reducer(`{a + false}`,
         `{true, a = true} | {false, a = false}`)
     test_reducer(`{a + true}`,
@@ -922,9 +922,9 @@ test.describe('reducer', {concurrency: true}, () => {
 
     // Variables with boolean AND operations
     test_reducer(`a * true`,
-        `(true, a = true) | (false, a = false), a = a`)
+        `(true, a = true) | (false, a = false)`)
     test_reducer(`a * false`,
-        `(false, a = true) | (false, a = false), a = a`)
+        `(false, a = true) | (false, a = false)`)
     test_reducer(`{a * true}`,
         `{true, a = true} | {false, a = false}`)
     test_reducer(`{a * false}`,
@@ -932,7 +932,7 @@ test.describe('reducer', {concurrency: true}, () => {
 
     // Variables with boolean XOR operations
     test_reducer(`a ^ false`,
-        `(true, a = true) | (false, a = false), a = a`)
+        `(true, a = true) | (false, a = false)`)
     test_reducer(`{a ^ false}`,
         `{true, a = true} | {false, a = false}`)
 
@@ -951,6 +951,8 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer('a = true, a = false | (b = false)',
         '!()')
 
+    test_reducer(`foo = {a = true | false}`,
+        `(foo = {a = true}) | (foo = {a = false}), foo = foo`)
     test_reducer(`foo = {a = true | false, a = false}`,
         `foo = {a = false}`)
     test_reducer(`foo = {a = true | false, a = true}`,
