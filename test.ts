@@ -858,8 +858,7 @@ test.describe('reducer', {concurrency: true}, () => {
         test_reducer(`${bl}foo = {a = true, b}${br}`,
             `${bl}foo = {a = true, b, b = b}${br}`)
 
-        test_reducer(`${bl}foo = {a = true}, b = foo.a${br}`,
-            `${bl}foo = {a = true}, true = b${br}`)
+        // Scope selectors
         test_reducer(`${bl}foo = {}, foo.a = true${br}`,
             `!()`)
         test_reducer(`${bl}foo = {}, foo.a = false${br}`,
@@ -868,6 +867,20 @@ test.describe('reducer', {concurrency: true}, () => {
             `!()`)
         test_reducer(`${bl}foo = {}, foo.a = !()${br}`,
             `${bl}foo = {}${br}`)
+        test_reducer(`${bl}foo.a = true, foo = {}${br}`,
+            `!()`)
+        test_reducer(`${bl}foo.a = false, foo = {}${br}`,
+            `!()`)
+        test_reducer(`${bl}foo.a = (), foo = {}${br}`,
+            `!()`)
+        test_reducer(`${bl}foo.a = !(), foo = {}${br}`,
+            `${bl}foo = {}${br}`)
+
+        test_reducer(`${bl}foo = {a = true}, b = foo.a${br}`,
+            `${bl}foo = {a = true}, true = b${br}`)
+        test_reducer(`${bl}b = foo.a, foo = {a = true}${br}`,
+            `${bl}foo = {a = true}, b = true${br}`)
+
         test_reducer(`${bl}foo = {a = true}, bar = {b = true}, bar.b = foo.a${br}`,
             `${bl}foo = {a = true}, bar = {true = b}${br}`)
         test_reducer(`${bl}foo = {a = true}, bar = {b = true}, bar.b != foo.a${br}`,

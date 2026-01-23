@@ -1758,6 +1758,51 @@ const eq_assign = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id: Nod
     return null
 }
 
+const node_rescope_vars = (
+    ctx:      Context,
+    node_id:  Node_Id,
+    scope_id: Node_Id,
+    cache:    Map<Node_Id, Node_Id> = new Map(),
+): Node_Id => {
+    if (node_id === NODE_ID_ANY || node_id === NODE_ID_NEVER) return node_id
+
+    let cached = cache.get(node_id)
+    if (cached != null) return cached
+
+    let node = node_by_id(ctx, node_id)
+    if (node == null) return node_id
+
+    let res = node_id
+
+    switch (node.kind) {
+    case NODE_VAR:
+        res = node_selector(ctx, scope_id, node.id)
+        break
+    case NODE_NEG:
+        res = node_neg(ctx, node_rescope_vars(ctx, node.rhs, scope_id, cache))
+        break
+    case NODE_AND:
+    case NODE_OR:
+    case NODE_EQ:
+        res = node_or(ctx,
+            node_rescope_vars(ctx, node.lhs, scope_id, cache),
+            node_rescope_vars(ctx, node.rhs, scope_id, cache))
+        break
+    case NODE_SELECTOR:
+        res = node_selector(ctx,
+            node_rescope_vars(ctx, node.lhs, scope_id, cache),
+            node.rhs)
+        break
+    case NODE_SCOPE:
+    case NODE_WORLD:
+    case NODE_BOOL:
+        return node_id
+    }
+
+    cache.set(node_id, res)
+    return res
+}
+
 export const reduce = (ctx: Context) => {
     ctx.root = node_reduce(ctx, ctx.root, ctx.root_world, ctx.root_scope, NODE_ID_NONE, new Set)
 
@@ -1827,13 +1872,16 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
                 node_selector(ctx, lhs.rhs, node.rhs),
             ), world_id, scope_id, outer_world_id, visited)
         case NODE_SCOPE: {
-            let val_id = var_read(ctx, world_id, lhs_id, node.rhs, world_id)
-            if (val_id == null) {
-                // TODO: handle case where scope wasn't processed yet — doesn't have vars
+            if (!var_exists(ctx, world_id, lhs_id, node.rhs, world_id)) {
                 return NODE_ID_NEVER // Var not in scope
             }
-            // TODO: correct vars in the result to point to lhs_id
-            return node_reduce(ctx, val_id, world_id, lhs_id, world_id, visited)
+            let res = var_read(ctx, world_id, lhs_id, node.rhs, world_id)
+            if (res == null) {
+                return node_selector(ctx, lhs_id, node.rhs)
+            }
+            res = node_reduce(ctx, res, world_id, lhs_id, world_id, visited)
+            res = node_rescope_vars(ctx, res, lhs_id)
+            return res
         }
         case NODE_SELECTOR:
         case NODE_VAR:
