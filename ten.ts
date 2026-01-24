@@ -1996,31 +1996,6 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         }
     }
 
-    case NODE_OR: {
-        // For OR/disjunction operators, each side needs its own variable scope
-        // since they represent alternative realities
-        let lhs_world = world_fork(ctx, world_id, node.lhs)
-        let rhs_world = world_fork(ctx, world_id, node.rhs)
-
-        let lhs_id = node_reduce(ctx, lhs_world, lhs_world, scope_id, outer_world_id, visited)
-        let rhs_id = node_reduce(ctx, rhs_world, rhs_world, scope_id, outer_world_id, visited)
-
-        if (lhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, rhs_id, scope_id, outer_world_id, visited)
-        if (rhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, lhs_id, scope_id, outer_world_id, visited)
-
-        if (lhs_id === NODE_ID_ANY) return NODE_ID_ANY
-        if (rhs_id === NODE_ID_ANY) return NODE_ID_ANY
-
-        // true | true  ->  true
-        if (nodes_equal(lhs_id, rhs_id)) return world_unwrap(ctx, world_id, lhs_id, scope_id, outer_world_id, visited)
-
-        // a | !a  ->  ()
-        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return NODE_ID_ANY
-        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return NODE_ID_ANY
-
-        return node_or(ctx, lhs_id, rhs_id)
-    }
-
     case NODE_EQ: {
         let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, outer_world_id, visited)
         let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, outer_world_id, visited)
@@ -2054,12 +2029,47 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
             ?? NODE_ID_NEVER
     }
 
+    case NODE_OR: {
+        // For OR/disjunction operators, each side needs its own variable scope
+        // since they represent alternative realities
+        let lhs_world = world_fork(ctx, world_id, node.lhs)
+        let rhs_world = world_fork(ctx, world_id, node.rhs)
+
+        let lhs_id = node_reduce(ctx, lhs_world, lhs_world, scope_id, outer_world_id, visited)
+        let rhs_id = node_reduce(ctx, rhs_world, rhs_world, scope_id, outer_world_id, visited)
+
+        if (lhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, rhs_id, scope_id, outer_world_id, visited)
+        if (rhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, lhs_id, scope_id, outer_world_id, visited)
+
+        if (lhs_id === NODE_ID_ANY) return NODE_ID_ANY
+        if (rhs_id === NODE_ID_ANY) return NODE_ID_ANY
+
+        // true | true  ->  true
+        if (nodes_equal(lhs_id, rhs_id)) return world_unwrap(ctx, world_id, lhs_id, scope_id, outer_world_id, visited)
+
+        // a | !a  ->  ()
+        if (nodes_equal(lhs_id, node_neg(ctx, rhs_id))) return NODE_ID_ANY
+        if (nodes_equal(rhs_id, node_neg(ctx, lhs_id))) return NODE_ID_ANY
+
+        return node_or(ctx, lhs_id, rhs_id)
+    }
+
     case NODE_AND: {
         let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, outer_world_id, visited)
         let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, outer_world_id, visited)
 
         let lhs = node_by_id(ctx, lhs_id)!
         let rhs = node_by_id(ctx, rhs_id)!
+
+        // After evaluating rhs (which may set new constraints), re-reduce lhs from the
+        // original node to pick up those constraints
+        lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, outer_world_id, visited)
+        lhs = node_by_id(ctx, lhs_id)!
+
+        if (lhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
+        if (rhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
+        if (lhs_id === NODE_ID_ANY) return rhs_id
+        if (rhs_id === NODE_ID_ANY) return lhs_id
 
         // `lhs & (rhs.lhs | rhs.rhs)`  ->  `(lhs & rhs.lhs) | (lhs & rhs.rhs)`
         if (lhs.kind === NODE_OR) {
@@ -2074,16 +2084,6 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
                 node_and(ctx, lhs_id, rhs.rhs),
             ), world_id, scope_id, outer_world_id, visited)
         }
-
-        // After evaluating rhs (which may set new constraints), re-reduce lhs from the
-        // original node to pick up those constraints
-        lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, outer_world_id, visited)
-        lhs = node_by_id(ctx, lhs_id)!
-
-        if (lhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
-        if (rhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
-        if (lhs_id === NODE_ID_ANY) return rhs_id
-        if (rhs_id === NODE_ID_ANY) return lhs_id
 
         // true & false  ->  !()
         if (lhs.kind === NODE_BOOL && rhs.kind === NODE_BOOL && lhs.value !== rhs.value) {
