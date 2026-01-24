@@ -1728,31 +1728,21 @@ const eq_assign = (ctx: Context, lhs_id: Node_Id, rhs_id: Node_Id, world_id: Nod
 
     let lhs = node_by_id(ctx, lhs_id)!
 
-    if (lhs.kind === NODE_SELECTOR) {
+    switch (lhs.kind) {
+    case NODE_SELECTOR:
         return node_eq(ctx, lhs_id, rhs_id)
-    }
-
-    if (lhs.kind === NODE_VAR) {
+    case NODE_VAR: {
         let val_id = var_read(ctx, world_id, scope_id, lhs.id, outer_world_id)
-        if (val_id != null) {
-            // return node_any_or_never(ctx, node_equals(world, rhs_id, val_id))
-            return node_eq(ctx, lhs_id, rhs_id)
+        if (val_id == null) {
+            // Define variable assignment
+            let local_scope_id = outer_world_id === world_id ? scope_id : NODE_ID_NONE
+            let world = world_get_assert(ctx, world_id)
+            let vars = world.vars.get(local_scope_id)
+            if (vars == null) world.vars.set(local_scope_id, vars = new Map)
+            vars.set(lhs.id, rhs_id)
+            return NODE_ID_ANY
         }
-
-        let local_scope_id = NODE_ID_NONE
-        if (outer_world_id === world_id) {
-            local_scope_id = scope_id
-        }
-
-        let world = world_get_assert(ctx, world_id)
-        let vars = world.vars.get(local_scope_id)
-        if (vars == null) {
-            world.vars.set(local_scope_id, vars = new Map())
-        }
-
-        vars.set(lhs.id, rhs_id)
-
-        return NODE_ID_ANY
+    }
     }
 
     return null
