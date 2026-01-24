@@ -1952,9 +1952,11 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
                 vars.set(ident, val_id)
 
                 // Check for contradictions with parent world
-                let parent_val_id = var_read(ctx, world_id, scope_id, ident, outer_world_id)
-                if (parent_val_id != null && !nodes_equal(val_id, parent_val_id)) {
-                    return NODE_ID_NEVER
+                if (world.parent != null) {
+                    let parent_val_id = var_read(ctx, world.parent, scope_id, ident, outer_world_id)
+                    if (parent_val_id != null && !nodes_equal(val_id, parent_val_id)) {
+                        return NODE_ID_NEVER
+                    }
                 }
             } else {
                 val_id = node_var(ctx, ident)
