@@ -2038,9 +2038,11 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         let lhs_id = node_reduce(ctx, lhs_world, lhs_world, scope_id, outer_world_id, visited)
         let rhs_id = node_reduce(ctx, rhs_world, rhs_world, scope_id, outer_world_id, visited)
 
+        // x | !()  ->  x
         if (lhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, rhs_id, scope_id, outer_world_id, visited)
         if (rhs_id === NODE_ID_NEVER) return world_unwrap(ctx, world_id, lhs_id, scope_id, outer_world_id, visited)
 
+        // x | ()  ->  ()
         if (lhs_id === NODE_ID_ANY) return NODE_ID_ANY
         if (rhs_id === NODE_ID_ANY) return NODE_ID_ANY
 
@@ -2058,18 +2060,20 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
         let lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, outer_world_id, visited)
         let rhs_id = node_reduce(ctx, node.rhs, world_id, scope_id, outer_world_id, visited)
 
-        let lhs = node_by_id(ctx, lhs_id)!
-        let rhs = node_by_id(ctx, rhs_id)!
-
         // After evaluating rhs (which may set new constraints), re-reduce lhs from the
         // original node to pick up those constraints
         lhs_id = node_reduce(ctx, node.lhs, world_id, scope_id, outer_world_id, visited)
-        lhs = node_by_id(ctx, lhs_id)!
 
+        // x & !()  ->  !()
         if (lhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
         if (rhs_id === NODE_ID_NEVER) return NODE_ID_NEVER
+
+        // x & ()  ->  x
         if (lhs_id === NODE_ID_ANY) return rhs_id
         if (rhs_id === NODE_ID_ANY) return lhs_id
+
+        let lhs = node_by_id(ctx, lhs_id)!
+        let rhs = node_by_id(ctx, rhs_id)!
 
         // `lhs & (rhs.lhs | rhs.rhs)`  ->  `(lhs & rhs.lhs) | (lhs & rhs.rhs)`
         if (lhs.kind === NODE_OR) {
