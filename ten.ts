@@ -1955,6 +1955,7 @@ const node_reduce = (ctx: Context, node_id: Node_Id, world_id: Node_Id, scope_id
                 if (world.parent != null) {
                     let parent_val_id = var_read(ctx, world.parent, scope_id, ident, outer_world_id)
                     if (parent_val_id != null) {
+                        parent_val_id = node_reduce(ctx, parent_val_id, world.parent, scope_id, outer_world_id, new Set)
                         let parent_val = node_by_id(ctx, parent_val_id)
                         let val = node_by_id(ctx, val_id)
                         let parent_is_concrete = parent_val != null &&
