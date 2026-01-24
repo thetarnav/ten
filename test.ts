@@ -823,8 +823,10 @@ test.describe('reducer', {concurrency: true}, () => {
             `${bl}a = true${br}`)
 
         // Complex operations with variables
+        test_reducer(`${bl}(a = false + b) & (c = b) & (c = true)${br}`,
+            `${bl}b = true, true = c, a = true${br}`)
         test_reducer(`${bl}(a = false + b) & (c = b) & (c = true) & (a = true)${br}`,
-            `${bl}a = true, b = true, c = true${br}`)
+            `${bl}b = true, true = c, a = true${br}`)
         test_reducer(`${bl}(a = false + b) & (c = b) & (c = true) & (a = false)${br}`,
             `!()`)
 
