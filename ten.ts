@@ -2306,7 +2306,6 @@ const _debug_display_tree = (
     node_id:    Node_Id,
     prefix:     string,
     is_last:    boolean,
-    scope_id:   Node_Id,
     lines:      string[],
     displayed:  Set<Node_Id>,
     referenced: Set<Node_Id>,
@@ -2356,7 +2355,6 @@ const _debug_display_tree = (
             children[i],
             child_prefix,
             i === children.length - 1,
-            node.kind === NODE_SCOPE ? node_id : scope_id,
             lines,
             displayed,
             referenced,
@@ -2366,12 +2364,12 @@ const _debug_display_tree = (
     }
 }
 
-export const debug_display = (ctx: Context, node_id: Node_Id, scope_id: Node_Id = ctx.root_scope): string => {
+export const debug_display = (ctx: Context, node_id: Node_Id): string => {
     let lines: string[] = []
     let displayed: Set<Node_Id> = new Set()
     let referenced: Set<Node_Id> = new Set()
 
-    _debug_display_tree(ctx, node_id, '', true, scope_id, lines, displayed, referenced, false, true)
+    _debug_display_tree(ctx, node_id, '', true, lines, displayed, referenced, false, true)
 
     let has_extra = false
     for (let ref_id of referenced) {
@@ -2385,7 +2383,7 @@ export const debug_display = (ctx: Context, node_id: Node_Id, scope_id: Node_Id 
     }
     for (let ref_id of referenced) {
         if (displayed.has(ref_id)) continue
-        _debug_display_tree(ctx, ref_id, '', true, scope_id, lines, displayed, referenced, true, true)
+        _debug_display_tree(ctx, ref_id, '', true, lines, displayed, referenced, true, true)
     }
 
     return lines.join('\n')
