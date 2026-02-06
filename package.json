@@ -4,8 +4,8 @@
     "version": "0.0.0",
     "private": true,
     "scripts": {
-        "test": "node --test --test-reporter=dot --test-timeout=3000 test.ts",
-        "test:watch": "node --test --test-reporter=dot --test-timeout=3000 --watch test.ts",
+        "test": "node --test --test-reporter=dot --test-timeout=3000",
+        "test:watch": "node --test --test-reporter=dot --test-timeout=3000 --watch",
         "typecheck": "tsc --noEmit"
     },
     "devDependencies": {
