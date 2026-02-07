@@ -77,33 +77,35 @@ function test_reducer(input: string, expected: string) {
 
 test.describe('tokenizer', {concurrency: true}, () => {
     test_tokenizer(`Counter = (\ncount`,
-        `Ident(Counter) Eq(=) Paren_L(()\nIdent(count)`)
+        `Ident(Counter) Bind(=) Paren_L(()\nIdent(count)`)
     test_tokenizer(`\tcount ?= 12\n`,
-        `Ident(count) Question(?) Eq(=) Int(12)\n`)
+        `Ident(count) Question(?) Bind(=) Int(12)\n`)
     test_tokenizer(`\tx2 -= count * 2`,
         `Ident(x2) Sub_Eq(-=) Ident(count) Mul(*) Int(2)`)
     test_tokenizer(`inc = @(num+=12)`,
-        `Ident(inc) Eq(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`)
+        `Ident(inc) Bind(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`)
     test_tokenizer(`foo{a + .num += 12}`,
         `Ident(foo) Brace_L({) Ident(a) Add(+) Field(.num) Add_Eq(+=) Int(12) Brace_R(})`)
     test_tokenizer(`_render = Btn("Hello")`,
-        `Ident(_render) Eq(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`)
+        `Ident(_render) Bind(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`)
     test_tokenizer(`0.123 = .123 != y = 12.s`,
-        `Float(0.123) Eq(=) Float(.123) Not_Eq(!=) Ident(y) Eq(=) Invalid(12) Ident(s)`)
+        `Float(0.123) Bind(=) Float(.123) Not_Eq(!=) Ident(y) Bind(=) Invalid(12) Ident(s)`)
     test_tokenizer(`\t  text = "Count: " + count + "!\\n"`,
-        `Ident(text) Eq(=) String("Count: ") Add(+) Ident(count) Add(+) String("!\\n")`)
+        `Ident(text) Bind(=) String("Count: ") Add(+) Ident(count) Add(+) String("!\\n")`)
     test_tokenizer(`\t\tonclick = inc`,
-        `Ident(onclick) Eq(=) Ident(inc)`)
+        `Ident(onclick) Bind(=) Ident(inc)`)
     test_tokenizer(`0.0.0`,
         `Float(0.0) Float(.0)`)
     test_tokenizer(`()`,
         `Paren_L(() Paren_R())`)
     test_tokenizer(`a >b >= c = d < e<= !f`,
-        `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Eq(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Neg(!) Ident(f)`)
+        `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Bind(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Neg(!) Ident(f)`)
     test_tokenizer(`true false`,
         `True(true) False(false)`)
     test_tokenizer(`x ^ true, y = false`,
-        `Ident(x) Pow(^) True(true) Comma(,) Ident(y) Eq(=) False(false)`)
+        `Ident(x) Pow(^) True(true) Comma(,) Ident(y) Bind(=) False(false)`)
+    test_tokenizer(`x == y ? a : b`,
+        `Ident(x) Eq(==) Ident(y) Question(?) Ident(a) Colon(:) Ident(b)`)
     test_tokenizer(`trueish falsey`,
         `Ident(trueish) Ident(falsey)`)
 })
@@ -201,6 +203,18 @@ test.describe('parser', {concurrency: true}, () => {
         `  Selector: Field(.field)\n`+
         `    Token: Ident(obj)\n`+
         `  Token: Int(12)`)
+    test_parser('(foo | bar).baz',
+        `Selector: Field(.baz)\n`+
+        `  Paren: (...)\n`+
+        `    Binary: Or(|)\n`+
+        `      Token: Ident(foo)\n`+
+        `      Token: Ident(bar)`)
+    test_parser('{a = 123}.a',
+        `Selector: Field(.a)\n`+
+        `  Paren: {...}\n`+
+        `    Binary: Bind(=)\n`+
+        `      Token: Ident(a)\n`+
+        `      Token: Int(123)`)
 
     // Complex expressions
     // (a + (b * (c ^ d))) - (e / f)
@@ -325,7 +339,7 @@ test.describe('parser', {concurrency: true}, () => {
 
     // Assignment operations
     test_parser('x = !123',
-        `Binary: Eq(=)\n`+
+        `Binary: Bind(=)\n`+
         `  Token: Ident(x)\n`+
         `  Unary: Neg(!)\n`+
         `    Token: Int(123)`)
@@ -334,24 +348,43 @@ test.describe('parser', {concurrency: true}, () => {
         `  Token: Int(123)\n`+
         `  Token: Ident(x)`)
     test_parser('x = y = z',
-        `Binary: Eq(=)\n`+
-        `  Binary: Eq(=)\n`+
+        `Binary: Bind(=)\n`+
+        `  Binary: Bind(=)\n`+
         `    Token: Ident(x)\n`+
         `    Token: Ident(y)\n`+
         `  Token: Ident(z)`)
     test_parser('x = y = z = w',
-        `Binary: Eq(=)\n`+
-        `  Binary: Eq(=)\n`+
-        `    Binary: Eq(=)\n`+
+        `Binary: Bind(=)\n`+
+        `  Binary: Bind(=)\n`+
+        `    Binary: Bind(=)\n`+
         `      Token: Ident(x)\n`+
         `      Token: Ident(y)\n`+
         `    Token: Ident(z)\n`+
         `  Token: Ident(w)`)
+    test_parser('x == y',
+        `Binary: Eq(==)\n`+
+        `  Token: Ident(x)\n`+
+        `  Token: Ident(y)`)
+
+    // Ternary operator
+    test_parser('foo ? bar : baz',
+        `Ternary: Question(?) Colon(:)\n`+
+        `  Token: Ident(foo)\n`+
+        `  Token: Ident(bar)\n`+
+        `  Token: Ident(baz)`)
+    test_parser('a ? b : c ? d : e',
+        `Ternary: Question(?) Colon(:)\n`+
+        `  Token: Ident(a)\n`+
+        `  Token: Ident(b)\n`+
+        `  Ternary: Question(?) Colon(:)\n`+
+        `    Token: Ident(c)\n`+
+        `    Token: Ident(d)\n`+
+        `    Token: Ident(e)`)
 
     // Many expressions
     test_parser('foo <= bar = baz\nx > 123',
         `Binary: EOL\n`+
-        `  Binary: Eq(=)\n`+
+        `  Binary: Bind(=)\n`+
         `    Binary: Less_Eq(<=)\n`+
         `      Token: Ident(foo)\n`+
         `      Token: Ident(bar)\n`+

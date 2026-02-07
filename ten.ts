@@ -19,39 +19,41 @@ export const
     TOKEN_EOL        =  2 as const, // end of line `\n`
     /* Operators */
     TOKEN_QUESTION   =  3 as const, // `?`
-    TOKEN_GREATER    =  4 as const, // `>`
-    TOKEN_LESS       =  5 as const, // `<`
-    TOKEN_GREATER_EQ =  6 as const, // `>=`
-    TOKEN_LESS_EQ    =  7 as const, // `<=`
-    TOKEN_NEG        =  8 as const, // `!`
-    TOKEN_NOT_EQ     =  9 as const, // `!=`
-    TOKEN_OR         = 10 as const, // `|`
-    TOKEN_AND        = 11 as const, // `&`
-    TOKEN_EQ         = 12 as const, // `=`
-    TOKEN_ADD        = 13 as const, // `+`
-    TOKEN_SUB        = 14 as const, // `-`
-    TOKEN_ADD_EQ     = 15 as const, // `+=`
-    TOKEN_SUB_EQ     = 16 as const, // `-=`
-    TOKEN_MUL        = 17 as const, // `*`
-    TOKEN_DIV        = 18 as const, // `/`
-    TOKEN_POW        = 19 as const, // `^`
-    TOKEN_AT         = 21 as const, // `@`
-    TOKEN_COMMA      = 22 as const, // `,`
+    TOKEN_COLON      =  4 as const, // `:`
+    TOKEN_GREATER    =  5 as const, // `>`
+    TOKEN_LESS       =  6 as const, // `<`
+    TOKEN_GREATER_EQ =  7 as const, // `>=`
+    TOKEN_LESS_EQ    =  8 as const, // `<=`
+    TOKEN_NEG        =  9 as const, // `!`
+    TOKEN_NOT_EQ     = 10 as const, // `!=`
+    TOKEN_OR         = 11 as const, // `|`
+    TOKEN_AND        = 12 as const, // `&`
+    TOKEN_BIND       = 13 as const, // `=`
+    TOKEN_EQ         = 14 as const, // `==`
+    TOKEN_ADD        = 15 as const, // `+`
+    TOKEN_SUB        = 16 as const, // `-`
+    TOKEN_ADD_EQ     = 17 as const, // `+=`
+    TOKEN_SUB_EQ     = 18 as const, // `-=`
+    TOKEN_MUL        = 19 as const, // `*`
+    TOKEN_DIV        = 20 as const, // `/`
+    TOKEN_POW        = 21 as const, // `^`
+    TOKEN_AT         = 22 as const, // `@`
+    TOKEN_COMMA      = 23 as const, // `,`
     /* Punctuation */
-    TOKEN_QUOTE      = 23 as const, // `"`
-    TOKEN_PAREN_L    = 24 as const, // `(`
-    TOKEN_PAREN_R    = 25 as const, // `)`
-    TOKEN_BRACE_L    = 26 as const, // `{`
-    TOKEN_BRACE_R    = 27 as const, // `}`
+    TOKEN_QUOTE      = 24 as const, // `"`
+    TOKEN_PAREN_L    = 25 as const, // `(`
+    TOKEN_PAREN_R    = 26 as const, // `)`
+    TOKEN_BRACE_L    = 27 as const, // `{`
+    TOKEN_BRACE_R    = 28 as const, // `}`
     /* Keywords */
-    TOKEN_TRUE       = 28 as const, // `true`
-    TOKEN_FALSE      = 29 as const, // `false`
+    TOKEN_TRUE       = 29 as const, // `true`
+    TOKEN_FALSE      = 30 as const, // `false`
     /* Literals */
-    TOKEN_STRING     = 30 as const, // string literal `"foo"`
-    TOKEN_IDENT      = 31 as const, // identifier `foo`
-    TOKEN_FIELD      = 32 as const, // field selector `.foo`
-    TOKEN_INT        = 33 as const, // integer literal `123`
-    TOKEN_FLOAT      = 34 as const, // floating-point literal `123.456`
+    TOKEN_STRING     = 31 as const, // string literal `"foo"`
+    TOKEN_IDENT      = 32 as const, // identifier `foo`
+    TOKEN_FIELD      = 33 as const, // field selector `.foo`
+    TOKEN_INT        = 34 as const, // integer literal `123`
+    TOKEN_FLOAT      = 35 as const, // floating-point literal `123.456`
     TOKEN_ENUM_START = TOKEN_INVALID,
     TOKEN_ENUM_END   = TOKEN_FLOAT,
     TOKEN_ENUM_RANGE = TOKEN_ENUM_END - TOKEN_ENUM_START + 1
@@ -61,6 +63,7 @@ export const Token_Kind = {
     EOF:        TOKEN_EOF,
     EOL:        TOKEN_EOL,
     Question:   TOKEN_QUESTION,
+    Colon:      TOKEN_COLON,
     Greater:    TOKEN_GREATER,
     Less:       TOKEN_LESS,
     Greater_Eq: TOKEN_GREATER_EQ,
@@ -69,6 +72,7 @@ export const Token_Kind = {
     Not_Eq:     TOKEN_NOT_EQ,
     Or:         TOKEN_OR,
     And:        TOKEN_AND,
+    Bind:       TOKEN_BIND,
     Eq:         TOKEN_EQ,
     Add:        TOKEN_ADD,
     Sub:        TOKEN_SUB,
@@ -101,6 +105,7 @@ export const token_kind_string = (kind: Token_Kind): string => {
     case TOKEN_EOF:        return "EOF"
     case TOKEN_EOL:        return "EOL"
     case TOKEN_QUESTION:   return "Question"
+    case TOKEN_COLON:      return "Colon"
     case TOKEN_GREATER:    return "Greater"
     case TOKEN_LESS:       return "Less"
     case TOKEN_GREATER_EQ: return "Greater_Eq"
@@ -109,6 +114,7 @@ export const token_kind_string = (kind: Token_Kind): string => {
     case TOKEN_NOT_EQ:     return "Not_Eq"
     case TOKEN_OR:         return "Or"
     case TOKEN_AND:        return "And"
+    case TOKEN_BIND:       return "Bind"
     case TOKEN_EQ:         return "Eq"
     case TOKEN_ADD:        return "Add"
     case TOKEN_SUB:        return "Sub"
@@ -246,7 +252,12 @@ export const token_next = (t: Tokenizer): Token => {
     case 123/* '{' */: return _token_make_move(t, TOKEN_BRACE_L)
     case 125/* '}' */: return _token_make_move(t, TOKEN_BRACE_R)
     // Operators
-    case 61 /* '=' */: return _token_make_move(t, TOKEN_EQ)
+    case 61 /* '=' */: {
+        if (next_char_code(t) === 61 /* '=' */) {
+            return _token_make_move(t, TOKEN_EQ)
+        }
+        return _token_make_move_back(t, TOKEN_BIND)
+    }
     case 43 /* '+' */: {
         if (next_char_code(t) === 61 /* '=' */) {
             return _token_make_move(t, TOKEN_ADD_EQ)
@@ -272,6 +283,7 @@ export const token_next = (t: Tokenizer): Token => {
     case 38 /* '&' */: return _token_make_move(t, TOKEN_AND)
     case 124/* '|' */: return _token_make_move(t, TOKEN_OR)
     case 63 /* '?' */: return _token_make_move(t, TOKEN_QUESTION)
+    case 58 /* ':' */: return _token_make_move(t, TOKEN_COLON)
     case 64 /* '@' */: return _token_make_move(t, TOKEN_AT)
     case 62 /* '>' */: {
         if (next_char_code(t) === 61 /* '=' */) {
@@ -384,10 +396,11 @@ export const token_len = (src: string, tok: Token): number => {
 
     case TOKEN_EOL:
     case TOKEN_QUESTION:
+    case TOKEN_COLON:
     case TOKEN_NEG:
     case TOKEN_OR:
     case TOKEN_AND:
-    case TOKEN_EQ:
+    case TOKEN_BIND:
     case TOKEN_ADD:
     case TOKEN_SUB:
     case TOKEN_MUL:
@@ -408,6 +421,7 @@ export const token_len = (src: string, tok: Token): number => {
     case TOKEN_LESS_EQ:
     case TOKEN_ADD_EQ:
     case TOKEN_SUB_EQ:
+    case TOKEN_EQ:
     case TOKEN_NOT_EQ:
         return 2
 
@@ -522,7 +536,8 @@ export const
     EXPR_BINARY   = 103,
     EXPR_SELECTOR = 104,
     EXPR_PAREN    = 105,
-    EXPR_INVALID  = 106
+    EXPR_TERNARY  = 106,
+    EXPR_INVALID  = 107
 
 export const Expr_Kind = {
     Token:    EXPR_TOKEN,
@@ -530,6 +545,7 @@ export const Expr_Kind = {
     Binary:   EXPR_BINARY,
     Selector: EXPR_SELECTOR,
     Paren:    EXPR_PAREN,
+    Ternary:  EXPR_TERNARY,
     Invalid:  EXPR_INVALID,
 } as const
 
@@ -542,6 +558,7 @@ export const expr_kind_string = (kind: Expr_Kind): string => {
     case EXPR_BINARY:   return "Binary"
     case EXPR_SELECTOR: return "Selector"
     case EXPR_PAREN:    return "Paren"
+    case EXPR_TERNARY:  return "Ternary"
     case EXPR_INVALID:  return "Invalid"
     default:
         kind satisfies never // exhaustive check
@@ -555,32 +572,29 @@ export type Expr =
     | Expr_Binary
     | Expr_Paren
     | Expr_Selector
+    | Expr_Ternary
     | Expr_Invalid
 
 export type Expr_Token = {
     kind: typeof EXPR_TOKEN
     tok:  Token
- }
-
+}
 export type Expr_Unary = {
     kind: typeof EXPR_UNARY
     op:   Token // '-', '!', etc.
     rhs:  Expr
 }
-
 export type Expr_Binary = {
     kind: typeof EXPR_BINARY
     op:   Token // '+', '-', '*', '/', etc.
     lhs:  Expr
     rhs:  Expr
 }
-
 export type Expr_Selector = {
     kind: typeof EXPR_SELECTOR
     lhs:  Expr  // Ident(foo), At(@), Paren(...), etc.
     rhs:  Token // Field(.foo)
 }
-
 export type Expr_Paren = {
     kind:  typeof EXPR_PAREN
     open:  Token        // '(' or '{'
@@ -588,7 +602,14 @@ export type Expr_Paren = {
     type:  Token | null // Ident(foo) or Field(.foo) or At(@) or null
     body:  Expr  | null
 }
-
+export type Expr_Ternary = {
+    kind: typeof EXPR_TERNARY
+    op_q: Token
+    op_c: Token
+    cond: Expr
+    lhs:  Expr
+    rhs:  Expr
+}
 export type Expr_Invalid = {
     kind:   typeof EXPR_INVALID
     tok:    Token
@@ -612,6 +633,9 @@ export const expr_paren = (open: Token, body: Expr | null, close: Token): Expr_P
 }
 export const expr_paren_typed = (open: Token, type: Token, body: Expr | null, close: Token): Expr_Paren => {
     return {kind: EXPR_PAREN, open, close, type, body}
+}
+export const expr_ternary = (op_q: Token, op_c: Token, cond: Expr, lhs: Expr, rhs: Expr): Expr_Ternary => {
+    return {kind: EXPR_TERNARY, op_q, op_c, cond, lhs, rhs}
 }
 export const expr_invalid = (tok: Token, reason = 'Unexpected token'): Expr_Invalid => {
     return {kind: EXPR_INVALID, tok, reason}
@@ -637,6 +661,9 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
 
     case EXPR_SELECTOR:
         return `${ind}Selector: ${token_display(src, expr.rhs)}\n${expr_display(src, expr.lhs, indent, depth+1)}`
+
+    case EXPR_TERNARY:
+        return `${ind}Ternary: ${token_display(src, expr.op_q)} ${token_display(src, expr.op_c)}\n${expr_display(src, expr.cond, indent, depth+1)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
     case EXPR_PAREN:
         let open_close_str =
@@ -667,6 +694,7 @@ export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
     case TOKEN_EOL:        return 1
     case TOKEN_COMMA:      return 1
+    case TOKEN_BIND:       return 2
     case TOKEN_EQ:         return 2
     case TOKEN_NOT_EQ:     return 2
     case TOKEN_ADD_EQ:     return 2
@@ -753,9 +781,33 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
     let lhs = _parse_expr_atom(p)
 
     for (;;) {
+
+        // Field selector (foo.bar)
         if (p.token.kind === TOKEN_FIELD) {
             lhs = expr_selector(lhs, p.token)
             parser_next_token(p)
+            continue
+        }
+
+        // Ternary operator (a ? b : c)
+        if (p.token.kind === TOKEN_QUESTION) {
+            let lbp = 2
+            if (lbp < min_bp) break
+
+            let op_q = p.token
+            parser_next_token(p)
+
+            let middle = _parse_expr(p)
+            let op_c = p.token
+
+            if (op_c.kind !== TOKEN_COLON) {
+                return expr_invalid_push(p, op_c, 'Expected colon in ternary expression')
+            }
+
+            parser_next_token(p)
+            let rhs = _parse_expr(p, lbp)
+
+            lhs = expr_ternary(op_q, op_c, lhs, middle, rhs)
             continue
         }
 
@@ -1508,6 +1560,7 @@ const _do_bool_token_op = (op: Token_Kind, lhs: boolean, rhs: boolean): boolean 
     case TOKEN_AND:    return lhs && rhs
     case TOKEN_COMMA:  return lhs && rhs
     case TOKEN_OR:     return lhs || rhs
+    case TOKEN_BIND:   return lhs === rhs
     case TOKEN_EQ:     return lhs === rhs
     case TOKEN_NOT_EQ: return lhs !== rhs
     case TOKEN_ADD:    return lhs || rhs
@@ -1574,6 +1627,7 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
         case TOKEN_AND:
         case TOKEN_COMMA:
         case TOKEN_OR:
+        case TOKEN_BIND:
         case TOKEN_EQ:
         case TOKEN_NOT_EQ: {
             let lhs = node_from_expr(ctx, expr.lhs, src)
@@ -1592,6 +1646,7 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
                 return node_and(ctx, lhs, rhs)
             case TOKEN_OR:
                 return node_or(ctx, lhs, rhs)
+            case TOKEN_BIND:
             case TOKEN_EQ:
                 return node_eq(ctx, lhs, rhs)
             // a OP b  ->  (a = true,  b = true,  true  OP true)  |
@@ -1672,6 +1727,9 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
         if (expr.body == null) return NODE_ID_ANY
         return node_from_expr(ctx, expr.body, src)
     }
+
+    case EXPR_TERNARY:
+        return null
 
     case EXPR_INVALID:
     default:
@@ -2130,7 +2188,7 @@ const _node_display = (ctx: Context, world_id: Node_Id, scope_id: Node_Id, node_
         switch (node.kind) {
         case NODE_OR:  prec = token_kind_precedence(TOKEN_OR)    ;break
         case NODE_AND: prec = token_kind_precedence(TOKEN_COMMA) ;break
-        case NODE_EQ:  prec = token_kind_precedence(TOKEN_EQ)    ;break
+        case NODE_EQ:  prec = token_kind_precedence(TOKEN_BIND)  ;break
         }
 
         let needs_parens = prec < parent_prec || (prec === parent_prec && is_right && node.kind === NODE_EQ)
