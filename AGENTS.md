@@ -64,6 +64,15 @@ Use Node's test name filter because tests live in one file.
 - Preserve existing section divider comments (`/*--------------------------------------------------------------*`)
 - Avoid broad reformatting of untouched code
 - Keep line wrapping and alignment consistent with surrounding code
+- Avoid trailing whitespace
+- Use blank lines to separate logical sections of code
+
+## Comments and Documentation
+
+- Keep comments concise and focused
+- Use inline comments to explain non-obvious logic
+- Add comments to if/else branches to clarify the condition or the intent of the branch
+- Include small examples/code snippets to graphically illustrate concepts
 
 ## Naming Conventions
 
@@ -87,7 +96,7 @@ Use Node's test name filter because tests live in one file.
 - Prefer hoisted helpers/tables over ad-hoc closures
 - Keep reducers/parsers deterministic and side-effect aware
 - Do not introduce unnecessary dependencies
-- Keep performance-sensitive code straightforward and inspectable
+- Keep code straightforward and inspectable
 
 ## Error Handling and Assertions
 
