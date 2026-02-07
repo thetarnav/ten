@@ -694,6 +694,7 @@ export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
     case TOKEN_EOL:        return 1
     case TOKEN_COMMA:      return 1
+    case TOKEN_COLON:      return 2
     case TOKEN_BIND:       return 2
     case TOKEN_EQ:         return 2
     case TOKEN_NOT_EQ:     return 2
@@ -797,7 +798,7 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
             let op_q = p.token
             parser_next_token(p)
 
-            let middle = _parse_expr(p)
+            let middle = _parse_expr(p, token_kind_precedence(TOKEN_COLON)+1)
             let op_c = p.token
 
             if (op_c.kind !== TOKEN_COLON) {

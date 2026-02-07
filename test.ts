@@ -365,6 +365,16 @@ test.describe('parser', {concurrency: true}, () => {
         `Binary: Eq(==)\n`+
         `  Token: Ident(x)\n`+
         `  Token: Ident(y)`)
+    test_parser('foo: bar',
+        `Binary: Colon(:)\n`+
+        `  Token: Ident(foo)\n`+
+        `  Token: Ident(bar)`)
+    test_parser('foo : bar = baz',
+        `Binary: Bind(=)\n`+
+        `  Binary: Colon(:)\n`+
+        `    Token: Ident(foo)\n`+
+        `    Token: Ident(bar)\n`+
+        `  Token: Ident(baz)`)
 
     // Ternary operator
     test_parser('foo ? bar : baz',
