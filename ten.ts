@@ -778,6 +778,11 @@ export const parse_src = (src: string): [body: Expr, errors: Expr_Invalid[]] => 
     return [body, p.errors]
 }
 
+/** Pratt parser
+ *  @param min_bp is the minimum binding power an operator must have
+ *                to be consumed by this call.
+ *                weaker operators are left for the caller.
+ */
 const _parse_expr = (p: Parser, min_bp = 1): Expr => {
     let lhs = _parse_expr_atom(p)
 
@@ -792,12 +797,14 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
 
         // Ternary operator (a ? b : c)
         if (p.token.kind === TOKEN_QUESTION) {
-            let lbp = 2
+            let lbp = 2 // same precedence tier as assignment/equality
             if (lbp < min_bp) break
 
             let op_q = p.token
             parser_next_token(p)
 
+            // Parse only operators tighter than `:` so this stops right before
+            // the ternary delimiter colon instead of consuming it as binary.
             let middle = _parse_expr(p, token_kind_precedence(TOKEN_COLON)+1)
             let op_c = p.token
 
