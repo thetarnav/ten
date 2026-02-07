@@ -390,6 +390,15 @@ test.describe('parser', {concurrency: true}, () => {
         `    Token: Ident(c)\n`+
         `    Token: Ident(d)\n`+
         `    Token: Ident(e)`)
+    test_parser('a == b ? c + d : e',
+        `Ternary: Question(?) Colon(:)\n`+
+        `  Binary: Eq(==)\n`+
+        `    Token: Ident(a)\n`+
+        `    Token: Ident(b)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(c)\n`+
+        `    Token: Ident(d)\n`+
+        `  Token: Ident(e)`)
 
     // Many expressions
     test_parser('foo <= bar = baz\nx > 123',
