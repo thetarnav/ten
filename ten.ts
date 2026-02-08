@@ -1094,6 +1094,18 @@ const ident_id = (ctx: Context, name: string): Ident_Id => {
     }
     return ident
 }
+const ident_expr_id = (ctx: Context, expr: Expr, src: string): Ident_Id | null => {
+
+    if (expr.kind !== EXPR_TOKEN) return null
+
+    let tok = expr.tok
+    if (tok.kind !== TOKEN_IDENT) return null
+
+    let text  = token_string(src, tok)
+    let ident = ident_id(ctx, text)
+
+    return ident
+}
 
 export const ident_string = (ctx: Context, ident: Ident_Id): string | null => {
     return ctx.ident_src[ident] ?? null
@@ -1605,11 +1617,7 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
         switch (expr.tok.kind) {
         case TOKEN_TRUE:  return node_true(ctx)
         case TOKEN_FALSE: return node_false(ctx)
-        case TOKEN_IDENT: {
-            let text  = token_string(src, expr.tok)
-            let ident = ident_id(ctx, text)
-            return node_var(ctx, ident)
-        }
+        case TOKEN_IDENT: return node_var(ctx, ident_expr_id(ctx, expr, src)!)
         }
         return null
 
@@ -1677,11 +1685,8 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
                 return node_or(ctx, lhs, rhs)
 
             case TOKEN_DOT: {
-                if (expr.rhs.kind !== EXPR_TOKEN) return null
-                if (expr.rhs.tok.kind !== TOKEN_IDENT) return null
-
-                let text  = token_string(src, expr.rhs.tok)
-                let ident = ident_id(ctx, text)
+                let ident = ident_expr_id(ctx, expr.rhs, src)
+                if (ident == null) return null
 
                 return node_selector(ctx, lhs, ident)
             }
