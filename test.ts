@@ -85,7 +85,7 @@ test.describe('tokenizer', {concurrency: true}, () => {
     test_tokenizer(`inc = @(num+=12)`,
         `Ident(inc) Bind(=) At(@) Paren_L(() Ident(num) Add_Eq(+=) Int(12) Paren_R())`)
     test_tokenizer(`foo{a + .num += 12}`,
-        `Ident(foo) Brace_L({) Ident(a) Add(+) Field(.num) Add_Eq(+=) Int(12) Brace_R(})`)
+        `Ident(foo) Brace_L({) Ident(a) Add(+) Dot(.) Ident(num) Add_Eq(+=) Int(12) Brace_R(})`)
     test_tokenizer(`_render = Btn("Hello")`,
         `Ident(_render) Bind(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`)
     test_tokenizer(`0.123 = .123 != y = 12.s`,
@@ -106,6 +106,8 @@ test.describe('tokenizer', {concurrency: true}, () => {
         `Ident(x) Pow(^) True(true) Comma(,) Ident(y) Bind(=) False(false)`)
     test_tokenizer(`x == y ? a : b`,
         `Ident(x) Eq(==) Ident(y) Question(?) Ident(a) Colon(:) Ident(b)`)
+    test_tokenizer(`.true .false .foo`,
+        `Dot(.) Ident(true) Dot(.) Ident(false) Dot(.) Ident(foo)`)
     test_tokenizer(`trueish falsey`,
         `Ident(trueish) Ident(falsey)`)
 })
@@ -132,9 +134,11 @@ test.describe('parser', {concurrency: true}, () => {
     test_parser('false',
         `Token: False(false)`)
     test_parser('.true',
-        `Token: Field(.true)`)
+        `Unary: Dot(.)\n`+
+        `  Token: Ident(true)`)
     test_parser('.false',
-        `Token: Field(.false)`)
+        `Unary: Dot(.)\n`+
+        `  Token: Ident(false)`)
 
     // Unary operations
     test_parser('+x',
@@ -149,7 +153,11 @@ test.describe('parser', {concurrency: true}, () => {
         `    Token: Ident(y)`)
     test_parser('-.y',
         `Unary: Sub(-)\n`+
-        `  Token: Field(.y)`)
+        `  Unary: Dot(.)\n`+
+        `    Token: Ident(y)`)
+    test_parser('^foo',
+        `Unary: Pow(^)\n`+
+        `  Token: Ident(foo)`)
 
     // Simple binary operations
     test_parser('a + true',
@@ -158,7 +166,8 @@ test.describe('parser', {concurrency: true}, () => {
         `  Token: True(true)`)
     test_parser('.a - @',
         `Binary: Sub(-)\n`+
-        `  Token: Field(.a)\n`+
+        `  Unary: Dot(.)\n`+
+        `    Token: Ident(a)\n`+
         `  Token: At(@)`)
 
     // Operator precedence tests
@@ -200,21 +209,44 @@ test.describe('parser', {concurrency: true}, () => {
     // Selector
     test_parser('obj.field + 12',
         `Binary: Add(+)\n`+
-        `  Selector: Field(.field)\n`+
+        `  Binary: Dot(.)\n`+
         `    Token: Ident(obj)\n`+
+        `    Token: Ident(field)\n`+
         `  Token: Int(12)`)
     test_parser('(foo | bar).baz',
-        `Selector: Field(.baz)\n`+
+        `Binary: Dot(.)\n`+
         `  Paren: (...)\n`+
         `    Binary: Or(|)\n`+
         `      Token: Ident(foo)\n`+
-        `      Token: Ident(bar)`)
+        `      Token: Ident(bar)\n`+
+        `  Token: Ident(baz)`)
     test_parser('{a = 123}.a',
-        `Selector: Field(.a)\n`+
+        `Binary: Dot(.)\n`+
         `  Paren: {...}\n`+
         `    Binary: Bind(=)\n`+
         `      Token: Ident(a)\n`+
-        `      Token: Int(123)`)
+        `      Token: Int(123)\n`+
+        `  Token: Ident(a)`)
+    test_parser('.foo{a = a}',
+        `Paren: {...}\n`+
+        `  Unary: Dot(.)\n`+
+        `    Token: Ident(foo)\n`+
+        `  Binary: Bind(=)\n`+
+        `    Token: Ident(a)\n`+
+        `    Token: Ident(a)`)
+    test_parser('.a.b',
+        `Binary: Dot(.)\n`+
+        `  Unary: Dot(.)\n`+
+        `    Token: Ident(a)\n`+
+        `  Token: Ident(b)`)
+    test_parser('a.b().c',
+        `Binary: Dot(.)\n`+
+        `  Paren: (...)\n`+
+        `    Binary: Dot(.)\n`+
+        `      Token: Ident(a)\n`+
+        `      Token: Ident(b)\n`+
+        `    (empty)\n`+
+        `  Token: Ident(c)`)
 
     // Complex expressions
     // (a + (b * (c ^ d))) - (e / f)
@@ -281,7 +313,8 @@ test.describe('parser', {concurrency: true}, () => {
             `      Token: Ident(b)\n`+
             `      Token: Ident(c)`)
         test_parser(`foo${l}a + b${r}`,
-            `Paren: Ident(foo) ${l}...${r}\n`+
+            `Paren: ${l}...${r}\n`+
+            `  Token: Ident(foo)\n`+
             `  Binary: Add(+)\n`+
             `    Token: Ident(a)\n`+
             `    Token: Ident(b)`)
@@ -326,15 +359,25 @@ test.describe('parser', {concurrency: true}, () => {
             test_parser(`(${type_str}${l}a + b${r}, Bar${l}c + d${r})`,
                 `Paren: (...)\n`+
                 `  Binary: Comma(,)\n`+
-                `    Paren: ${type_tok}(${type_str}) ${l}...${r}\n`+
+                `    Paren: ${l}...${r}\n`+
+                `      Token: ${type_tok}(${type_str})\n`+
                 `      Binary: Add(+)\n`+
                 `        Token: Ident(a)\n`+
                 `        Token: Ident(b)\n`+
-                `    Paren: Ident(Bar) ${l}...${r}\n`+
+                `    Paren: ${l}...${r}\n`+
+                `      Token: Ident(Bar)\n`+
                 `      Binary: Add(+)\n`+
                 `        Token: Ident(c)\n`+
                 `        Token: Ident(d)`)
         }
+
+        test_parser(`.foo${l}a=a${r}`,
+            `Paren: ${l}...${r}\n`+
+            `  Unary: Dot(.)\n`+
+            `    Token: Ident(foo)\n`+
+            `  Binary: Bind(=)\n`+
+            `    Token: Ident(a)\n`+
+            `    Token: Ident(a)`)
     }
 
     // Assignment operations
