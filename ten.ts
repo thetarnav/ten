@@ -39,19 +39,19 @@ export const
     TOKEN_POW        = 21 as const, // `^`
     TOKEN_AT         = 22 as const, // `@`
     TOKEN_COMMA      = 23 as const, // `,`
+    TOKEN_DOT        = 24 as const, // `.`
     /* Punctuation */
-    TOKEN_QUOTE      = 24 as const, // `"`
-    TOKEN_PAREN_L    = 25 as const, // `(`
-    TOKEN_PAREN_R    = 26 as const, // `)`
-    TOKEN_BRACE_L    = 27 as const, // `{`
-    TOKEN_BRACE_R    = 28 as const, // `}`
+    TOKEN_QUOTE      = 25 as const, // `"`
+    TOKEN_PAREN_L    = 26 as const, // `(`
+    TOKEN_PAREN_R    = 27 as const, // `)`
+    TOKEN_BRACE_L    = 28 as const, // `{`
+    TOKEN_BRACE_R    = 29 as const, // `}`
     /* Keywords */
-    TOKEN_TRUE       = 29 as const, // `true`
-    TOKEN_FALSE      = 30 as const, // `false`
+    TOKEN_TRUE       = 30 as const, // `true`
+    TOKEN_FALSE      = 31 as const, // `false`
     /* Literals */
-    TOKEN_STRING     = 31 as const, // string literal `"foo"`
-    TOKEN_IDENT      = 32 as const, // identifier `foo`
-    TOKEN_FIELD      = 33 as const, // field selector `.foo`
+    TOKEN_STRING     = 32 as const, // string literal `"foo"`
+    TOKEN_IDENT      = 33 as const, // identifier `foo`
     TOKEN_INT        = 34 as const, // integer literal `123`
     TOKEN_FLOAT      = 35 as const, // floating-point literal `123.456`
     TOKEN_ENUM_START = TOKEN_INVALID,
@@ -92,7 +92,7 @@ export const Token_Kind = {
     False:      TOKEN_FALSE,
     String:     TOKEN_STRING,
     Ident:      TOKEN_IDENT,
-    Field:      TOKEN_FIELD,
+    Dot:        TOKEN_DOT,
     Int:        TOKEN_INT,
     Float:      TOKEN_FLOAT,
 } as const
@@ -134,7 +134,7 @@ export const token_kind_string = (kind: Token_Kind): string => {
     case TOKEN_FALSE:      return "False"
     case TOKEN_STRING:     return "String"
     case TOKEN_IDENT:      return "Ident"
-    case TOKEN_FIELD:      return "Field"
+    case TOKEN_DOT:        return "Dot"
     case TOKEN_INT:        return "Int"
     case TOKEN_FLOAT:      return "Float"
     default:
@@ -157,6 +157,8 @@ export type Tokenizer = {
     src      : string
     pos_read : number
     pos_write: number
+    dot_ident: boolean // whether the next identifier is a dot selector (e.g. `.foo`)
+                       // which allows keywords to be used as selectors like `.true` or `.false`
 }
 
 export const tokenizer_make = (src: string): Tokenizer => {
@@ -164,6 +166,7 @@ export const tokenizer_make = (src: string): Tokenizer => {
         src:       src,
         pos_read:  0,
         pos_write: 0,
+        dot_ident: false,
     }
     return t
 }
@@ -360,10 +363,10 @@ export const token_next = (t: Tokenizer): Token => {
             return _token_make_move_back(t, TOKEN_FLOAT)
         }
 
-        // field (.foo)
+        // selector (.foo)
         if (is_ident_code(ch)) {
-            while (is_ident_code(next_char_code(t))) {}
-            return _token_make_move_back(t, TOKEN_FIELD)
+            t.dot_ident = true
+            return _token_make_move_back(t, TOKEN_DOT)
         }
 
         return _token_make_move_back(t, TOKEN_INVALID)
@@ -374,11 +377,12 @@ export const token_next = (t: Tokenizer): Token => {
         while (is_ident_code(next_char_code(t))) {}
 
         // Check for keywords
-        switch (t.src.substring(t.pos_write, t.pos_read)) {
+        if (!t.dot_ident) switch (t.src.substring(t.pos_write, t.pos_read)) {
         case 'true':  return _token_make_move_back(t, TOKEN_TRUE)
         case 'false': return _token_make_move_back(t, TOKEN_FALSE)
         }
 
+        t.dot_ident = false
         return _token_make_move_back(t, TOKEN_IDENT)
     }
 
@@ -415,6 +419,7 @@ export const token_len = (src: string, tok: Token): number => {
     case TOKEN_COMMA:
     case TOKEN_GREATER:
     case TOKEN_LESS:
+    case TOKEN_DOT:
         return 1
 
     case TOKEN_GREATER_EQ:
@@ -434,7 +439,6 @@ export const token_len = (src: string, tok: Token): number => {
     // Multi-character tokens
     case TOKEN_STRING:
     case TOKEN_IDENT:
-    case TOKEN_FIELD:
     case TOKEN_INT:
     case TOKEN_FLOAT:
     case TOKEN_INVALID: {
@@ -451,7 +455,6 @@ export const token_len = (src: string, tok: Token): number => {
             }
             break
         case TOKEN_IDENT:
-        case TOKEN_FIELD:
             for (;end < src.length && is_ident_code(src.charCodeAt(end)); end++) {}
             break
         case TOKEN_INT:
@@ -534,16 +537,14 @@ export const
     EXPR_TOKEN    = 101,
     EXPR_UNARY    = 102,
     EXPR_BINARY   = 103,
-    EXPR_SELECTOR = 104,
-    EXPR_PAREN    = 105,
-    EXPR_TERNARY  = 106,
-    EXPR_INVALID  = 107
+    EXPR_PAREN    = 104,
+    EXPR_TERNARY  = 105,
+    EXPR_INVALID  = 106
 
 export const Expr_Kind = {
     Token:    EXPR_TOKEN,
     Unary:    EXPR_UNARY,
     Binary:   EXPR_BINARY,
-    Selector: EXPR_SELECTOR,
     Paren:    EXPR_PAREN,
     Ternary:  EXPR_TERNARY,
     Invalid:  EXPR_INVALID,
@@ -556,7 +557,6 @@ export const expr_kind_string = (kind: Expr_Kind): string => {
     case EXPR_TOKEN:    return "Token"
     case EXPR_UNARY:    return "Unary"
     case EXPR_BINARY:   return "Binary"
-    case EXPR_SELECTOR: return "Selector"
     case EXPR_PAREN:    return "Paren"
     case EXPR_TERNARY:  return "Ternary"
     case EXPR_INVALID:  return "Invalid"
@@ -571,7 +571,6 @@ export type Expr =
     | Expr_Unary
     | Expr_Binary
     | Expr_Paren
-    | Expr_Selector
     | Expr_Ternary
     | Expr_Invalid
 
@@ -590,16 +589,11 @@ export type Expr_Binary = {
     lhs:  Expr
     rhs:  Expr
 }
-export type Expr_Selector = {
-    kind: typeof EXPR_SELECTOR
-    lhs:  Expr  // Ident(foo), At(@), Paren(...), etc.
-    rhs:  Token // Field(.foo)
-}
 export type Expr_Paren = {
     kind:  typeof EXPR_PAREN
     open:  Token        // '(' or '{'
     close: Token        // ')' or '}'
-    type:  Token | null // Ident(foo) or Field(.foo) or At(@) or null
+    type:  Expr  | null
     body:  Expr  | null
 }
 export type Expr_Ternary = {
@@ -625,13 +619,10 @@ export const expr_unary = (op: Token, rhs: Expr): Expr_Unary => {
 export const expr_binary = (op: Token, lhs: Expr, rhs: Expr): Expr_Binary => {
     return {kind: EXPR_BINARY, op, lhs, rhs}
 }
-export const expr_selector = (lhs: Expr, rhs: Token): Expr_Selector => {
-    return {kind: EXPR_SELECTOR, lhs, rhs}
-}
 export const expr_paren = (open: Token, body: Expr | null, close: Token): Expr_Paren => {
     return {kind: EXPR_PAREN, open, close, type: null, body: body}
 }
-export const expr_paren_typed = (open: Token, type: Token, body: Expr | null, close: Token): Expr_Paren => {
+export const expr_paren_typed = (open: Token, type: Expr, body: Expr | null, close: Token): Expr_Paren => {
     return {kind: EXPR_PAREN, open, close, type, body}
 }
 export const expr_ternary = (op_q: Token, op_c: Token, cond: Expr, lhs: Expr, rhs: Expr): Expr_Ternary => {
@@ -659,9 +650,6 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
     case EXPR_BINARY:
         return `${ind}Binary: ${token_display(src, expr.op)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
-    case EXPR_SELECTOR:
-        return `${ind}Selector: ${token_display(src, expr.rhs)}\n${expr_display(src, expr.lhs, indent, depth+1)}`
-
     case EXPR_TERNARY:
         return `${ind}Ternary: ${token_display(src, expr.op_q)} ${token_display(src, expr.op_c)}\n${expr_display(src, expr.cond, indent, depth+1)}\n${expr_display(src, expr.lhs, indent, depth+1)}\n${expr_display(src, expr.rhs, indent, depth+1)}`
 
@@ -673,9 +661,8 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
                 `${token_display(src, expr.open)}...${token_display(src, expr.close)}`
         let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
         if (expr.type) {
-            // Typed paren like foo(...)
-            let type_str = token_display(src, expr.type)
-            return `${ind}Paren: ${type_str} ${open_close_str}\n${body_str}`
+            let type_str = expr_display(src, expr.type, indent, depth+1)
+            return `${ind}Paren: ${open_close_str}\n${type_str}\n${body_str}`
         } else {
             // Regular paren (...)
             return `${ind}Paren: ${open_close_str}\n${body_str}`
@@ -711,6 +698,7 @@ export const token_kind_precedence = (kind: Token_Kind): number => {
     case TOKEN_POW:        return 6
     case TOKEN_AND:        return 7
     case TOKEN_OR:         return 7
+    case TOKEN_DOT:        return 8
     default:               return 0
     }
 }
@@ -723,6 +711,8 @@ export const token_kind_is_unary = (kind: Token_Kind): boolean => {
     case TOKEN_ADD:
     case TOKEN_SUB:
     case TOKEN_NEG:
+    case TOKEN_POW:
+    case TOKEN_DOT:
         return true
     }
     return false
@@ -788,10 +778,37 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
 
     for (;;) {
 
-        // Field selector (foo.bar)
-        if (p.token.kind === TOKEN_FIELD) {
-            lhs = expr_selector(lhs, p.token)
+        // Selector operator (foo.bar)
+        if (p.token.kind === TOKEN_DOT) {
+            let op = p.token
+            let rhs_tok = parser_next_token(p)
+            if (rhs_tok.kind !== TOKEN_IDENT) {
+                return expr_invalid_push(p, rhs_tok, 'Expected identifier after dot')
+            }
+            let rhs = expr_token(rhs_tok)
             parser_next_token(p)
+            lhs = expr_binary(op, lhs, rhs)
+            continue
+        }
+
+        if (p.token.kind in _token_close_table) {
+            let open = p.token
+            parser_next_token(p)
+
+            let close = parser_token(p)
+            if (close.kind === _token_close_table[open.kind]) {
+                parser_next_token(p)
+                lhs = expr_paren_typed(open, lhs, null, close)
+                continue
+            }
+
+            let body = _parse_expr(p)
+            close = parser_token(p)
+            if (close.kind !== _token_close_table[open.kind]) {
+                return expr_invalid_push(p, close, 'Expected closing parenthesis')
+            }
+            parser_next_token(p)
+            lhs = expr_paren_typed(open, lhs, body, close)
             continue
         }
 
@@ -854,10 +871,20 @@ const _parse_expr_atom = (p: Parser): Expr => {
     /* Unary */
     case TOKEN_ADD:
     case TOKEN_SUB:
-    case TOKEN_NEG: {
+    case TOKEN_NEG:
+    case TOKEN_POW: {
         parser_next_token(p)
         let rhs = _parse_expr_atom(p)
         return expr_unary(tok, rhs)
+    }
+    case TOKEN_DOT: {
+        parser_next_token(p)
+        let rhs = parser_token(p)
+        if (rhs.kind !== TOKEN_IDENT) {
+            return expr_invalid_push(p, rhs, 'Expected identifier after dot')
+        }
+        parser_next_token(p)
+        return expr_unary(tok, expr_token(rhs))
     }
     case TOKEN_PAREN_L:
     case TOKEN_BRACE_L: {
@@ -876,20 +903,8 @@ const _parse_expr_atom = (p: Parser): Expr => {
         return expr_paren(tok, body, close)
     }
     case TOKEN_IDENT:
-    case TOKEN_FIELD:
     case TOKEN_AT: {
         parser_next_token(p)
-        let open = parser_token(p)
-        if (open.kind in _token_close_table) {
-            parser_next_token(p)
-            let body = _parse_expr(p)
-            let close = parser_token(p)
-            if (close.kind !== _token_close_table[open.kind]) {
-                return expr_invalid_push(p, close, "Expected closing parenthesis")
-            }
-            parser_next_token(p)
-            return expr_paren_typed(open, tok, body, close)
-        }
         return expr_token(tok)
     }
     case TOKEN_FLOAT:
@@ -1621,6 +1636,11 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
         // `!x`
         case TOKEN_NEG:
             return node_neg(ctx, rhs)
+
+        // parser-only for now
+        case TOKEN_POW:
+        case TOKEN_DOT:
+            return null
         }
 
         return null
@@ -1635,6 +1655,7 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
         case TOKEN_AND:
         case TOKEN_COMMA:
         case TOKEN_OR:
+        case TOKEN_DOT:
         case TOKEN_BIND:
         case TOKEN_EQ:
         case TOKEN_NOT_EQ: {
@@ -1654,6 +1675,17 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
                 return node_and(ctx, lhs, rhs)
             case TOKEN_OR:
                 return node_or(ctx, lhs, rhs)
+
+            case TOKEN_DOT: {
+                if (expr.rhs.kind !== EXPR_TOKEN) return null
+                if (expr.rhs.tok.kind !== TOKEN_IDENT) return null
+
+                let text  = token_string(src, expr.rhs.tok)
+                let ident = ident_id(ctx, text)
+
+                return node_selector(ctx, lhs, ident)
+            }
+
             case TOKEN_BIND:
             case TOKEN_EQ:
                 return node_eq(ctx, lhs, rhs)
@@ -1707,19 +1739,6 @@ const node_from_expr = (ctx: Context, expr: Expr, src: string): Node_Id | null =
         }
         return null
     }
-
-    case EXPR_SELECTOR:
-        if (expr.rhs.kind !== TOKEN_FIELD) return null
-
-        // foo.bar
-        // foo.bar.baz...
-        let lhs = node_from_expr(ctx, expr.lhs, src)
-        if (lhs == null) return null
-
-        let text  = token_string(src, expr.rhs).substring(1) // Remove '.'
-        let ident = ident_id(ctx, text)
-
-        return node_selector(ctx, lhs, ident)
 
     case EXPR_PAREN: {
         // Scope {...}
