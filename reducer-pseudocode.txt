@@ -1,0 +1,217 @@
+Reducer Pseudocode (High-Level)
+===============================
+
+Goal
+----
+Reduce the program by evaluating `output` as far as possible, while preserving sound unresolved forms.
+
+
+Core Data Model
+---------------
+
+Context:
+  - builtins_scope_id
+  - global_scope_id
+  - root_expr (full parsed program)
+  - diagnostics[]
+  - memo tables for reduced expressions and bindings
+
+Scope_Record:
+  - id
+  - parent_scope_id | null
+  - defined_in_scope_id (for closure capture; mostly same as parent for literals)
+  - bindings_by_name: map<string, Binding_Record>
+  - indexed: boolean
+
+Binding_Record:
+  - name
+  - declared_type_exprs[]      // from `x: T`
+  - value_exprs[]              // from `x = V`
+  - field_assignments[]        // for `x.a = v` before x becomes concrete
+  - finalized_expr | null      // cached reduced result
+  - reducing: boolean          // cycle guard
+
+Reduced_Value (conceptual union):
+  - Int(i32)
+  - Scope(scope_id + reduced fields)
+  - Top()                      // `()`
+  - Never()                    // `!()`
+  - Union(parts[])
+  - Intersection(parts[])
+  - Predicate(expr)
+  - Residual(expr)
+
+
+Entry Points
+------------
+
+context_make():
+  1) create context
+  2) create builtins scope
+  3) insert builtin bindings (`int`, `()`, maybe `!()` representation)
+  4) create global scope whose parent is builtins
+
+add_expr(ctx, expr, src):
+  1) store source and root expr
+  2) index global scope body in phase-1 mode (no RHS reduction)
+  3) ensure `output` binding exists or record diagnostic
+
+reduce(ctx):
+  1) read binding `output` in global scope
+  2) call reduce_binding(global_scope, "output")
+  3) store result for display
+
+display(ctx):
+  1) pretty-print reduced `output`
+  2) if unresolved, print structurally faithful residual expression
+
+
+Phase 1: Scope Indexing (No Evaluation)
+---------------------------------------
+
+index_scope(scope_id, scope_expr):
+  if already indexed: return
+  flatten body by separators (EOL/comma)
+  for each statement:
+    - parse binding shape:
+        a) `name = expr`
+        b) `name : expr`
+        c) `name.field = expr`
+      else record diagnostic and keep going
+    - append constraints into binding record
+    - for duplicate declarations, keep both constraints and add diagnostic
+  mark scope indexed
+
+
+Name Resolution Semantics
+-------------------------
+
+resolve_read(scope_id, name, mode):
+  mode = unprefixed | current_only | parent_only
+
+  if mode == current_only:
+    return lookup_current_or_error(scope_id, name)
+
+  if mode == parent_only:
+    return lookup_parent_chain_or_error(scope_id, name)
+
+  // unprefixed (parent-first)
+  1) lookup parent chain first (scope.parent -> ... -> global -> builtins)
+  2) if not found, lookup current scope
+  3) else diagnostic + Never
+
+
+Binding Reduction
+-----------------
+
+reduce_binding(scope_id, name):
+  b = resolved binding
+  if b.finalized_expr exists: return it
+  if b.reducing: return Residual(name)  // cycle-safe lazy placeholder
+
+  b.reducing = true
+
+  // Reduce all type/value constraints lazily
+  type_value = Top
+  for each t in b.declared_type_exprs:
+    type_value = intersect(type_value, reduce_expr(scope_id, t))
+
+  value_value = Top
+  if b.value_exprs not empty:
+    value_value = reduce_expr(scope_id, b.value_exprs[0])
+    for each extra v in b.value_exprs[1..]:
+      value_value = intersect(value_value, reduce_expr(scope_id, v))
+
+  effective = intersect(type_value, value_value)
+
+  // Apply deferred field writes (for typed scope construction path)
+  effective = apply_field_assignments(scope_id, b, effective)
+
+  b.finalized_expr = simplify(effective)
+  b.reducing = false
+  return b.finalized_expr
+
+
+Expression Reduction
+--------------------
+
+reduce_expr(scope_id, expr):
+  switch expr.kind:
+    Token:
+      - int literal -> Int
+      - identifier -> reduce_binding(resolved scope, name)
+      - true/false -> map into logical representation (or existing bool model)
+    Unary:
+      - dot/parent selector token form (`.a`, `^a`) -> resolve with mode
+      - `!` -> logical negation over reduced value
+      - unary +/- on i32 when decidable else Residual
+    Binary:
+      - separators (EOL/comma): reduce sequence, return last expression
+      - `=` / `:` appear during indexing, usually not reduced directly
+      - arithmetic `+ - * /`: distribute over unions, i32 wraparound
+      - comparisons `== <= >= < >`: return Top/Never when decidable, else Predicate/Residual
+      - `|`: union(normalize(lhs, rhs))
+      - `&`: intersect(lhs, rhs) with narrowing
+      - `.` field read:
+          * reduce base lazily
+          * distribute over union branches
+          * missing/non-scope branch -> diagnostic + Never for that branch
+    Ternary:
+      - do not eagerly reduce both branches
+      - represent as union(intersect(cond, lhs), intersect(not(cond), rhs))
+      - only force branch when demanded by narrowing/read
+    Paren:
+      - normal `(...)`: reduce body
+      - scope literal `{...}`: build child scope (parent = current), index lazily, return Scope value
+      - typed instantiation `T{...}`:
+          * create new scope instance anchored to T definition scope
+          * apply `val: T` and field constraints from body
+          * reduce on demand
+
+
+Set Operations
+--------------
+
+union(a, b):
+  - flatten nested unions
+  - drop Never
+  - dedupe identical branches
+  - if one side is Top and language allows, keep canonical form
+
+intersect(a, b):
+  - handle identities: Never annihilates, Top identity
+  - distribute when one side is union
+  - i32 vs non-i32 => Never
+  - scope vs scope: shapes must match; else Never
+  - predicate intersections trigger narrowing attempts
+  - if undecidable, keep residual intersection form
+
+narrow_by_predicate(value, predicate):
+  - attempt local solving for eq/comparison on known structures
+  - propagate constraints into scope fields
+  - iterate until fixed point or no progress
+
+
+Lazy Evaluation / Recursion Safety
+----------------------------------
+
+- Never force both ternary branches up front.
+- Memoize reduced bindings and expression nodes.
+- Use in-progress markers to break recursive loops.
+- For recursive cases (Fib), only evaluate else branch when condition is not proven true.
+
+
+Diagnostics Policy
+------------------
+
+- Record diagnostics for semantic errors (undefined names, bad selectors, illegal field writes, duplicates).
+- Continue reduction by substituting Never where required.
+- Do not throw for semantic errors.
+
+
+Display Policy
+--------------
+
+- Fully reduced values print compactly (`55`, `{a = 3}`).
+- Unresolved values print structurally faithful forms preserving `|`, `&`, ternary, and predicates.
+- Optional: stable ordering for union branches/fields for deterministic output.
