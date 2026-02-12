@@ -442,6 +442,36 @@ test.describe('parser', {concurrency: true}, () => {
         `    Token: Ident(c)\n`+
         `    Token: Ident(d)\n`+
         `  Token: Ident(e)`)
+    test_parser(`foo = a + b == 20 ?\n\ta + 1 :\n\tb + 1`,
+        `Ternary: Question(?) Colon(:)\n`+
+        `  Binary: Eq(==)\n`+
+        `    Binary: Bind(=)\n`+
+        `      Token: Ident(foo)\n`+
+        `      Binary: Add(+)\n`+
+        `        Token: Ident(a)\n`+
+        `        Token: Ident(b)\n`+
+        `    Token: Int(20)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(a)\n`+
+        `    Token: Int(1)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Int(1)`)
+    test_parser(`foo = a + b == 20\n\t? a + 1\n\t: b + 1`,
+        `Ternary: Question(?) Colon(:)\n`+
+        `  Binary: Eq(==)\n`+
+        `    Binary: Bind(=)\n`+
+        `      Token: Ident(foo)\n`+
+        `      Binary: Add(+)\n`+
+        `        Token: Ident(a)\n`+
+        `        Token: Ident(b)\n`+
+        `    Token: Int(20)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(a)\n`+
+        `    Token: Int(1)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Int(1)`)
 
     // Many expressions
     test_parser('foo <= bar = baz\nx > 123',
