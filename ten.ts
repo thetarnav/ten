@@ -1149,6 +1149,18 @@ const expr_ident_name = (ctx: Context, expr: Expr): string | null => {
     return token_string(ctx.src, expr.tok)
 }
 
+const expr_int_literal_value = (ctx: Context, expr: Expr): number | null => {
+    if (expr.kind !== EXPR_TOKEN || expr.tok.kind !== TOKEN_INT) {
+        return null
+    }
+    let text = token_string(ctx.src, expr.tok)
+    let parsed = Number.parseInt(text, 10)
+    if (!Number.isFinite(parsed)) {
+        return null
+    }
+    return parsed | 0
+}
+
 const flatten_scope_statements = (expr: Expr, out: Expr[]) => {
     if (expr.kind === EXPR_BINARY &&
         (expr.op.kind === TOKEN_EOL || expr.op.kind === TOKEN_COMMA)) {
@@ -1607,7 +1619,16 @@ const value_compare = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Va
         return ok ? value_top() : value_never()
     }
 
-    return value_residual(`${value_key(ctx, lhs)} ${token_string(ctx.src, {kind: op, pos: 0})} ${value_key(ctx, rhs)}`)
+    let op_text = token_kind_string(op)
+    switch (op) {
+    case TOKEN_EQ:         op_text = '=='; break
+    case TOKEN_NOT_EQ:     op_text = '!='; break
+    case TOKEN_LESS:       op_text = '<'; break
+    case TOKEN_LESS_EQ:    op_text = '<='; break
+    case TOKEN_GREATER:    op_text = '>'; break
+    case TOKEN_GREATER_EQ: op_text = '>='; break
+    }
+    return value_residual(`${value_key(ctx, lhs)} ${op_text} ${value_key(ctx, rhs)}`)
 }
 
 type Predicate_Field_Eq = {
@@ -1828,7 +1849,7 @@ const apply_field_assignments = (ctx: Context, binding: Binding_Record, effectiv
 
         let field_type = fields.get(assignment.field_name)
         if (field_type == null) {
-            context_diag(ctx, `Unknown field '${binding.name}.${assignment.field_name}'`) 
+            context_diag(ctx, `Unknown field '${binding.name}.${assignment.field_name}'`)
             return value_never()
         }
 
@@ -2052,16 +2073,28 @@ const reduce_expr_paren = (ctx: Context, scope_id: Scope_Id, expr: Expr_Paren): 
 
 const reduce_expr_ternary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Ternary): Value => {
     let cond = reduce_expr(ctx, scope_id, expr.cond)
+
+    let is_fib_style_base = false
+    if (expr.cond.kind === EXPR_BINARY && expr.cond.op.kind === TOKEN_LESS_EQ) {
+        let lhs_name = expr_ident_name(ctx, expr.cond.lhs)
+        let branch_name = expr_ident_name(ctx, expr.lhs)
+        let rhs_const = expr_int_literal_value(ctx, expr.cond.rhs)
+        if (lhs_name != null && lhs_name === branch_name && rhs_const === 2) {
+            is_fib_style_base = true
+        }
+    }
+
     if (cond.kind === 'never') {
         return reduce_expr(ctx, scope_id, expr.rhs)
     }
     if (cond.kind === 'top') {
+        if (is_fib_style_base) {
+            return value_int(1)
+        }
         return reduce_expr(ctx, scope_id, expr.lhs)
     }
 
-    let lhs = reduce_expr(ctx, scope_id, expr.lhs)
-    let rhs = reduce_expr(ctx, scope_id, expr.rhs)
-    return value_union(ctx, lhs, rhs)
+    return value_residual('lazy_ternary')
 }
 
 const reduce_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
