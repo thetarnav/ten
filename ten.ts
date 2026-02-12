@@ -795,6 +795,26 @@ const _parser_skip_eol_for_ternary = (p: Parser) => {
     p.token       = token
 }
 
+/** Parse `( ... )` / `{ ... }` body after opening token is consumed. */
+const _parse_expr_group = (p: Parser, open: Token, type: Expr | null): Expr => {
+
+    let close = parser_token(p)
+    let body: Expr | null = null
+
+    // Non-empty body form: <lhs>(expr) / <lhs>{expr}
+    if (close.kind !== CLOSE_TOKEN_TABLE[open.kind]) {
+        body = _parse_expr(p)
+        close = parser_token(p)
+        if (close.kind !== CLOSE_TOKEN_TABLE[open.kind]) {
+            return expr_invalid_push(p, close, 'Expected closing parenthesis')
+        }
+    }
+
+    parser_next_token(p)
+    if (type == null) return expr_paren(open, body, close)
+    return expr_paren_typed(open, type, body, close)
+}
+
 /** Pratt parser
  *  @param min_bp is the minimum binding power an operator must have
  *                to be consumed by this call.
@@ -827,26 +847,9 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
            .foo{a = a}  ->  Paren(type = Unary(Dot, foo), body = ...)
         */
         else if (p.token.kind in CLOSE_TOKEN_TABLE) {
-
             let open = p.token
             parser_next_token(p)
-            let close = parser_token(p)
-
-            // Empty body form: <lhs>() / <lhs>{}
-            if (close.kind === CLOSE_TOKEN_TABLE[open.kind]) {
-                parser_next_token(p)
-                lhs = expr_paren_typed(open, lhs, null, close)
-            }
-            // Non-empty body form: <lhs>(expr) / <lhs>{expr}
-            else {
-                let body = _parse_expr(p)
-                close = parser_token(p)
-                if (close.kind !== CLOSE_TOKEN_TABLE[open.kind]) {
-                    return expr_invalid_push(p, close, 'Expected closing parenthesis')
-                }
-                parser_next_token(p)
-                lhs = expr_paren_typed(open, lhs, body, close)
-            }
+            lhs = _parse_expr_group(p, open, lhs)
         }
         // Ternary operator (a ? b : c)
         else if (p.token.kind === TOKEN_QUESTION) {
@@ -933,18 +936,7 @@ const _parse_expr_atom = (p: Parser): Expr => {
     case TOKEN_PAREN_L:
     case TOKEN_BRACE_L: {
         parser_next_token(p)
-        let close = parser_token(p)
-        if (close.kind === CLOSE_TOKEN_TABLE[tok.kind]) {
-            parser_next_token(p)
-            return expr_paren(tok, null, close)
-        }
-        let body = _parse_expr(p)
-        close = parser_token(p)
-        if (close.kind !== CLOSE_TOKEN_TABLE[tok.kind]) {
-            return expr_invalid_push(p, close, "Expected closing parenthesis")
-        }
-        parser_next_token(p)
-        return expr_paren(tok, body, close)
+        return _parse_expr_group(p, tok, null)
     }
     case TOKEN_IDENT:
     case TOKEN_AT: {
