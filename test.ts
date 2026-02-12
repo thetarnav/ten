@@ -55,14 +55,16 @@ function test_parser(input: string, expected: string) {
 function test_reducer(input: string, expected: string) {
     test.test('`'+input+'`', () => {
 
-        let [expr, errors] = ten.parse_src(input)
+        let src = input.trim()
+
+        let [expr, errors] = ten.parse_src(src)
         if (errors.length !== 0) {
             fail(`Parse errors: ${JSON.stringify(errors)}`)
         }
 
         let ctx = ten.context_make()
 
-        ten.add_expr(ctx, expr, input)
+        ten.add_expr(ctx, expr, src)
         ten.reduce(ctx)
 
         let result_str = ten.display(ctx)
@@ -492,11 +494,90 @@ test.describe('parser', {concurrency: true}, () => {
 */
 
 test.describe('reducer', {concurrency: true}, () => {
-    test_reducer(`
-        Fib = {
-            n: int
-            result = n <= 2 ? n : Fib{n-1}.result + Fib{n-2}.result
-        }
-        output = Fib{n=10}.result
-    `, `89`)
+    test.describe('critical edge cases from spec', {concurrency: true}, () => {
+        test_reducer(`
+            a = 1
+            foo = {b = a, a = 2}
+            output = foo.b
+        `, `1`)
+
+        test_reducer(`
+            a = 1
+            foo = {a = 2, x = .a, y = ^a}
+            output = {x = foo.x, y = foo.y}
+        `, `{x = 2, y = 1}`)
+
+        test_reducer(`
+            x = ({a = 2} | {b = 3}).a
+            output = x
+        `, `2`)
+
+        test_reducer(`
+            output = {a = int} & {a = 3 | 2} & {a = 3}
+        `, `{a = 3}`)
+
+        test_reducer(`
+            output = {a = 2} & {b = 3}
+        `, `!()`)
+
+        test_reducer(`
+            output = 2147483647 + 1
+        `, `-2147483648`)
+
+        test_reducer(`
+            Fib = {
+                n: int
+                result = n <= 2
+                    ? n
+                    : Fib{n = n-1}.result + Fib{n = n-2}.result
+            }
+            output = Fib{n = 10}.result
+        `, `55`)
+
+        test_reducer(`
+            foo = {
+                a = int
+                b = a == 1 ? 2 : 3
+            }
+            output = foo & (foo.a == 1)
+        `, `{a = 1, b = 2}`)
+    })
+
+    test.describe('binding and field constraints from spec', {concurrency: true}, () => {
+        test_reducer(`
+            x = 2
+            x = 2
+            output = x
+        `, `2`)
+
+        test_reducer(`
+            x = 2
+            x = 3
+            output = x
+        `, `!()`)
+
+        test_reducer(`
+            foo: {a: int, b: int}
+            foo.a = 3
+            foo.b = 4
+            output = foo
+        `, `{a = 3, b = 4}`)
+
+        test_reducer(`
+            foo = {a = 3}
+            foo.b = 4
+            output = foo
+        `, `!()`)
+
+        test_reducer(`
+            foo = ()
+            foo.a = 3
+            output = foo
+        `, `!()`)
+
+        test_reducer(`
+            int = 5
+            output = ^int
+        `, `int`)
+    })
 })
