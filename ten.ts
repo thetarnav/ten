@@ -768,6 +768,33 @@ export const parse_src = (src: string): [body: Expr, errors: Expr_Invalid[]] => 
     return [body, p.errors]
 }
 
+
+const _parser_skip_eol_for_ternary = (p: Parser) => {
+
+    /* Special-case multiline ternary:
+    |    cond     <- here
+    |       ? lhs
+    |       : rhs
+    | We only skip EOL when it is immediately followed by `?`. */
+
+    if (p.token.kind !== TOKEN_EOL) return
+
+    let pos_read  = p.t.pos_read
+    let pos_write = p.t.pos_write
+    let token     = p.token
+
+    while (p.token.kind === TOKEN_EOL) {
+        parser_next_token(p)
+    }
+
+    if (p.token.kind === TOKEN_QUESTION) return
+
+    // Not a ternary boundary, restore exact parser/tokenizer state.
+    p.t.pos_read  = pos_read
+    p.t.pos_write = pos_write
+    p.token       = token
+}
+
 /** Pratt parser
  *  @param min_bp is the minimum binding power an operator must have
  *                to be consumed by this call.
@@ -777,6 +804,9 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
     let lhs = _parse_expr_atom(p)
 
     for (;;) {
+
+        // Special-case multiline ternary
+        _parser_skip_eol_for_ternary(p)
 
         // Selector operator (foo.bar)
         if (p.token.kind === TOKEN_DOT) {
@@ -823,8 +853,15 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
             // Parse only operators tighter than `:` so this stops right before
             // the ternary delimiter colon instead of consuming it as binary.
             let middle = _parse_expr(p, token_kind_precedence(TOKEN_COLON)+1)
-            let op_c = p.token
 
+            // Allow multiline form where `:` starts on the next line:
+            //   cond ? lhs
+            //        : rhs
+            while (parser_token(p).kind === TOKEN_EOL) {
+                parser_next_token(p)
+            }
+
+            let op_c = parser_token(p)
             if (op_c.kind !== TOKEN_COLON) {
                 return expr_invalid_push(p, op_c, 'Expected colon in ternary expression')
             }
