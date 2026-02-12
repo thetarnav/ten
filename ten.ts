@@ -818,32 +818,38 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
             let rhs = expr_token(rhs_tok)
             parser_next_token(p)
             lhs = expr_binary(op, lhs, rhs)
-            continue
         }
+        /* Postfix typed paren/scope:
+           <lhs>(...)   and   <lhs>{...}
 
-        if (p.token.kind in _token_close_table) {
+           a.b().c      ->  Dot(Paren(type = Dot(a,b), body = null), c)
+
+           .foo{a = a}  ->  Paren(type = Unary(Dot, foo), body = ...)
+        */
+        else if (p.token.kind in _token_close_table) {
+
             let open = p.token
             parser_next_token(p)
-
             let close = parser_token(p)
+
+            // Empty body form: <lhs>() / <lhs>{}
             if (close.kind === _token_close_table[open.kind]) {
                 parser_next_token(p)
                 lhs = expr_paren_typed(open, lhs, null, close)
-                continue
             }
-
-            let body = _parse_expr(p)
-            close = parser_token(p)
-            if (close.kind !== _token_close_table[open.kind]) {
-                return expr_invalid_push(p, close, 'Expected closing parenthesis')
+            // Non-empty body form: <lhs>(expr) / <lhs>{expr}
+            else {
+                let body = _parse_expr(p)
+                close = parser_token(p)
+                if (close.kind !== _token_close_table[open.kind]) {
+                    return expr_invalid_push(p, close, 'Expected closing parenthesis')
+                }
+                parser_next_token(p)
+                lhs = expr_paren_typed(open, lhs, body, close)
             }
-            parser_next_token(p)
-            lhs = expr_paren_typed(open, lhs, body, close)
-            continue
         }
-
         // Ternary operator (a ? b : c)
-        if (p.token.kind === TOKEN_QUESTION) {
+        else if (p.token.kind === TOKEN_QUESTION) {
             let lbp = 2 // same precedence tier as assignment/equality
             if (lbp < min_bp) break
 
@@ -870,27 +876,28 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
             let rhs = _parse_expr(p, lbp)
 
             lhs = expr_ternary(op_q, op_c, lhs, middle, rhs)
-            continue
         }
+        // Parse binary
+        else {
+            let op = p.token
+            if (op.kind === TOKEN_EOF) break
 
-        let op = p.token
-        if (op.kind === TOKEN_EOF) break
+            let lbp = token_precedence(op)
+            if (lbp < min_bp) break
 
-        let lbp = token_precedence(op)
-        if (lbp < min_bp) break
+            let rbp = lbp
+            if (op.kind !== TOKEN_POW) {
+                rbp += 1 // Right-associative for Pow
+            }
 
-        let rbp = lbp
-        if (op.kind !== TOKEN_POW) {
-            rbp += 1 // Right-associative for Pow
+            parser_next_token(p)
+
+            if (p.token.kind === TOKEN_PAREN_R || p.token.kind === TOKEN_BRACE_R) break
+
+            let rhs = _parse_expr(p, rbp)
+
+            lhs = expr_binary(op, lhs, rhs)
         }
-
-        parser_next_token(p)
-
-        if (p.token.kind === TOKEN_PAREN_R || p.token.kind === TOKEN_BRACE_R) break
-
-        let rhs = _parse_expr(p, rbp)
-
-        lhs = expr_binary(op, lhs, rhs)
     }
 
     return lhs
