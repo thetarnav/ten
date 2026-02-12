@@ -143,7 +143,7 @@ export const token_kind_string = (kind: Token_Kind): string => {
     }
 }
 
-const _token_close_table = {
+const CLOSE_TOKEN_TABLE = {
     [TOKEN_PAREN_L]: TOKEN_PAREN_R,
     [TOKEN_BRACE_L]: TOKEN_BRACE_R,
 } as Record<Token_Kind, Token_Kind>
@@ -656,7 +656,7 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
     case EXPR_PAREN:
         let open_close_str =
             (expr.open.kind === TOKEN_PAREN_L || expr.open.kind === TOKEN_BRACE_L) &&
-            expr.close.kind === _token_close_table[expr.open.kind] ?
+            expr.close.kind === CLOSE_TOKEN_TABLE[expr.open.kind] ?
                 `${token_string(src, expr.open)}...${token_string(src, expr.close)}` :
                 `${token_display(src, expr.open)}...${token_display(src, expr.close)}`
         let body_str = expr.body ? expr_display(src, expr.body, indent, depth+1) : `${ind}${indent}(empty)`
@@ -826,14 +826,14 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
 
            .foo{a = a}  ->  Paren(type = Unary(Dot, foo), body = ...)
         */
-        else if (p.token.kind in _token_close_table) {
+        else if (p.token.kind in CLOSE_TOKEN_TABLE) {
 
             let open = p.token
             parser_next_token(p)
             let close = parser_token(p)
 
             // Empty body form: <lhs>() / <lhs>{}
-            if (close.kind === _token_close_table[open.kind]) {
+            if (close.kind === CLOSE_TOKEN_TABLE[open.kind]) {
                 parser_next_token(p)
                 lhs = expr_paren_typed(open, lhs, null, close)
             }
@@ -841,7 +841,7 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
             else {
                 let body = _parse_expr(p)
                 close = parser_token(p)
-                if (close.kind !== _token_close_table[open.kind]) {
+                if (close.kind !== CLOSE_TOKEN_TABLE[open.kind]) {
                     return expr_invalid_push(p, close, 'Expected closing parenthesis')
                 }
                 parser_next_token(p)
@@ -934,13 +934,13 @@ const _parse_expr_atom = (p: Parser): Expr => {
     case TOKEN_BRACE_L: {
         parser_next_token(p)
         let close = parser_token(p)
-        if (close.kind === _token_close_table[tok.kind]) {
+        if (close.kind === CLOSE_TOKEN_TABLE[tok.kind]) {
             parser_next_token(p)
             return expr_paren(tok, null, close)
         }
         let body = _parse_expr(p)
         close = parser_token(p)
-        if (close.kind !== _token_close_table[tok.kind]) {
+        if (close.kind !== CLOSE_TOKEN_TABLE[tok.kind]) {
             return expr_invalid_push(p, close, "Expected closing parenthesis")
         }
         parser_next_token(p)
