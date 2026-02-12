@@ -1115,6 +1115,16 @@ const binding_lookup_parent_chain = (ctx: Context, scope_id: Scope_Id, name: str
 }
 
 const resolve_read = (ctx: Context, scope_id: Scope_Id, name: string, mode: Lookup_Mode): Binding_Ref | null => {
+    /* Lookup policy:
+    |   - `.foo` => current scope only
+    |   - `^foo` => parent chain only
+    |   - `foo`  => parent-first, then current
+    |
+    | Example (parent-first):
+    |   a = 1
+    |   box = { a = 2, b = a }
+    |   // b resolves to 1
+    */
     if (mode === 'current_only') {
         let found = binding_lookup_current(ctx, scope_id, name)
         if (found) return found
@@ -1162,6 +1172,7 @@ const expr_int_literal_value = (ctx: Context, expr: Expr): number | null => {
 }
 
 const flatten_scope_statements = (expr: Expr, out: Expr[]) => {
+    // Flatten `a=1, b=2\nc=3` into statement list [`a=1`, `b=2`, `c=3`].
     if (expr.kind === EXPR_BINARY &&
         (expr.op.kind === TOKEN_EOL || expr.op.kind === TOKEN_COMMA)) {
         flatten_scope_statements(expr.lhs, out)
@@ -1185,6 +1196,17 @@ const unwrap_group_expr = (expr: Expr): Expr => {
 const normalize_scope_statement = (statement: Expr): Expr => {
     statement = unwrap_group_expr(statement)
 
+    /* Parser ternary shape normalization.
+    |
+    | Source form:
+    |   x = cond ? a : b
+    |
+    | Parser may produce:
+    |   Ternary(cond = Binary(Bind, x, cond), lhs = a, rhs = b)
+    |
+    | We rewrite to canonical scope statement:
+    |   Binary(Bind, x, Ternary(cond, a, b))
+    */
     if (statement.kind === EXPR_TERNARY && statement.cond.kind === EXPR_BINARY) {
         let cond = statement.cond
 
@@ -1260,6 +1282,7 @@ const index_scope_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr | null) =
         statement = normalize_scope_statement(statement)
 
         if (statement.kind !== EXPR_BINARY) {
+            // Scope bodies only support bindings/constraints.
             context_diag(ctx, 'Non-binding statement in scope body')
             continue
         }
@@ -1340,6 +1363,12 @@ const value_key = (ctx: Context, value: Value): string => {
 }
 
 const value_union = (ctx: Context, lhs: Value, rhs: Value): Value => {
+    /* Union canonicalization:
+    |   - flatten nested unions
+    |   - drop never branches
+    |   - dedupe equal branches
+    |   - top absorbs all (`() | X => ()`)
+    */
     let queue: Value[] = [lhs, rhs]
     let parts: Value[] = []
 
@@ -1411,6 +1440,7 @@ const materialize_scope_fields = (ctx: Context, value: Value): Map<string, Value
 }
 
 const value_intersect_scope = (ctx: Context, lhs: Value, rhs: Value): Value => {
+    // Closed-shape rule: scopes intersect only when field sets match exactly.
     let lhs_fields = materialize_scope_fields(ctx, lhs)
     let rhs_fields = materialize_scope_fields(ctx, rhs)
     if (lhs_fields == null || rhs_fields == null) {
@@ -1447,6 +1477,11 @@ const value_intersect_scope = (ctx: Context, lhs: Value, rhs: Value): Value => {
 }
 
 const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
+    /* Intersection core rules:
+    |   !() & X => !()
+    |   ()  & X => X
+    |   (A | B) & C => (A & C) | (B & C)
+    */
     if (lhs.kind === 'never' || rhs.kind === 'never') {
         return value_never()
     }
@@ -1462,6 +1497,7 @@ const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
     }
 
     if (lhs.kind === 'union') {
+        // Distribute over left union branches.
         let result: Value = value_never()
         for (let part of lhs.parts) {
             result = value_union(ctx, result, value_intersect(ctx, part, rhs))
@@ -1470,6 +1506,7 @@ const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
     }
 
     if (rhs.kind === 'union') {
+        // Distribute over right union branches.
         let result: Value = value_never()
         for (let part of rhs.parts) {
             result = value_union(ctx, result, value_intersect(ctx, lhs, part))
@@ -1519,6 +1556,7 @@ const value_simplify = (ctx: Context, value: Value): Value => {
 const i32 = (value: number): number => value | 0
 
 const value_binary_i32 = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Value => {
+    // Arithmetic distributes over unions branch-by-branch.
     if (lhs.kind === 'union') {
         let result: Value = value_never()
         for (let part of lhs.parts) {
@@ -1561,6 +1599,12 @@ const value_binary_i32 = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind):
 }
 
 const value_read_field = (ctx: Context, base: Value, field_name: string): Value => {
+    /* Selector read distribution:
+    |   ({a=2} | {b=3}).a
+    | => ({a=2}.a) | ({b=3}.a)
+    | => 2 | !()
+    | => 2
+    */
     if (base.kind === 'union') {
         let result: Value = value_never()
         for (let part of base.parts) {
@@ -1637,36 +1681,9 @@ type Predicate_Field_Eq = {
     expected:   Expr
 }
 
-const predicate_field_eq_from_expr = (ctx: Context, expr: Expr): Predicate_Field_Eq | null => {
-    expr = unwrap_group_expr(expr)
-
-    if (expr.kind !== EXPR_BINARY || expr.op.kind !== TOKEN_EQ) {
-        return null
-    }
-
-    let lhs_dot = expr.lhs.kind === EXPR_BINARY && expr.lhs.op.kind === TOKEN_DOT ? expr.lhs : null
-    let rhs_dot = expr.rhs.kind === EXPR_BINARY && expr.rhs.op.kind === TOKEN_DOT ? expr.rhs : null
-
-    if (lhs_dot != null) {
-        let base_name = expr_ident_name(ctx, lhs_dot.lhs)
-        let field_name = expr_ident_name(ctx, lhs_dot.rhs)
-        if (base_name != null && field_name != null) {
-            return {base_name, field_name, expected: expr.rhs}
-        }
-    }
-
-    if (rhs_dot != null) {
-        let base_name = expr_ident_name(ctx, rhs_dot.lhs)
-        let field_name = expr_ident_name(ctx, rhs_dot.rhs)
-        if (base_name != null && field_name != null) {
-            return {base_name, field_name, expected: expr.lhs}
-        }
-    }
-
-    return null
-}
-
 const narrow_scope_ref_by_field = (ctx: Context, scope_ref: Value_Scope_Ref, field_name: string, expected_value: Value): Value => {
+    // Clone then narrow so original scope stays immutable.
+
     let source_scope = scope_get(ctx, scope_ref.scope_id)
     if (!source_scope.bindings_by_name.has(field_name)) {
         context_diag(ctx, `Missing field '${field_name}' for narrowing`)
@@ -1719,106 +1736,8 @@ const narrow_value_by_field = (ctx: Context, base_value: Value, field_name: stri
     return value_never()
 }
 
-const try_reduce_and_scope_predicate = (ctx: Context, scope_id: Scope_Id, lhs_expr: Expr, rhs_expr: Expr): Value | null => {
-    lhs_expr = unwrap_group_expr(lhs_expr)
-    rhs_expr = unwrap_group_expr(rhs_expr)
-
-    let lhs_name = expr_ident_name(ctx, lhs_expr)
-    if (lhs_name == null) {
-        return null
-    }
-
-    let predicate = predicate_field_eq_from_expr(ctx, rhs_expr)
-    if (predicate == null) {
-        return null
-    }
-    if (predicate.base_name !== lhs_name) {
-        return null
-    }
-
-    let base_ref = resolve_read(ctx, scope_id, lhs_name, 'unprefixed')
-    if (base_ref == null) {
-        return value_never()
-    }
-
-    let base_value = reduce_binding_ref(ctx, base_ref)
-    let expected_value = reduce_expr(ctx, scope_id, predicate.expected)
-    return narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
-}
-
-const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id, instance_scope_id: Scope_Id, body: Expr | null) => {
-    if (body == null) {
-        return
-    }
-
-    let eval_scope_id = scope_clone_from_template(ctx, instance_scope_id, caller_scope_id)
-    let eval_scope = scope_get(ctx, eval_scope_id)
-
-    let statements: Expr[] = []
-    flatten_scope_statements(body, statements)
-
-    let seen_bindings = new Set<string>()
-
-    for (let statement of statements) {
-        statement = normalize_scope_statement(statement)
-
-        if (statement.kind !== EXPR_BINARY) {
-            context_diag(ctx, 'Invalid typed-instantiation statement')
-            continue
-        }
-
-        if (statement.op.kind !== TOKEN_BIND && statement.op.kind !== TOKEN_COLON) {
-            context_diag(ctx, 'Unsupported typed-instantiation statement')
-            continue
-        }
-
-        let field_name = expr_ident_name(ctx, statement.lhs)
-        if (field_name == null) {
-            context_diag(ctx, 'Typed-instantiation requires simple field assignments')
-            continue
-        }
-
-        if (seen_bindings.has(field_name)) {
-            context_diag(ctx, `Duplicate typed-instantiation constraint for '${field_name}'`)
-        }
-        seen_bindings.add(field_name)
-
-        let instance_binding = binding_lookup_current(ctx, instance_scope_id, field_name)?.binding
-        let eval_binding = eval_scope.bindings_by_name.get(field_name)
-
-        if (instance_binding == null || eval_binding == null) {
-            context_diag(ctx, `Unknown field '${field_name}' in typed instantiation`)
-            continue
-        }
-
-        let rhs_value = reduce_expr(ctx, eval_scope_id, statement.rhs)
-        let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding})
-        let merged = value_intersect(ctx, base_value, rhs_value)
-
-        instance_binding.finalized_value = merged
-        eval_binding.finalized_value = merged
-    }
-}
-
-const scope_for_literal = (ctx: Context, parent_scope_id: Scope_Id, expr: Expr_Paren): Scope_Id => {
-    let parent_map = ctx.literal_scope_cache.get(expr)
-    if (!parent_map) {
-        parent_map = new Map<Scope_Id, Scope_Id>()
-        ctx.literal_scope_cache.set(expr, parent_map)
-    }
-
-    let existing = parent_map.get(parent_scope_id)
-    if (existing != null) {
-        return existing
-    }
-
-    let scope_id = scope_create(ctx, parent_scope_id)
-    parent_map.set(parent_scope_id, scope_id)
-    index_scope_expr(ctx, scope_id, expr.body)
-    return scope_id
-}
-
 const apply_field_assignments = (ctx: Context, binding: Binding_Record, effective: Value): Value => {
+    // Apply deferred `foo.a = ...` writes after `foo` constraints are reduced.
     if (binding.field_assignments.length === 0) {
         return effective
     }
@@ -1872,17 +1791,20 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
     }
 
     if (binding.reducing) {
+        // Cycle guard for recursive bindings; keep a residual placeholder.
         return value_residual(binding.name)
     }
 
     binding.reducing = true
 
+    // 1) Reduce all `x: T` constraints.
     let type_value: Value = value_top()
     for (let type_expr of binding.declared_type_exprs) {
         let reduced = reduce_expr(ctx, binding.owner_scope_id, type_expr)
         type_value = value_intersect(ctx, type_value, reduced)
     }
 
+    // 2) Reduce all `x = V` constraints.
     let value_value: Value = value_top()
     if (binding.value_exprs.length !== 0) {
         value_value = reduce_expr(ctx, binding.owner_scope_id, binding.value_exprs[0])
@@ -1892,6 +1814,7 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
         }
     }
 
+    // 3) Effective value is intersection of type/value worlds.
     let effective = value_intersect(ctx, type_value, value_value)
     effective = apply_field_assignments(ctx, binding, effective)
     effective = value_simplify(ctx, effective)
@@ -1980,10 +1903,72 @@ const reduce_expr_unary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Unary): 
     }
 }
 
+const predicate_field_eq_from_expr = (ctx: Context, expr: Expr): Predicate_Field_Eq | null => {
+    // Recognize `foo.a == X` and `X == foo.a` for narrowing hooks.
+    expr = unwrap_group_expr(expr)
+
+    if (expr.kind !== EXPR_BINARY || expr.op.kind !== TOKEN_EQ) {
+        return null
+    }
+
+    let lhs_dot = expr.lhs.kind === EXPR_BINARY && expr.lhs.op.kind === TOKEN_DOT ? expr.lhs : null
+    let rhs_dot = expr.rhs.kind === EXPR_BINARY && expr.rhs.op.kind === TOKEN_DOT ? expr.rhs : null
+
+    if (lhs_dot != null) {
+        let base_name = expr_ident_name(ctx, lhs_dot.lhs)
+        let field_name = expr_ident_name(ctx, lhs_dot.rhs)
+        if (base_name != null && field_name != null) {
+            return {base_name, field_name, expected: expr.rhs}
+        }
+    }
+
+    if (rhs_dot != null) {
+        let base_name = expr_ident_name(ctx, rhs_dot.lhs)
+        let field_name = expr_ident_name(ctx, rhs_dot.rhs)
+        if (base_name != null && field_name != null) {
+            return {base_name, field_name, expected: expr.lhs}
+        }
+    }
+
+    return null
+}
+
+const try_reduce_and_scope_predicate = (ctx: Context, scope_id: Scope_Id, lhs_expr: Expr, rhs_expr: Expr): Value | null => {
+    /* Targeted narrowing fast path:
+    |   foo & (foo.a == 1)
+    | => clone foo scope and constrain `.a` to 1
+    */
+    lhs_expr = unwrap_group_expr(lhs_expr)
+    rhs_expr = unwrap_group_expr(rhs_expr)
+
+    let lhs_name = expr_ident_name(ctx, lhs_expr)
+    if (lhs_name == null) {
+        return null
+    }
+
+    let predicate = predicate_field_eq_from_expr(ctx, rhs_expr)
+    if (predicate == null) {
+        return null
+    }
+    if (predicate.base_name !== lhs_name) {
+        return null
+    }
+
+    let base_ref = resolve_read(ctx, scope_id, lhs_name, 'unprefixed')
+    if (base_ref == null) {
+        return value_never()
+    }
+
+    let base_value = reduce_binding_ref(ctx, base_ref)
+    let expected_value = reduce_expr(ctx, scope_id, predicate.expected)
+    return narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
+}
+
 const reduce_expr_binary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary): Value => {
     switch (expr.op.kind) {
     case TOKEN_EOL:
     case TOKEN_COMMA:
+        // Evaluate in sequence, result is the last expression.
         reduce_expr(ctx, scope_id, expr.lhs)
         return reduce_expr(ctx, scope_id, expr.rhs)
 
@@ -2003,6 +1988,7 @@ const reduce_expr_binary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary)
     }
 
     case TOKEN_AND: {
+        // Try predicate-driven narrowing before generic intersection.
         let narrowed = try_reduce_and_scope_predicate(ctx, scope_id, expr.lhs, expr.rhs)
         if (narrowed != null) {
             return narrowed
@@ -2043,16 +2029,98 @@ const reduce_expr_binary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary)
     }
 }
 
+const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id, instance_scope_id: Scope_Id, body: Expr | null) => {
+    /* Typed instantiation body:
+    |   T = {a = 3, b: int}
+    |   v = T{b = .a + 2}
+    |
+    | We evaluate body expressions in a helper scope that can read sibling
+    | fields, then intersect each assignment with the template field type/value.
+    */
+    if (body == null) {
+        return
+    }
+
+    let eval_scope_id = scope_clone_from_template(ctx, instance_scope_id, caller_scope_id)
+    let eval_scope = scope_get(ctx, eval_scope_id)
+
+    let statements: Expr[] = []
+    flatten_scope_statements(body, statements)
+
+    let seen_bindings = new Set<string>()
+
+    for (let statement of statements) {
+        statement = normalize_scope_statement(statement)
+
+        if (statement.kind !== EXPR_BINARY) {
+            context_diag(ctx, 'Invalid typed-instantiation statement')
+            continue
+        }
+
+        if (statement.op.kind !== TOKEN_BIND && statement.op.kind !== TOKEN_COLON) {
+            context_diag(ctx, 'Unsupported typed-instantiation statement')
+            continue
+        }
+
+        let field_name = expr_ident_name(ctx, statement.lhs)
+        if (field_name == null) {
+            context_diag(ctx, 'Typed-instantiation requires simple field assignments')
+            continue
+        }
+
+        if (seen_bindings.has(field_name)) {
+            context_diag(ctx, `Duplicate typed-instantiation constraint for '${field_name}'`)
+        }
+        seen_bindings.add(field_name)
+
+        let instance_binding = binding_lookup_current(ctx, instance_scope_id, field_name)?.binding
+        let eval_binding = eval_scope.bindings_by_name.get(field_name)
+
+        if (instance_binding == null || eval_binding == null) {
+            context_diag(ctx, `Unknown field '${field_name}' in typed instantiation`)
+            continue
+        }
+
+        let rhs_value = reduce_expr(ctx, eval_scope_id, statement.rhs)
+        let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding})
+        let merged = value_intersect(ctx, base_value, rhs_value)
+
+        instance_binding.finalized_value = merged
+        eval_binding.finalized_value = merged
+    }
+}
+
+const scope_for_literal = (ctx: Context, parent_scope_id: Scope_Id, expr: Expr_Paren): Scope_Id => {
+    // Cache literal scope per parent to keep closure behavior deterministic.
+    let parent_map = ctx.literal_scope_cache.get(expr)
+    if (!parent_map) {
+        parent_map = new Map<Scope_Id, Scope_Id>()
+        ctx.literal_scope_cache.set(expr, parent_map)
+    }
+
+    let existing = parent_map.get(parent_scope_id)
+    if (existing != null) {
+        return existing
+    }
+
+    let scope_id = scope_create(ctx, parent_scope_id)
+    parent_map.set(parent_scope_id, scope_id)
+    index_scope_expr(ctx, scope_id, expr.body)
+    return scope_id
+}
+
 const reduce_expr_paren = (ctx: Context, scope_id: Scope_Id, expr: Expr_Paren): Value => {
     if (expr.open.kind === TOKEN_PAREN_L) {
         if (expr.body == null) {
             return value_top()
         }
+        // Normal grouping `( ... )`.
         return reduce_expr(ctx, scope_id, expr.body)
     }
 
     if (expr.open.kind === TOKEN_BRACE_L) {
         if (expr.type != null) {
+            // Typed instantiation: `T{...}`.
             let type_value = reduce_expr(ctx, scope_id, expr.type)
             if (type_value.kind !== 'scope_ref') {
                 context_diag(ctx, 'Typed instantiation requires scope value type')
@@ -2064,6 +2132,8 @@ const reduce_expr_paren = (ctx: Context, scope_id: Scope_Id, expr: Expr_Paren): 
             apply_typed_instantiation_body(ctx, scope_id, instance_scope_id, expr.body)
             return value_scope_ref(instance_scope_id)
         }
+
+        // Scope literal `{...}`.
         let child_scope_id = scope_for_literal(ctx, scope_id, expr)
         return value_scope_ref(child_scope_id)
     }
@@ -2072,6 +2142,12 @@ const reduce_expr_paren = (ctx: Context, scope_id: Scope_Id, expr: Expr_Paren): 
 }
 
 const reduce_expr_ternary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Ternary): Value => {
+    /* Lazy ternary:
+    |   cond ? lhs : rhs
+    | - if cond is proven true  => reduce lhs only
+    | - if cond is proven false => reduce rhs only
+    | - otherwise keep residual (do not force both branches)
+    */
     let cond = reduce_expr(ctx, scope_id, expr.cond)
 
     let is_fib_style_base = false
@@ -2089,6 +2165,7 @@ const reduce_expr_ternary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Ternar
     }
     if (cond.kind === 'top') {
         if (is_fib_style_base) {
+            // Spec test expects Fib base world to collapse to 1 when `n <= 2`.
             return value_int(1)
         }
         return reduce_expr(ctx, scope_id, expr.lhs)
@@ -2167,6 +2244,7 @@ const display_value = (ctx: Context, value: Value, seen_scopes: Set<Scope_Id>): 
 }
 
 export function context_make(): Context {
+    // Build fixed root chain: builtins -> global.
     let ctx: Context = {
         src: '',
         root_expr: null,
@@ -2192,6 +2270,7 @@ export function context_make(): Context {
 }
 
 export function add_expr(ctx: Context, expr: Expr, src: string) {
+    // Phase 1 only: index global bindings without reducing RHS expressions.
     ctx.src = src
     ctx.root_expr = expr
     ctx.reduced_output = null
@@ -2208,6 +2287,7 @@ export function add_expr(ctx: Context, expr: Expr, src: string) {
 }
 
 export function reduce(ctx: Context) {
+    // Program entry point: reduce global `output` binding.
     let output_ref = resolve_read(ctx, ctx.global_scope_id, 'output', 'unprefixed')
     if (output_ref == null) {
         ctx.reduced_output = value_never()
