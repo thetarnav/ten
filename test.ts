@@ -509,6 +509,15 @@ test.describe('reducer', {concurrency: true}, () => {
     `, `1`)
 
     test_reducer(`
+        a: 1 | 2
+        output = a + 1
+    `, `2 | 3`)
+    test_reducer(`
+        a = 1 | 2
+        output = a + 1
+    `, `2 | 3`)
+
+    test_reducer(`
         a = 1
         foo = {a = 2, x = .a, y = ^a}
         output = {x = foo.x, y = foo.y}
