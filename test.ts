@@ -52,7 +52,7 @@ function test_parser(input: string, expected: string) {
     })
 }
 
-function test_reducer(input: string, expected: string) {
+function test_reducer(input: string, expected: string, expected_diagnostics: string[] | null = null) {
     test.test('`'+input+'`', () => {
 
         let src = input.trim()
@@ -69,6 +69,13 @@ function test_reducer(input: string, expected: string) {
 
         let result_str = ten.display(ctx)
         expect(result_str === expected, "Reducer result mismatch", expected, result_str)
+
+        if (expected_diagnostics != null) {
+            let diagnostics = ten.diagnostics(ctx)
+            let expected_json = JSON.stringify(expected_diagnostics)
+            let actual_json = JSON.stringify(diagnostics)
+            expect(actual_json === expected_json, 'Reducer diagnostics mismatch', expected_json, actual_json)
+        }
     })
 }
 
@@ -599,4 +606,36 @@ test.describe('reducer', {concurrency: true}, () => {
         bar = foo & (foo.a == 1)
         output = bar.b
     `, `2`)
+
+    test_reducer(`
+        x = 2
+        x = 2
+        output = x
+    `, `2`, [`Duplicate value binding for 'x'`])
+
+    test_reducer(`
+        x = ({a = 2} | {b = 3}).a
+        output = x
+    `, `2`, [`Missing field 'a' on scope`])
+
+    test_reducer(`
+        output = missing_name
+    `, `!()`, [`Undefined binding: missing_name`])
+
+    test_reducer(`
+        foo = 1
+        output = foo.a
+    `, `!()`, [`Selector read on non-scope for .a`])
+
+    test_reducer(`
+        foo = {a = 3}
+        foo.b = 4
+        output = foo
+    `, `!()`, [`Illegal field write on closed scope value 'foo'`])
+
+    test_reducer(`
+        foo = ()
+        foo.a = 3
+        output = foo
+    `, `!()`, [`Illegal field write on 'foo' without explicit scope type`])
 })

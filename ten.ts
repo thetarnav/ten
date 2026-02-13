@@ -1742,13 +1742,17 @@ const apply_field_assignments = (ctx: Context, binding: Binding_Record, effectiv
         return effective
     }
 
-    if (binding.declared_type_exprs.length === 0) {
-        context_diag(ctx, `Illegal field write on '${binding.name}' without explicit scope type`)
+    if (binding.value_exprs.length !== 0) {
+        if (materialize_scope_fields(ctx, effective) != null) {
+            context_diag(ctx, `Illegal field write on closed scope value '${binding.name}'`)
+        } else {
+            context_diag(ctx, `Illegal field write on '${binding.name}' without explicit scope type`)
+        }
         return value_never()
     }
 
-    if (binding.value_exprs.length !== 0) {
-        context_diag(ctx, `Illegal field write on concrete binding '${binding.name}'`)
+    if (binding.declared_type_exprs.length === 0) {
+        context_diag(ctx, `Illegal field write on '${binding.name}' without explicit scope type`)
         return value_never()
     }
 
@@ -2302,4 +2306,8 @@ export function display(ctx: Context): string {
         return ''
     }
     return display_value(ctx, ctx.reduced_output, new Set<Scope_Id>())
+}
+
+export function diagnostics(ctx: Context): string[] {
+    return ctx.diagnostics.slice()
 }
