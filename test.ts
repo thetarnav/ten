@@ -541,16 +541,6 @@ test.describe('reducer', {concurrency: true}, () => {
     `, `-2147483648`)
 
     test_reducer(`
-        Fib = {
-            n: int
-            result = n <= 2
-                ? n
-                : Fib{n = n-1}.result + Fib{n = n-2}.result
-        }
-        output = Fib{n = 10}.result
-    `, `55`)
-
-    test_reducer(`
         foo = {
             a = int
             b = a == 1 ? 2 : 3
@@ -647,4 +637,29 @@ test.describe('reducer', {concurrency: true}, () => {
         foo.a = 3
         output = foo
     `, `!()`, [`Illegal field write on 'foo' without explicit scope type`])
+
+    test_reducer(`
+        Fib = {
+            n: int
+            result = n <= 2
+                ? n
+                : Fib{n = n-1}.result + Fib{n = n-2}.result
+        }
+        output = Fib{n = 10}.result
+    `, `55`)
+
+    test_reducer(`
+        Node = {value: int, end: 1 | 0, next: Node}
+
+        root = Node{value = 1, end = 0, next = a}
+        a    = Node{value = 2, end = 0, next = b}
+        b    = Node{value = 3, end = 1}
+
+        Sum = {
+            node: Node
+            value = node.end == 1 ? node.value : node.value + Sum{node=node.next}.value
+        }
+
+        output = Sum{node=root}.value
+    `, '6')
 })
