@@ -194,18 +194,34 @@ test.describe('parser', {concurrency: true}, () => {
         `    Token: Ident(a)\n`+
         `    Token: Ident(b)\n`+
         `  Token: Ident(c)`)
-
     test_parser('a / 2 / c',
         `Binary: Div(/)\n`+
         `  Binary: Div(/)\n`+
         `    Token: Ident(a)\n`+
         `    Token: Int(2)\n`+
         `  Token: Ident(c)`)
-
     test_parser('a ^ b ^ c',
         `Binary: Pow(^)\n`+
         `  Token: Ident(a)\n`+
         `  Binary: Pow(^)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Ident(c)`)
+    test_parser('a = b + c',
+        `Binary: Bind(=)\n`+
+        `  Token: Ident(a)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Ident(c)`)
+    test_parser('a | b + c',
+        `Binary: Or(|)\n`+
+        `  Token: Ident(a)\n`+
+        `  Binary: Add(+)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Ident(c)`)
+    test_parser('a = b | c',
+        `Binary: Bind(=)\n`+
+        `  Token: Ident(a)\n`+
+        `  Binary: Or(|)\n`+
         `    Token: Ident(b)\n`+
         `    Token: Ident(c)`)
 
@@ -453,36 +469,43 @@ test.describe('parser', {concurrency: true}, () => {
         `    Token: Ident(c)\n`+
         `    Token: Ident(d)\n`+
         `  Token: Ident(e)`)
+    test_parser('a = b ? c : d',
+        `Binary: Bind(=)\n`+
+        `  Token: Ident(a)\n`+
+        `  Ternary: Question(?) Colon(:)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Ident(c)\n`+
+        `    Token: Ident(d)`)
     test_parser(`foo = a + b == 20 ?\n\ta + 1 :\n\tb + 1`,
-        `Ternary: Question(?) Colon(:)\n`+
-        `  Binary: Eq(==)\n`+
-        `    Binary: Bind(=)\n`+
-        `      Token: Ident(foo)\n`+
+        `Binary: Bind(=)\n`+
+        `  Token: Ident(foo)\n`+
+        `  Ternary: Question(?) Colon(:)\n`+
+        `    Binary: Eq(==)\n`+
         `      Binary: Add(+)\n`+
         `        Token: Ident(a)\n`+
         `        Token: Ident(b)\n`+
-        `    Token: Int(20)\n`+
-        `  Binary: Add(+)\n`+
-        `    Token: Ident(a)\n`+
-        `    Token: Int(1)\n`+
-        `  Binary: Add(+)\n`+
-        `    Token: Ident(b)\n`+
-        `    Token: Int(1)`)
+        `      Token: Int(20)\n`+
+        `    Binary: Add(+)\n`+
+        `      Token: Ident(a)\n`+
+        `      Token: Int(1)\n`+
+        `    Binary: Add(+)\n`+
+        `      Token: Ident(b)\n`+
+        `      Token: Int(1)`)
     test_parser(`foo = a + b == 20\n\t? a + 1\n\t: b + 1`,
-        `Ternary: Question(?) Colon(:)\n`+
-        `  Binary: Eq(==)\n`+
-        `    Binary: Bind(=)\n`+
-        `      Token: Ident(foo)\n`+
+        `Binary: Bind(=)\n`+
+        `  Token: Ident(foo)\n`+
+        `  Ternary: Question(?) Colon(:)\n`+
+        `    Binary: Eq(==)\n`+
         `      Binary: Add(+)\n`+
         `        Token: Ident(a)\n`+
         `        Token: Ident(b)\n`+
-        `    Token: Int(20)\n`+
-        `  Binary: Add(+)\n`+
-        `    Token: Ident(a)\n`+
-        `    Token: Int(1)\n`+
-        `  Binary: Add(+)\n`+
-        `    Token: Ident(b)\n`+
-        `    Token: Int(1)`)
+        `      Token: Int(20)\n`+
+        `    Binary: Add(+)\n`+
+        `      Token: Ident(a)\n`+
+        `      Token: Int(1)\n`+
+        `    Binary: Add(+)\n`+
+        `      Token: Ident(b)\n`+
+        `      Token: Int(1)`)
 
     // Many expressions
     test_parser('foo <= bar = baz\nx > 123',
