@@ -642,22 +642,22 @@ export const token_kind_precedence = (kind: Token_Kind): number => {
     case TOKEN_COMMA:      return 1
     case TOKEN_COLON:      return 2
     case TOKEN_BIND:       return 2
-    case TOKEN_EQ:         return 2
-    case TOKEN_NOT_EQ:     return 2
-    case TOKEN_ADD_EQ:     return 2
-    case TOKEN_SUB_EQ:     return 2
-    case TOKEN_GREATER:    return 3
-    case TOKEN_GREATER_EQ: return 3
-    case TOKEN_LESS:       return 3
-    case TOKEN_LESS_EQ:    return 3
-    case TOKEN_ADD:        return 4
-    case TOKEN_SUB:        return 4
-    case TOKEN_MUL:        return 5
-    case TOKEN_DIV:        return 5
-    case TOKEN_POW:        return 6
-    case TOKEN_AND:        return 7
-    case TOKEN_OR:         return 7
-    case TOKEN_DOT:        return 8
+    case TOKEN_AND:        return 3
+    case TOKEN_OR:         return 3
+    case TOKEN_EQ:         return 4
+    case TOKEN_NOT_EQ:     return 4
+    case TOKEN_ADD_EQ:     return 4
+    case TOKEN_SUB_EQ:     return 4
+    case TOKEN_GREATER:    return 5
+    case TOKEN_GREATER_EQ: return 5
+    case TOKEN_LESS:       return 5
+    case TOKEN_LESS_EQ:    return 5
+    case TOKEN_ADD:        return 6
+    case TOKEN_SUB:        return 6
+    case TOKEN_MUL:        return 7
+    case TOKEN_DIV:        return 7
+    case TOKEN_POW:        return 8
+    case TOKEN_DOT:        return 9
     default:               return 0
     }
 }
@@ -812,7 +812,7 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
         }
         // Ternary operator (a ? b : c)
         else if (p.token.kind === TOKEN_QUESTION) {
-            let lbp = 2 // same precedence tier as assignment/equality
+            let lbp = 4 // same precedence tier as assignment/equality
             if (lbp < min_bp) break
 
             let op_q = p.token
@@ -1135,17 +1135,6 @@ const expr_int_literal_value = (ctx: Context, expr: Expr): number | null => {
     return parsed | 0
 }
 
-const flatten_scope_statements = (expr: Expr, out: Expr[]) => {
-    // Flatten `a=1, b=2\nc=3` into statement list [`a=1`, `b=2`, `c=3`].
-    if (expr.kind === EXPR_BINARY &&
-        (expr.op.kind === TOKEN_EOL || expr.op.kind === TOKEN_COMMA)) {
-        flatten_scope_statements(expr.lhs, out)
-        flatten_scope_statements(expr.rhs, out)
-        return
-    }
-    out.push(expr)
-}
-
 const unwrap_group_expr = (expr: Expr): Expr => {
     let current = expr
     while (current.kind === EXPR_PAREN &&
@@ -1157,38 +1146,17 @@ const unwrap_group_expr = (expr: Expr): Expr => {
     return current
 }
 
-const normalize_scope_statement = (statement: Expr): Expr => {
-    statement = unwrap_group_expr(statement)
-
-    /* Parser ternary shape normalization.
-    |
-    | Source form:
-    |   x = cond ? a : b
-    |
-    | Parser may produce:
-    |   Ternary(cond = Binary(Bind, x, cond), lhs = a, rhs = b)
-    |
-    | We rewrite to canonical scope statement:
-    |   Binary(Bind, x, Ternary(cond, a, b))
-    */
-    if (statement.kind === EXPR_TERNARY && statement.cond.kind === EXPR_BINARY) {
-        let cond = statement.cond
-
-        if (cond.op.kind === TOKEN_BIND || cond.op.kind === TOKEN_COLON) {
-            let rhs = expr_ternary(statement.op_q, statement.op_c, cond.rhs, statement.lhs, statement.rhs)
-            return expr_binary(cond.op, cond.lhs, rhs)
-        }
-
-        if (cond.lhs.kind === EXPR_BINARY &&
-            (cond.lhs.op.kind === TOKEN_BIND || cond.lhs.op.kind === TOKEN_COLON)) {
-            let head = cond.lhs
-            let narrowed_cond = expr_binary(cond.op, head.rhs, cond.rhs)
-            let rhs = expr_ternary(statement.op_q, statement.op_c, narrowed_cond, statement.lhs, statement.rhs)
-            return expr_binary(head.op, head.lhs, rhs)
-        }
+const each_scope_statement = function* (expr: Expr): IterableIterator<Expr> {
+    // Flatten `a=1, b=2\nc=3` into statement list [`a=1`, `b=2`, `c=3`].
+    if (expr.kind === EXPR_BINARY &&
+        (expr.op.kind === TOKEN_EOL ||
+         expr.op.kind === TOKEN_COMMA))
+    {
+        yield* each_scope_statement(expr.lhs)
+        yield* each_scope_statement(expr.rhs)
+    } else {
+        yield unwrap_group_expr(expr)
     }
-
-    return statement
 }
 
 const index_scope_statement_bind = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary) => {
@@ -1239,11 +1207,7 @@ const index_scope_statement_type = (ctx: Context, scope_id: Scope_Id, expr: Expr
 const index_scope_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr | null) => {
     if (expr == null) return
 
-    let statements: Expr[] = []
-    flatten_scope_statements(expr, statements)
-
-    for (let statement of statements) {
-        statement = normalize_scope_statement(statement)
+    for (let statement of each_scope_statement(expr)) {
 
         if (statement.kind !== EXPR_BINARY) {
             // Scope bodies only support bindings/constraints.
@@ -2056,13 +2020,9 @@ const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id,
     let eval_scope_id = scope_clone_from_template(ctx, instance_scope_id, caller_scope_id)
     let eval_scope = scope_get(ctx, eval_scope_id)
 
-    let statements: Expr[] = []
-    flatten_scope_statements(body, statements)
-
     let seen_bindings = new Set<string>()
 
-    for (let statement of statements) {
-        statement = normalize_scope_statement(statement)
+    for (let statement of each_scope_statement(body)) {
 
         if (statement.kind !== EXPR_BINARY) {
             context_diag(ctx, 'Invalid typed-instantiation statement')
