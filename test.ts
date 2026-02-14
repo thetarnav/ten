@@ -98,21 +98,21 @@ test.describe('tokenizer', {concurrency: true}, () => {
     test_tokenizer(`_render = Btn("Hello")`,
         `Ident(_render) Bind(=) Ident(Btn) Paren_L(() String("Hello") Paren_R())`)
     test_tokenizer(`0.123 = .123 != y = 12.s`,
-        `Float(0.123) Bind(=) Float(.123) Not_Eq(!=) Ident(y) Bind(=) Invalid(12) Ident(s)`)
+        `Float(0.123) Bind(=) Dot(.) Int(123) Not_Eq(!=) Ident(y) Bind(=) Invalid(12) Ident(s)`)
     test_tokenizer(`\t  text = "Count: " + count + "!\\n"`,
         `Ident(text) Bind(=) String("Count: ") Add(+) Ident(count) Add(+) String("!\\n")`)
     test_tokenizer(`\t\tonclick = inc`,
         `Ident(onclick) Bind(=) Ident(inc)`)
     test_tokenizer(`0.0.0`,
-        `Float(0.0) Float(.0)`)
+        `Float(0.0) Dot(.) Int(0)`)
     test_tokenizer(`()`,
         `Paren_L(() Paren_R())`)
     test_tokenizer(`a >b >= c = d < e<= !f`,
         `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Bind(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Neg(!) Ident(f)`)
     test_tokenizer(`true false`,
-        `True(true) False(false)`)
+        `Ident(true) Ident(false)`)
     test_tokenizer(`x ^ true, y = false`,
-        `Ident(x) Pow(^) True(true) Comma(,) Ident(y) Bind(=) False(false)`)
+        `Ident(x) Pow(^) Ident(true) Comma(,) Ident(y) Bind(=) Ident(false)`)
     test_tokenizer(`x == y ? a : b`,
         `Ident(x) Eq(==) Ident(y) Question(?) Ident(a) Colon(:) Ident(b)`)
     test_tokenizer(`.true .false .foo`,
@@ -134,14 +134,12 @@ test.describe('parser', {concurrency: true}, () => {
         `Token: Int(123)`)
     test_parser('3.14',
         `Token: Float(3.14)`)
-    test_parser('.14',
-        `Token: Float(.14)`)
 
     // Booleans
     test_parser('true',
-        `Token: True(true)`)
+        `Token: Ident(true)`)
     test_parser('false',
-        `Token: False(false)`)
+        `Token: Ident(false)`)
     test_parser('.true',
         `Unary: Dot(.)\n`+
         `  Token: Ident(true)`)
@@ -172,7 +170,7 @@ test.describe('parser', {concurrency: true}, () => {
     test_parser('a + true',
         `Binary: Add(+)\n`+
         `  Token: Ident(a)\n`+
-        `  Token: True(true)`)
+        `  Token: Ident(true)`)
     test_parser('.a - @',
         `Binary: Sub(-)\n`+
         `  Unary: Dot(.)\n`+
@@ -184,7 +182,7 @@ test.describe('parser', {concurrency: true}, () => {
         `Binary: Add(+)\n`+
         `  Token: Ident(a)\n`+
         `  Binary: Mul(*)\n`+
-        `    Token: False(false)\n`+
+        `    Token: Ident(false)\n`+
         `    Token: Ident(c)`)
     test_parser('a * b + c',
         `Binary: Add(+)\n`+

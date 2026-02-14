@@ -84,8 +84,6 @@ export const Token_Kind = {
     Brace_L:    TOKEN_BRACE_L,
     Brace_R:    TOKEN_BRACE_R,
     Comma:      TOKEN_COMMA,
-    True:       TOKEN_TRUE,
-    False:      TOKEN_FALSE,
     String:     TOKEN_STRING,
     Ident:      TOKEN_IDENT,
     Dot:        TOKEN_DOT,
@@ -126,8 +124,6 @@ export const token_kind_string = (kind: Token_Kind): string => {
     case TOKEN_BRACE_L:    return "Brace_L"
     case TOKEN_BRACE_R:    return "Brace_R"
     case TOKEN_COMMA:      return "Comma"
-    case TOKEN_TRUE:       return "True"
-    case TOKEN_FALSE:      return "False"
     case TOKEN_STRING:     return "String"
     case TOKEN_IDENT:      return "Ident"
     case TOKEN_DOT:        return "Dot"
@@ -153,8 +149,6 @@ export type Tokenizer = {
     src      : string
     pos_read : number
     pos_write: number
-    dot_ident: boolean // whether the next identifier is a dot selector (e.g. `.foo`)
-                       // which allows keywords to be used as selectors like `.true` or `.false`
 }
 
 export const tokenizer_make = (src: string): Tokenizer => {
@@ -162,7 +156,6 @@ export const tokenizer_make = (src: string): Tokenizer => {
         src:       src,
         pos_read:  0,
         pos_write: 0,
-        dot_ident: false,
     }
     return t
 }
@@ -276,6 +269,7 @@ export const token_next = (t: Tokenizer): Token => {
         }
         return _token_make_move_back(t, TOKEN_NEG)
     }
+    case 46 /* '.' */: return _token_make_move(t, TOKEN_DOT)
     case 42 /* '*' */: return _token_make_move(t, TOKEN_MUL)
     case 47 /* '/' */: return _token_make_move(t, TOKEN_DIV)
     case 94 /* '^' */: return _token_make_move(t, TOKEN_POW)
@@ -350,35 +344,10 @@ export const token_next = (t: Tokenizer): Token => {
         }
     }
 
-    if (ch === 46 /* '.' */) {
-        ch = next_char_code(t)
-
-        // fraction (.456)
-        if (is_digit_code(ch)) {
-            while (is_digit_code(next_char_code(t))) {}
-            return _token_make_move_back(t, TOKEN_FLOAT)
-        }
-
-        // selector (.foo)
-        if (is_ident_code(ch)) {
-            t.dot_ident = true
-            return _token_make_move_back(t, TOKEN_DOT)
-        }
-
-        return _token_make_move_back(t, TOKEN_INVALID)
-    }
-
-    // Identifiers and Keywords
+    // Identifiers
     if (is_ident_code(ch)) {
         while (is_ident_code(next_char_code(t))) {}
 
-        // Check for keywords
-        if (!t.dot_ident) switch (t.src.substring(t.pos_write, t.pos_read)) {
-        case 'true':  return _token_make_move_back(t, TOKEN_TRUE)
-        case 'false': return _token_make_move_back(t, TOKEN_FALSE)
-        }
-
-        t.dot_ident = false
         return _token_make_move_back(t, TOKEN_IDENT)
     }
 
@@ -425,12 +394,6 @@ export const token_len = (src: string, tok: Token): number => {
     case TOKEN_EQ:
     case TOKEN_NOT_EQ:
         return 2
-
-    case TOKEN_TRUE:
-        return 4
-
-    case TOKEN_FALSE:
-        return 5
 
     // Multi-character tokens
     case TOKEN_STRING:
@@ -935,14 +898,9 @@ const _parse_expr_atom = (p: Parser): Expr => {
         return _parse_expr_group(p, tok, null)
     }
     case TOKEN_IDENT:
-    case TOKEN_AT: {
-        parser_next_token(p)
-        return expr_token(tok)
-    }
+    case TOKEN_AT:
     case TOKEN_FLOAT:
-    case TOKEN_INT:
-    case TOKEN_TRUE:
-    case TOKEN_FALSE: {
+    case TOKEN_INT: {
         parser_next_token(p)
         return expr_token(tok)
     }
@@ -1847,10 +1805,6 @@ const reduce_expr_token = (ctx: Context, scope_id: Scope_Id, expr: Expr_Token): 
         }
         return reduce_binding_ref(ctx, ref)
     }
-    case TOKEN_TRUE:
-        return value_top()
-    case TOKEN_FALSE:
-        return value_never()
     default:
         return value_residual(token_display(ctx.src, expr.tok))
     }
