@@ -955,6 +955,9 @@ type Value_Int = {
 type Value_Int_Type = {
     kind: 'int_type'
 }
+type Value_Nil = {
+    kind: 'nil'
+}
 type Value_Scope_Ref = {
     kind:     'scope_ref'
     scope_id: Scope_Id
@@ -977,6 +980,7 @@ type Value =
     | Value_Never
     | Value_Int
     | Value_Int_Type
+    | Value_Nil
     | Value_Scope_Ref
     | Value_Scope_Obj
     | Value_Union
@@ -999,18 +1003,20 @@ type Context = {
     literal_scope_cache: WeakMap<Expr_Paren, Map<Scope_Id, Scope_Id>>
 }
 
-const VALUE_TOP: Value_Top = {kind: 'top'}
-const VALUE_NEVER: Value_Never = {kind: 'never'}
+const VALUE_TOP:      Value_Top      = {kind: 'top'}
+const VALUE_NEVER:    Value_Never    = {kind: 'never'}
 const VALUE_INT_TYPE: Value_Int_Type = {kind: 'int_type'}
+const VALUE_NIL:      Value_Nil      = {kind: 'nil'}
 
-const value_top = (): Value => VALUE_TOP
-const value_never = (): Value => VALUE_NEVER
-const value_int = (value: number): Value_Int => ({kind: 'int', value: value | 0})
-const value_int_type = (): Value => VALUE_INT_TYPE
-const value_scope_ref = (scope_id: Scope_Id): Value_Scope_Ref => ({kind: 'scope_ref', scope_id})
-const value_scope_obj = (fields: Map<string, Value>): Value_Scope_Obj => ({kind: 'scope_obj', fields})
+const value_top         = (): Value => VALUE_TOP
+const value_never       = (): Value => VALUE_NEVER
+const value_int         = (value: number): Value_Int => ({kind: 'int', value: value | 0})
+const value_int_type    = (): Value => VALUE_INT_TYPE
+const value_nil         = (): Value => VALUE_NIL
+const value_scope_ref   = (scope_id: Scope_Id): Value_Scope_Ref => ({kind: 'scope_ref', scope_id})
+const value_scope_obj   = (fields: Map<string, Value>): Value_Scope_Obj => ({kind: 'scope_obj', fields})
 const value_union_parts = (parts: Value[]): Value_Union => ({kind: 'union', parts})
-const value_residual = (text: string): Value_Residual => ({kind: 'residual', text})
+const value_residual    = (text: string): Value_Residual => ({kind: 'residual', text})
 
 const context_diag = (ctx: Context, message: string) => {
     ctx.diagnostics.push(message)
@@ -1296,6 +1302,8 @@ const value_key = (ctx: Context, value: Value): string => {
         return `i32(${value.value})`
     case 'int_type':
         return 'int'
+    case 'nil':
+        return 'nil'
     case 'scope_ref':
         return `scope#${value.scope_id}`
     case 'scope_obj': {
@@ -1488,6 +1496,29 @@ const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
         return value_int_type()
     }
 
+    if (lhs.kind === 'nil' && rhs.kind === 'nil') {
+        return value_nil()
+    }
+
+    if (lhs.kind === 'nil' || rhs.kind === 'nil') {
+        let other = lhs.kind === 'nil' ? rhs : lhs
+
+        switch (other.kind) {
+        case 'int':
+        case 'int_type':
+        case 'scope_ref':
+        case 'scope_obj':
+            return value_never()
+        case 'residual':
+            return value_residual(`${value_key(ctx, other)} & nil`)
+        case 'nil':
+            return value_nil()
+        default:
+            other satisfies never
+            return value_never()
+        }
+    }
+
     let lhs_is_scope = lhs.kind === 'scope_ref' || lhs.kind === 'scope_obj'
     let rhs_is_scope = rhs.kind === 'scope_ref' || rhs.kind === 'scope_obj'
     if (lhs_is_scope && rhs_is_scope) {
@@ -1621,14 +1652,30 @@ const value_compare = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Va
         return ok ? value_top() : value_never()
     }
 
+    if (lhs.kind === 'nil' && rhs.kind === 'nil') {
+        if (op === TOKEN_EQ || op === TOKEN_LESS_EQ || op === TOKEN_GREATER_EQ) {
+            return value_top()
+        }
+        if (op === TOKEN_NOT_EQ || op === TOKEN_LESS || op === TOKEN_GREATER) {
+            return value_never()
+        }
+    }
+
+    let lhs_known_non_nil = lhs.kind === 'int' || lhs.kind === 'int_type' || lhs.kind === 'scope_ref' || lhs.kind === 'scope_obj'
+    let rhs_known_non_nil = rhs.kind === 'int' || rhs.kind === 'int_type' || rhs.kind === 'scope_ref' || rhs.kind === 'scope_obj'
+    if ((lhs.kind === 'nil' && rhs_known_non_nil) || (rhs.kind === 'nil' && lhs_known_non_nil)) {
+        if (op === TOKEN_EQ) return value_never()
+        if (op === TOKEN_NOT_EQ) return value_top()
+    }
+
     let op_text = token_kind_string(op)
     switch (op) {
-    case TOKEN_EQ:         op_text = '=='; break
-    case TOKEN_NOT_EQ:     op_text = '!='; break
-    case TOKEN_LESS:       op_text = '<'; break
-    case TOKEN_LESS_EQ:    op_text = '<='; break
-    case TOKEN_GREATER:    op_text = '>'; break
-    case TOKEN_GREATER_EQ: op_text = '>='; break
+    case TOKEN_EQ:         op_text = '==' ;break
+    case TOKEN_NOT_EQ:     op_text = '!=' ;break
+    case TOKEN_LESS:       op_text = '<'  ;break
+    case TOKEN_LESS_EQ:    op_text = '<=' ;break
+    case TOKEN_GREATER:    op_text = '>'  ;break
+    case TOKEN_GREATER_EQ: op_text = '>=' ;break
     }
     return value_residual(`${value_key(ctx, lhs)} ${op_text} ${value_key(ctx, rhs)}`)
 }
@@ -1799,8 +1846,15 @@ const reduce_expr_token = (ctx: Context, scope_id: Scope_Id, expr: Expr_Token): 
     }
     case TOKEN_IDENT: {
         let name = token_string(ctx.src, expr.tok)
+
+        // `nil`, `true`, and `false` are builtin identifiers, not lexer keywords.
+        // They resolve through normal scope lookup so builtin behavior stays
+        // consistent with other names (including `^name` access rules).
         let ref = resolve_read(ctx, scope_id, name, 'unprefixed')
         if (ref == null) {
+            if (name === 'true')  return value_top()
+            if (name === 'false') return value_never()
+            if (name === 'nil')   return value_nil()
             return value_never()
         }
         return reduce_binding_ref(ctx, ref)
@@ -2174,6 +2228,8 @@ const display_value = (ctx: Context, value: Value, seen_scopes: Set<Scope_Id>): 
         return `${value.value}`
     case 'int_type':
         return 'int'
+    case 'nil':
+        return 'nil'
     case 'scope_ref': {
         if (seen_scopes.has(value.scope_id)) {
             return '{...}'
@@ -2223,6 +2279,15 @@ export function context_make(): Context {
 
     let int_binding = binding_ensure(ctx, builtins_scope_id, 'int')
     int_binding.finalized_value = value_int_type()
+
+    let true_binding = binding_ensure(ctx, builtins_scope_id, 'true')
+    true_binding.finalized_value = value_top()
+
+    let false_binding = binding_ensure(ctx, builtins_scope_id, 'false')
+    false_binding.finalized_value = value_never()
+
+    let nil_binding = binding_ensure(ctx, builtins_scope_id, 'nil')
+    nil_binding.finalized_value = value_nil()
 
     return ctx
 }

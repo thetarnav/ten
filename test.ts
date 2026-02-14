@@ -111,6 +111,8 @@ test.describe('tokenizer', {concurrency: true}, () => {
         `Ident(a) Greater(>) Ident(b) Greater_Eq(>=) Ident(c) Bind(=) Ident(d) Less(<) Ident(e) Less_Eq(<=) Neg(!) Ident(f)`)
     test_tokenizer(`true false`,
         `Ident(true) Ident(false)`)
+    test_tokenizer(`nil`,
+        `Ident(nil)`)
     test_tokenizer(`x ^ true, y = false`,
         `Ident(x) Pow(^) Ident(true) Comma(,) Ident(y) Bind(=) Ident(false)`)
     test_tokenizer(`x == y ? a : b`,
@@ -140,6 +142,8 @@ test.describe('parser', {concurrency: true}, () => {
         `Token: Ident(true)`)
     test_parser('false',
         `Token: Ident(false)`)
+    test_parser('nil',
+        `Token: Ident(nil)`)
     test_parser('.true',
         `Unary: Dot(.)\n`+
         `  Token: Ident(true)`)
@@ -578,6 +582,22 @@ test.describe('reducer', {concurrency: true}, () => {
     `, `!()`)
 
     test_reducer(`
+        output = nil
+    `, `nil`)
+
+    test_reducer(`
+        output = 1 | nil
+    `, `1 | nil`)
+
+    test_reducer(`
+        output = nil & 1
+    `, `!()`)
+
+    test_reducer(`
+        output = nil & (nil | 1)
+    `, `nil`)
+
+    test_reducer(`
         int = 5
         output = ^int
     `, `int`)
@@ -671,4 +691,21 @@ test.describe('reducer', {concurrency: true}, () => {
 
         output = Sum{node=a}.value
     `, '6')
+
+    test_reducer(`
+        Node = {value: int, next: Node | nil}
+
+        a = Node{value = 1, next = b}
+        b = Node{value = 2, next = c}
+        c = Node{value = 3, next = nil}
+
+        Sum = {
+            node: Node
+            value = node.next == nil
+                ? node.value
+                : node.value + Sum{node=node.next}.value
+        }
+
+        output = Sum{node=a}.value
+    `, `6`)
 })
