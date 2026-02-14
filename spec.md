@@ -12,16 +12,18 @@ The program’s entry point is the global variable `output`. Running a program m
 
 Every expression denotes a **set of possible runtime values** (even “ordinary values” like `2` denote a singleton set). This is what makes types and values share one semantic space.
 
-Two distinguished values:
+Three distinguished values:
 
 * `()` (**ANY / Top**): the set of all values of all kinds.
 * `!()` (**NEVER / Bottom**): the empty set.
+* `nil`: a singleton null-like value.
 
 ### 0.2 Kinds (tagged universe)
 
 Values live in a tagged disjoint union universe (kinds), at minimum:
 
 * **i32**
+* **nil**
 * **scope** (with a fixed, closed set of fields / “shape”)
 * **logical** values (`()` / `!()` and unresolved predicates that reduce to one of them)
 
@@ -86,9 +88,11 @@ Scopes form a parent chain:
 
 `builtins -> global -> nested user scopes (tree)`
 
-* Builtins are regular bindings in the builtins scope (e.g. `int`, `()`).
+* Builtins are regular bindings in the builtins scope (e.g. `int`, `nil`, `true`, `false`).
 * Builtins can be shadowed/overwritten in global/user scopes.
 * `^name` can be used to access the parent scope binding (so in global, `^int` refers to builtins `int`).
+
+`nil`, `true`, and `false` are regular identifiers at parse time (not reserved lexer keywords). Their default meaning comes from builtins.
 
 ---
 
@@ -282,6 +286,7 @@ If a value is unresolved, compatibility may be deferred, but the constraint must
 
   * `!() | A` ⇒ `A`
   * `A | !()` ⇒ `A`
+  * `nil | A` stays explicit unless `A` already contains `nil`
   * `A | A` ⇒ `A`
 * Operations distribute over `|` (lazily): applying an operation to a union yields a union of applying it to each branch.
 
@@ -303,6 +308,7 @@ Printed result: `3 | 4`
 
   * `!() & A` ⇒ `!()`
   * `() & A` ⇒ `A`
+  * `nil & A` ⇒ `nil` iff `A` includes `nil`, otherwise `!()`
   * `A & A` ⇒ `A`
 * Distributes over `|` (lazily) when beneficial:
 
@@ -536,6 +542,27 @@ output = foo & (foo.a == 1)
 ```
 
 Result: `{a = 1, b = 2}`
+
+### 11.9 Nil in recursive structures
+
+```ten
+Node = {value: int, next: Node | nil}
+
+a = Node{value = 1, next = b}
+b = Node{value = 2, next = c}
+c = Node{value = 3, next = nil}
+
+Sum = {
+    node: Node
+    value = node.next == nil
+        ? node.value
+        : node.value + Sum{node=node.next}.value
+}
+
+output = Sum{node=a}.value
+```
+
+Result: `6`
 
 ---
 
