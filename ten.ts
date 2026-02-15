@@ -1151,28 +1151,34 @@ const each_scope_statement = function* (expr: Expr): Generator<Expr> {
     }
 }
 
-const index_scope_statement_bind = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary) => {
+const index_scope_statement_bind = (ctx: Context, scope_id: Scope_Id, lhs: Expr, rhs: Expr) => {
 
-    // foo = expr.rhs
-    let lhs_ident = expr_ident_name(ctx, expr.lhs)
+    // lhs.lhs : lhs.rhs = rhs
+    if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_COLON) {
+        index_scope_statement_type(ctx, scope_id, lhs.lhs, lhs.rhs)
+        lhs = lhs.lhs
+    }
+
+    // foo = rhs
+    let lhs_ident = expr_ident_name(ctx, lhs)
     if (lhs_ident != null) {
         let binding = binding_ensure(ctx, scope_id, lhs_ident)
         if (binding.value_exprs.length !== 0) {
             context_diag(ctx, `Duplicate value binding for '${lhs_ident}'`)
         }
-        binding.value_exprs.push(expr.rhs)
+        binding.value_exprs.push(rhs)
         binding.finalized_value = null
         return
     }
 
-    // foo.bar = expr.rhs
-    if (expr.lhs.kind === EXPR_BINARY && expr.lhs.op.kind === TOKEN_DOT) {
-        let base_name  = expr_ident_name(ctx, expr.lhs.lhs)
-        let field_name = expr_ident_name(ctx, expr.lhs.rhs)
+    // foo.bar = rhs
+    if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_DOT) {
+        let base_name  = expr_ident_name(ctx, lhs.lhs)
+        let field_name = expr_ident_name(ctx, lhs.rhs)
 
         if (base_name != null && field_name != null) {
             let binding = binding_ensure(ctx, scope_id, base_name)
-            binding.field_assignments.push({field_name, expr: expr.rhs})
+            binding.field_assignments.push({field_name, expr: rhs})
             binding.finalized_value = null
             return
         }
@@ -1181,8 +1187,8 @@ const index_scope_statement_bind = (ctx: Context, scope_id: Scope_Id, expr: Expr
     context_diag(ctx, 'Invalid assignment shape in scope body')
 }
 
-const index_scope_statement_type = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary) => {
-    let name = expr_ident_name(ctx, expr.lhs)
+const index_scope_statement_type = (ctx: Context, scope_id: Scope_Id, lhs: Expr, rhs: Expr) => {
+    let name = expr_ident_name(ctx, lhs)
     if (name == null) {
         context_diag(ctx, 'Invalid type constraint shape in scope body')
         return
@@ -1192,29 +1198,27 @@ const index_scope_statement_type = (ctx: Context, scope_id: Scope_Id, expr: Expr
     if (binding.declared_type_exprs.length !== 0) {
         context_diag(ctx, `Duplicate type constraint for '${name}'`)
     }
-    binding.declared_type_exprs.push(expr.rhs)
+    binding.declared_type_exprs.push(rhs)
     binding.finalized_value = null
 }
 
 const index_scope_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr | null) => {
     if (expr == null) return
 
-    for (let statement of each_scope_statement(expr)) {
+    for (let st of each_scope_statement(expr)) {
 
-        if (statement.kind !== EXPR_BINARY) {
-            // Scope bodies only support bindings/constraints.
-            context_diag(ctx, 'Non-binding statement in scope body')
-            continue
-        }
-
-        if (statement.op.kind === TOKEN_BIND) {
-            index_scope_statement_bind(ctx, scope_id, statement)
-            continue
-        }
-
-        if (statement.op.kind === TOKEN_COLON) {
-            index_scope_statement_type(ctx, scope_id, statement)
-            continue
+        // Scope bodies only support bindings/constraints
+        if (st.kind === EXPR_BINARY) {
+            switch (st.op.kind) {
+            // st.lha = st.rhs
+            case TOKEN_BIND:
+                index_scope_statement_bind(ctx, scope_id, st.lhs, st.rhs)
+                continue
+            // st.lha : st.rhs
+            case TOKEN_COLON:
+                index_scope_statement_type(ctx, scope_id, st.lhs, st.rhs)
+                continue
+            }
         }
 
         context_diag(ctx, 'Unsupported statement in scope body')
