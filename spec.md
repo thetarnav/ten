@@ -377,7 +377,7 @@ Fib base case depends on this:
 ```ten
 Fib = {
     n: int
-    result = n <= 2
+    result = n <= 1
         ? n
         : Fib{n = n-1}.result + Fib{n = n-2}.result
 }

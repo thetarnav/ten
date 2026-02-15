@@ -593,6 +593,14 @@ test.describe('reducer', {concurrency: true}, () => {
     `, `2`)
 
     test_reducer(`
+        foo = {
+            a = int
+            b = a == 1 ? 2 : 3
+        }
+        output = foo.b
+    `, `int == 1 ? 2 : 3`)
+
+    test_reducer(`
         x = 2
         x = 2
         output = x
@@ -708,7 +716,7 @@ test.describe('reducer', {concurrency: true}, () => {
     test_reducer(`
         Fib = {
             n: int
-            result = n <= 2
+            result = n <= 1
                 ? n
                 : Fib{n = n-1}.result + Fib{n = n-2}.result
         }
