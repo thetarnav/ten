@@ -1062,20 +1062,22 @@ const binding_ensure = (ctx: Context, scope_id: Scope_Id, name: string): Binding
 const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Ref | null => {
     let scope = scope_get(ctx, scope_id)
     let binding = scope.bindings_by_name.get(name)
-    if (!binding) return null
+    if (binding == null) return null
     return {scope_id, binding}
 }
 
 const binding_lookup_parent_chain = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Ref | null => {
-    let parent_scope_id = scope_get(ctx, scope_id).parent_scope_id
-    while (parent_scope_id != null) {
-        let found = binding_lookup_current(ctx, parent_scope_id, name)
-        if (found) {
-            return found
-        }
-        parent_scope_id = scope_get(ctx, parent_scope_id).parent_scope_id
+    let found: Binding_Ref | null = null
+    for (;;) {
+        let s = scope_get(ctx, scope_id).parent_scope_id
+        if (s == null) break
+
+        found = binding_lookup_current(ctx, s, name)
+        if (found != null) break
+
+        scope_id = s
     }
-    return null
+    return found
 }
 
 const resolve_read = (ctx: Context, scope_id: Scope_Id, name: string, mode: Lookup_Mode): Binding_Ref | null => {
@@ -1083,34 +1085,23 @@ const resolve_read = (ctx: Context, scope_id: Scope_Id, name: string, mode: Look
     |   - `.foo` => current scope only
     |   - `^foo` => parent chain only
     |   - `foo`  => parent-first, then current
-    |
-    | Example (parent-first):
-    |   a = 1
-    |   box = { a = 2, b = a }
-    |   // b resolves to 1
     */
+    if (mode !== 'current_only') {
+        let found = binding_lookup_parent_chain(ctx, scope_id, name)
+        if (found != null) return found
+
+        if (mode === 'parent_only') {
+            context_diag(ctx, `Missing parent-scope binding: ^${name}`)
+            return null
+        }
+    }
+
+    let found = binding_lookup_current(ctx, scope_id, name)
+    if (found != null) return found
+
     if (mode === 'current_only') {
-        let found = binding_lookup_current(ctx, scope_id, name)
-        if (found) return found
         context_diag(ctx, `Missing current-scope binding: .${name}`)
         return null
-    }
-
-    if (mode === 'parent_only') {
-        let found = binding_lookup_parent_chain(ctx, scope_id, name)
-        if (found) return found
-        context_diag(ctx, `Missing parent-scope binding: ^${name}`)
-        return null
-    }
-
-    let from_parent = binding_lookup_parent_chain(ctx, scope_id, name)
-    if (from_parent) {
-        return from_parent
-    }
-
-    let from_current = binding_lookup_current(ctx, scope_id, name)
-    if (from_current) {
-        return from_current
     }
 
     context_diag(ctx, `Undefined binding: ${name}`)
@@ -1161,6 +1152,8 @@ const each_scope_statement = function* (expr: Expr): Generator<Expr> {
 }
 
 const index_scope_statement_bind = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary) => {
+
+    // foo = expr.rhs
     let lhs_ident = expr_ident_name(ctx, expr.lhs)
     if (lhs_ident != null) {
         let binding = binding_ensure(ctx, scope_id, lhs_ident)
@@ -1172,6 +1165,7 @@ const index_scope_statement_bind = (ctx: Context, scope_id: Scope_Id, expr: Expr
         return
     }
 
+    // foo.bar = expr.rhs
     if (expr.lhs.kind === EXPR_BINARY && expr.lhs.op.kind === TOKEN_DOT) {
         let base_name  = expr_ident_name(ctx, expr.lhs.lhs)
         let field_name = expr_ident_name(ctx, expr.lhs.rhs)
