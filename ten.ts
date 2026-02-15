@@ -2000,11 +2000,6 @@ const reduce_value = (ctx: Context, value: Value): Value => {
     case 'binding_ref': {
         let ref = resolve_read(ctx, value.scope_id, value.name, value.mode)
         if (ref == null) {
-            if (value.mode === 'unprefixed') {
-                if (value.name === 'true')  return value_top()
-                if (value.name === 'false') return value_never()
-                if (value.name === 'nil')   return value_nil()
-            }
             return value_never()
         }
         return reduce_binding_ref(ctx, ref)
