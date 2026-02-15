@@ -1021,7 +1021,6 @@ type Binding_Ref = {
 
 type Context = {
     src:               string
-    root_expr:         Expr | null
     builtins_scope_id: Scope_Id
     global_scope_id:   Scope_Id
     diagnostics:       string[]
@@ -2274,7 +2273,6 @@ export function context_make(): Context {
     // Build fixed root chain: builtins -> global.
     let ctx: Context = {
         src: '',
-        root_expr: null,
         builtins_scope_id: -1,
         global_scope_id: -1,
         diagnostics: [],
@@ -2308,7 +2306,6 @@ export function context_make(): Context {
 export function add_expr(ctx: Context, expr: Expr, src: string) {
     // Phase 1 only: index global bindings without reducing RHS expressions.
     ctx.src = src
-    ctx.root_expr = expr
     ctx.reduced_output = null
     ctx.diagnostics.length = 0
 
