@@ -654,6 +654,13 @@ test.describe('reducer', {concurrency: true}, () => {
     `, `2`, [`Duplicate value binding for 'x'`])
 
     test_reducer(`
+        foo: {x: int}
+        foo.x = 2
+        foo.x = 2
+        output = foo.x
+    `, `2`, [`Duplicate field assignment for 'foo.x'`])
+
+    test_reducer(`
         x = ({a = 2} | {b = 3}).a
         output = x
     `, `2`, [`Missing field 'a' on scope`])
