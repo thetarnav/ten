@@ -1136,17 +1136,18 @@ const expr_int_literal_value = (ctx: Context, expr: Expr): number | null => {
 }
 
 const unwrap_group_expr = (expr: Expr): Expr => {
-    let current = expr
-    while (current.kind === EXPR_PAREN &&
-           current.type == null &&
-           current.open.kind === TOKEN_PAREN_L &&
-           current.body != null) {
-        current = current.body
+    while (
+        expr.kind === EXPR_PAREN &&
+        expr.type == null &&
+        expr.open.kind === TOKEN_PAREN_L &&
+        expr.body != null
+    ) {
+        expr = expr.body
     }
-    return current
+    return expr
 }
 
-const each_scope_statement = function* (expr: Expr): IterableIterator<Expr> {
+const each_scope_statement = function* (expr: Expr): Generator<Expr> {
     // Flatten `a=1, b=2\nc=3` into statement list [`a=1`, `b=2`, `c=3`].
     if (expr.kind === EXPR_BINARY &&
         (expr.op.kind === TOKEN_EOL ||
@@ -1155,7 +1156,7 @@ const each_scope_statement = function* (expr: Expr): IterableIterator<Expr> {
         yield* each_scope_statement(expr.lhs)
         yield* each_scope_statement(expr.rhs)
     } else {
-        yield unwrap_group_expr(expr)
+        yield expr
     }
 }
 
@@ -1172,14 +1173,11 @@ const index_scope_statement_bind = (ctx: Context, scope_id: Scope_Id, expr: Expr
     }
 
     if (expr.lhs.kind === EXPR_BINARY && expr.lhs.op.kind === TOKEN_DOT) {
-        let base_name = expr_ident_name(ctx, expr.lhs.lhs)
+        let base_name  = expr_ident_name(ctx, expr.lhs.lhs)
         let field_name = expr_ident_name(ctx, expr.lhs.rhs)
 
         if (base_name != null && field_name != null) {
             let binding = binding_ensure(ctx, scope_id, base_name)
-            if (binding.field_assignments.some(x => x.field_name === field_name)) {
-                context_diag(ctx, `Duplicate field assignment for '${base_name}.${field_name}'`)
-            }
             binding.field_assignments.push({field_name, expr: expr.rhs})
             binding.finalized_value = null
             return
