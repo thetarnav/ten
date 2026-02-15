@@ -1027,7 +1027,6 @@ type Context = {
     reduced_output:    Value | null
     next_scope_id:     Scope_Id
     scopes:            Map<Scope_Id, Scope_Record>
-    literal_scope_cache: WeakMap<Expr_Paren, Map<Scope_Id, Scope_Id>>
 }
 
 const VALUE_TOP:      Value_Top      = {kind: 'top'}
@@ -2160,12 +2159,8 @@ const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id,
 }
 
 const scope_for_literal = (ctx: Context, parent_scope_id: Scope_Id, expr: Expr_Paren): Scope_Id => {
-    // Cache literal scope per parent to keep closure behavior deterministic.
-    let parent_map = ctx.literal_scope_cache.get(expr)
-    if (!parent_map) {
-        parent_map = new Map<Scope_Id, Scope_Id>()
-        ctx.literal_scope_cache.set(expr, parent_map)
-    }
+
+    let parent_map = new Map<Scope_Id, Scope_Id>()
 
     let existing = parent_map.get(parent_scope_id)
     if (existing != null) {
@@ -2279,7 +2274,6 @@ export function context_make(): Context {
         reduced_output: null,
         next_scope_id: 1,
         scopes: new Map<Scope_Id, Scope_Record>(),
-        literal_scope_cache: new WeakMap<Expr_Paren, Map<Scope_Id, Scope_Id>>(),
     }
 
     let builtins_scope_id = scope_create(ctx, null)
