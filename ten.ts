@@ -993,15 +993,10 @@ type Value_Binary = {
     rhs:  Value
 }
 type Value_Ternary = {
-    kind:          'ternary'
-    cond:          Value
-    lhs:           Value
-    rhs:           Value
-    fib_base_style: boolean
-}
-type Value_Residual = {
-    kind: 'residual'
-    text: string
+    kind: 'ternary'
+    cond: Value
+    lhs:  Value
+    rhs:  Value
 }
 
 type Value =
@@ -1018,7 +1013,6 @@ type Value =
     | Value_Unary
     | Value_Binary
     | Value_Ternary
-    | Value_Residual
 
 type Binding_Ref = {
     scope_id: Scope_Id
@@ -1054,8 +1048,7 @@ const value_binding_ref = (scope_id: Scope_Id, mode: Lookup_Mode, name: string):
 const value_select      = (base: Value, field_name: string): Value_Select => ({kind: 'select', base, field_name})
 const value_unary       = (op: Token_Kind, rhs: Value): Value_Unary => ({kind: 'unary', op, rhs})
 const value_binary      = (op: Token_Kind, lhs: Value, rhs: Value): Value_Binary => ({kind: 'binary', op, lhs, rhs})
-const value_ternary     = (cond: Value, lhs: Value, rhs: Value, fib_base_style = false): Value_Ternary => ({kind: 'ternary', cond, lhs, rhs, fib_base_style})
-const value_residual    = (text: string): Value_Residual => ({kind: 'residual', text})
+const value_ternary     = (cond: Value, lhs: Value, rhs: Value): Value_Ternary => ({kind: 'ternary', cond, lhs, rhs})
 
 const context_diag = (ctx: Context, message: string) => {
     ctx.diagnostics.push(message)
@@ -1151,18 +1144,6 @@ const expr_ident_name = (ctx: Context, expr: Expr): string | null => {
     if (expr.kind !== EXPR_TOKEN) return null
     if (expr.tok.kind !== TOKEN_IDENT) return null
     return token_string(ctx.src, expr.tok)
-}
-
-const expr_int_literal_value = (ctx: Context, expr: Expr): number | null => {
-    if (expr.kind !== EXPR_TOKEN || expr.tok.kind !== TOKEN_INT) {
-        return null
-    }
-    let text = token_string(ctx.src, expr.tok)
-    let parsed = Number.parseInt(text, 10)
-    if (!Number.isFinite(parsed)) {
-        return null
-    }
-    return parsed | 0
 }
 
 const each_scope_statement = function* (expr: Expr): Generator<Expr> {
@@ -1313,8 +1294,6 @@ const value_key = (ctx: Context, value: Value): string => {
         return `b(${token_kind_string(value.op)},${value_key(ctx, value.lhs)},${value_key(ctx, value.rhs)})`
     case 'ternary':
         return `t(${value_key(ctx, value.cond)},${value_key(ctx, value.lhs)},${value_key(ctx, value.rhs)})`
-    case 'residual':
-        return `residual(${value.text})`
     default:
         value satisfies never
         return 'unknown'
@@ -1502,8 +1481,6 @@ const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
         case 'scope_ref':
         case 'scope_obj':
             return value_never()
-        case 'residual':
-            return value_binary(TOKEN_AND, value_nil(), other)
         case 'binding_ref':
         case 'select':
         case 'unary':
@@ -1784,7 +1761,7 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
     }
 
     if (binding.reducing) {
-        // Cycle guard for recursive bindings; keep a residual placeholder.
+        // Cycle guard for recursive bindings; keep a symbolic self reference.
         return value_binding_ref(binding.owner_scope_id, 'current_only', binding.name)
     }
 
@@ -1847,7 +1824,8 @@ const lower_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
             return value_binding_ref(scope_id, 'unprefixed', token_string(ctx.src, expr.tok))
         }
 
-        return value_residual(token_display(ctx.src, expr.tok))
+        context_diag(ctx, `Unsupported token in reducer: ${token_display(ctx.src, expr.tok)}`)
+        return value_never()
     }
 
     case EXPR_UNARY:
@@ -1894,23 +1872,14 @@ const lower_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
             return value_scope_ref(child_scope_id)
         }
 
-        return value_residual('paren')
+        context_diag(ctx, 'Invalid paren expression in reducer')
+        return value_never()
 
     case EXPR_TERNARY: {
-        let fib_base_style = false
-        if (expr.cond.kind === EXPR_BINARY && expr.cond.op.kind === TOKEN_LESS_EQ) {
-            let lhs_name = expr_ident_name(ctx, expr.cond.lhs)
-            let branch_name = expr_ident_name(ctx, expr.lhs)
-            let rhs_const = expr_int_literal_value(ctx, expr.cond.rhs)
-            if (lhs_name != null && lhs_name === branch_name && rhs_const === 2) {
-                fib_base_style = true
-            }
-        }
         return value_ternary(
             lower_expr(ctx, scope_id, expr.cond),
             lower_expr(ctx, scope_id, expr.lhs),
             lower_expr(ctx, scope_id, expr.rhs),
-            fib_base_style,
         )
     }
 
@@ -2026,7 +1995,6 @@ const reduce_value = (ctx: Context, value: Value): Value => {
     case 'scope_ref':
     case 'scope_obj':
     case 'union':
-    case 'residual':
         return value
 
     case 'binding_ref': {
@@ -2129,12 +2097,9 @@ const reduce_value = (ctx: Context, value: Value): Value => {
             return reduce_value(ctx, value.rhs)
         }
         if (cond.kind === 'top') {
-            if (value.fib_base_style) {
-                return value_int(1)
-            }
             return reduce_value(ctx, value.lhs)
         }
-        return value_ternary(cond, value.lhs, value.rhs, value.fib_base_style)
+        return value_ternary(cond, value.lhs, value.rhs)
     }
 
     default:
@@ -2304,8 +2269,6 @@ const display_value = (ctx: Context, value: Value, seen_scopes: Set<Scope_Id>): 
     }
     case 'ternary':
         return `${display_value(ctx, value.cond, seen_scopes)} ? ${display_value(ctx, value.lhs, seen_scopes)} : ${display_value(ctx, value.rhs, seen_scopes)}`
-    case 'residual':
-        return value.text
     default:
         value satisfies never
         return '!()'
