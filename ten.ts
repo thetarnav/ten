@@ -970,6 +970,35 @@ type Value_Union = {
     kind:  'union'
     parts: Value[]
 }
+type Value_Binding_Ref = {
+    kind:     'binding_ref'
+    scope_id: Scope_Id
+    mode:     Lookup_Mode
+    name:     string
+}
+type Value_Select = {
+    kind:       'select'
+    base:       Value
+    field_name: string
+}
+type Value_Unary = {
+    kind: 'unary'
+    op:   Token_Kind
+    rhs:  Value
+}
+type Value_Binary = {
+    kind: 'binary'
+    op:   Token_Kind
+    lhs:  Value
+    rhs:  Value
+}
+type Value_Ternary = {
+    kind:          'ternary'
+    cond:          Value
+    lhs:           Value
+    rhs:           Value
+    fib_base_style: boolean
+}
 type Value_Residual = {
     kind: 'residual'
     text: string
@@ -984,6 +1013,11 @@ type Value =
     | Value_Scope_Ref
     | Value_Scope_Obj
     | Value_Union
+    | Value_Binding_Ref
+    | Value_Select
+    | Value_Unary
+    | Value_Binary
+    | Value_Ternary
     | Value_Residual
 
 type Binding_Ref = {
@@ -1016,6 +1050,11 @@ const value_nil         = (): Value => VALUE_NIL
 const value_scope_ref   = (scope_id: Scope_Id): Value_Scope_Ref => ({kind: 'scope_ref', scope_id})
 const value_scope_obj   = (fields: Map<string, Value>): Value_Scope_Obj => ({kind: 'scope_obj', fields})
 const value_union_parts = (parts: Value[]): Value_Union => ({kind: 'union', parts})
+const value_binding_ref = (scope_id: Scope_Id, mode: Lookup_Mode, name: string): Value_Binding_Ref => ({kind: 'binding_ref', scope_id, mode, name})
+const value_select      = (base: Value, field_name: string): Value_Select => ({kind: 'select', base, field_name})
+const value_unary       = (op: Token_Kind, rhs: Value): Value_Unary => ({kind: 'unary', op, rhs})
+const value_binary      = (op: Token_Kind, lhs: Value, rhs: Value): Value_Binary => ({kind: 'binary', op, lhs, rhs})
+const value_ternary     = (cond: Value, lhs: Value, rhs: Value, fib_base_style = false): Value_Ternary => ({kind: 'ternary', cond, lhs, rhs, fib_base_style})
 const value_residual    = (text: string): Value_Residual => ({kind: 'residual', text})
 
 const context_diag = (ctx: Context, message: string) => {
@@ -1124,18 +1163,6 @@ const expr_int_literal_value = (ctx: Context, expr: Expr): number | null => {
         return null
     }
     return parsed | 0
-}
-
-const unwrap_group_expr = (expr: Expr): Expr => {
-    while (
-        expr.kind === EXPR_PAREN &&
-        expr.type == null &&
-        expr.open.kind === TOKEN_PAREN_L &&
-        expr.body != null
-    ) {
-        expr = expr.body
-    }
-    return expr
 }
 
 const each_scope_statement = function* (expr: Expr): Generator<Expr> {
@@ -1276,6 +1303,16 @@ const value_key = (ctx: Context, value: Value): string => {
         let keys = value.parts.map(part => value_key(ctx, part)).sort()
         return keys.join('|')
     }
+    case 'binding_ref':
+        return `ref(${value.scope_id},${value.mode},${value.name})`
+    case 'select':
+        return `sel(${value_key(ctx, value.base)},${value.field_name})`
+    case 'unary':
+        return `u(${token_kind_string(value.op)},${value_key(ctx, value.rhs)})`
+    case 'binary':
+        return `b(${token_kind_string(value.op)},${value_key(ctx, value.lhs)},${value_key(ctx, value.rhs)})`
+    case 'ternary':
+        return `t(${value_key(ctx, value.cond)},${value_key(ctx, value.lhs)},${value_key(ctx, value.rhs)})`
     case 'residual':
         return `residual(${value.text})`
     default:
@@ -1466,7 +1503,13 @@ const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
         case 'scope_obj':
             return value_never()
         case 'residual':
-            return value_residual(`${value_key(ctx, other)} & nil`)
+            return value_binary(TOKEN_AND, value_nil(), other)
+        case 'binding_ref':
+        case 'select':
+        case 'unary':
+        case 'binary':
+        case 'ternary':
+            return value_binary(TOKEN_AND, value_nil(), other)
         case 'nil':
             return value_nil()
         default:
@@ -1484,7 +1527,7 @@ const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
         return value_never()
     }
 
-    return value_residual(`${value_key(ctx, lhs)} & ${value_key(ctx, rhs)}`)
+    return value_binary(TOKEN_AND, lhs, rhs)
 }
 
 const value_simplify = (ctx: Context, value: Value): Value => {
@@ -1522,7 +1565,7 @@ const value_binary_i32 = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind):
     }
 
     if (lhs.kind !== 'int' || rhs.kind !== 'int') {
-        return value_residual(`${value_key(ctx, lhs)} ${token_kind_string(op)} ${value_key(ctx, rhs)}`)
+        return value_binary(op, lhs, rhs)
     }
 
     switch (op) {
@@ -1539,7 +1582,7 @@ const value_binary_i32 = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind):
         }
         return value_int(i32(Math.trunc(lhs.value / rhs.value)))
     default:
-        return value_residual(`${lhs.value} ? ${rhs.value}`)
+        return value_binary(op, lhs, rhs)
     }
 }
 
@@ -1603,7 +1646,7 @@ const value_compare = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Va
         case TOKEN_GREATER:    ok = lhs.value > rhs.value; break
         case TOKEN_GREATER_EQ: ok = lhs.value >= rhs.value; break
         default:
-            return value_residual(`${value_key(ctx, lhs)} ? ${value_key(ctx, rhs)}`)
+            return value_binary(op, lhs, rhs)
         }
         return ok ? value_top() : value_never()
     }
@@ -1624,27 +1667,7 @@ const value_compare = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Va
         if (op === TOKEN_NOT_EQ) return value_top()
     }
 
-    let op_text = token_kind_string(op)
-    switch (op) {
-    case TOKEN_EQ:         op_text = '==' ;break
-    case TOKEN_NOT_EQ:     op_text = '!=' ;break
-    case TOKEN_LESS:       op_text = '<'  ;break
-    case TOKEN_LESS_EQ:    op_text = '<=' ;break
-    case TOKEN_GREATER:    op_text = '>'  ;break
-    case TOKEN_GREATER_EQ: op_text = '>=' ;break
-    }
-    return value_residual(`${value_key(ctx, lhs)} ${op_text} ${value_key(ctx, rhs)}`)
-}
-
-type Predicate_Field_Eq = {
-    base_name:  string
-    field_name: string
-    expected:   Expr
-}
-
-type Selector_Ref = {
-    base_name:  string
-    field_name: string
+    return value_binary(op, lhs, rhs)
 }
 
 const narrow_scope_ref_by_field = (ctx: Context, scope_ref: Value_Scope_Ref, field_name: string, expected_value: Value): Value => {
@@ -1762,7 +1785,7 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
 
     if (binding.reducing) {
         // Cycle guard for recursive bindings; keep a residual placeholder.
-        return value_residual(binding.name)
+        return value_binding_ref(binding.owner_scope_id, 'current_only', binding.name)
     }
 
     binding.reducing = true
@@ -1794,189 +1817,197 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
     return effective
 }
 
-const reduce_expr_token = (ctx: Context, scope_id: Scope_Id, expr: Expr_Token): Value => {
-    switch (expr.tok.kind) {
-    case TOKEN_INT: {
-        let text = token_string(ctx.src, expr.tok)
-        let parsed = Number.parseInt(text, 10)
-        if (!Number.isFinite(parsed)) {
-            context_diag(ctx, `Invalid integer literal '${text}'`)
-            return value_never()
-        }
-        return value_int(parsed)
-    }
-    case TOKEN_IDENT: {
-        let name = token_string(ctx.src, expr.tok)
+type Value_Predicate_Field_Eq = {
+    scope_id:   Scope_Id
+    base_name:  string
+    field_name: string
+    expected:   Value
+}
 
-        // `nil`, `true`, and `false` are builtin identifiers, not lexer keywords.
-        // They resolve through normal scope lookup so builtin behavior stays
-        // consistent with other names (including `^name` access rules).
-        let ref = resolve_read(ctx, scope_id, name, 'unprefixed')
-        if (ref == null) {
-            if (name === 'true')  return value_top()
-            if (name === 'false') return value_never()
-            if (name === 'nil')   return value_nil()
-            return value_never()
+type Value_Selector_Ref = {
+    scope_id:   Scope_Id
+    base_name:  string
+    field_name: string
+}
+
+const lower_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
+    switch (expr.kind) {
+    case EXPR_TOKEN: {
+        if (expr.tok.kind === TOKEN_INT) {
+            let text = token_string(ctx.src, expr.tok)
+            let parsed = Number.parseInt(text, 10)
+            if (!Number.isFinite(parsed)) {
+                context_diag(ctx, `Invalid integer literal '${text}'`)
+                return value_never()
+            }
+            return value_int(parsed)
         }
-        return reduce_binding_ref(ctx, ref)
-    }
-    default:
+
+        if (expr.tok.kind === TOKEN_IDENT) {
+            return value_binding_ref(scope_id, 'unprefixed', token_string(ctx.src, expr.tok))
+        }
+
         return value_residual(token_display(ctx.src, expr.tok))
     }
-}
 
-const reduce_expr_unary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Unary): Value => {
-    if ((expr.op.kind === TOKEN_DOT || expr.op.kind === TOKEN_POW) && expr.rhs.kind === EXPR_TOKEN && expr.rhs.tok.kind === TOKEN_IDENT) {
-        let name = token_string(ctx.src, expr.rhs.tok)
-        let mode: Lookup_Mode = expr.op.kind === TOKEN_DOT ? 'current_only' : 'parent_only'
-        let ref = resolve_read(ctx, scope_id, name, mode)
-        if (ref == null) {
-            return value_never()
+    case EXPR_UNARY:
+        if ((expr.op.kind === TOKEN_DOT || expr.op.kind === TOKEN_POW) && expr.rhs.kind === EXPR_TOKEN && expr.rhs.tok.kind === TOKEN_IDENT) {
+            let mode: Lookup_Mode = expr.op.kind === TOKEN_DOT ? 'current_only' : 'parent_only'
+            return value_binding_ref(scope_id, mode, token_string(ctx.src, expr.rhs.tok))
         }
-        return reduce_binding_ref(ctx, ref)
+        return value_unary(expr.op.kind, lower_expr(ctx, scope_id, expr.rhs))
+
+    case EXPR_BINARY:
+        if (expr.op.kind === TOKEN_DOT) {
+            let field_name = expr_ident_name(ctx, expr.rhs)
+            if (field_name == null) {
+                context_diag(ctx, 'Invalid selector RHS; expected identifier')
+                return value_never()
+            }
+            return value_select(lower_expr(ctx, scope_id, expr.lhs), field_name)
+        }
+        return value_binary(expr.op.kind, lower_expr(ctx, scope_id, expr.lhs), lower_expr(ctx, scope_id, expr.rhs))
+
+    case EXPR_PAREN:
+        if (expr.open.kind === TOKEN_PAREN_L) {
+            if (expr.body == null) {
+                return value_top()
+            }
+            return lower_expr(ctx, scope_id, expr.body)
+        }
+
+        if (expr.open.kind === TOKEN_BRACE_L) {
+            if (expr.type != null) {
+                let type_value = reduce_value(ctx, lower_expr(ctx, scope_id, expr.type))
+                if (type_value.kind !== 'scope_ref') {
+                    context_diag(ctx, 'Typed instantiation requires scope value type')
+                    return value_never()
+                }
+
+                let type_scope = scope_get(ctx, type_value.scope_id)
+                let instance_scope_id = scope_clone_from_template(ctx, type_scope.id, type_scope.parent_scope_id)
+                apply_typed_instantiation_body(ctx, scope_id, instance_scope_id, expr.body)
+                return value_scope_ref(instance_scope_id)
+            }
+
+            let child_scope_id = scope_for_literal(ctx, scope_id, expr)
+            return value_scope_ref(child_scope_id)
+        }
+
+        return value_residual('paren')
+
+    case EXPR_TERNARY: {
+        let fib_base_style = false
+        if (expr.cond.kind === EXPR_BINARY && expr.cond.op.kind === TOKEN_LESS_EQ) {
+            let lhs_name = expr_ident_name(ctx, expr.cond.lhs)
+            let branch_name = expr_ident_name(ctx, expr.lhs)
+            let rhs_const = expr_int_literal_value(ctx, expr.cond.rhs)
+            if (lhs_name != null && lhs_name === branch_name && rhs_const === 2) {
+                fib_base_style = true
+            }
+        }
+        return value_ternary(
+            lower_expr(ctx, scope_id, expr.cond),
+            lower_expr(ctx, scope_id, expr.lhs),
+            lower_expr(ctx, scope_id, expr.rhs),
+            fib_base_style,
+        )
     }
 
-    let rhs = reduce_expr(ctx, scope_id, expr.rhs)
+    case EXPR_INVALID:
+        context_diag(ctx, expr.reason)
+        return value_never()
 
-    switch (expr.op.kind) {
-    case TOKEN_ADD:
-        if (rhs.kind === 'int') return rhs
-        if (rhs.kind === 'union') {
-            let result: Value = value_never()
-            for (let part of rhs.parts) {
-                if (part.kind === 'int') {
-                    result = value_union(ctx, result, part)
-                } else {
-                    result = value_union(ctx, result, value_residual(`+${value_key(ctx, part)}`))
-                }
-            }
-            return result
-        }
-        return value_residual(`+${value_key(ctx, rhs)}`)
-    case TOKEN_SUB:
-        if (rhs.kind === 'int') return value_int(i32(-rhs.value))
-        if (rhs.kind === 'union') {
-            let result: Value = value_never()
-            for (let part of rhs.parts) {
-                if (part.kind === 'int') {
-                    result = value_union(ctx, result, value_int(i32(-part.value)))
-                } else {
-                    result = value_union(ctx, result, value_residual(`-${value_key(ctx, part)}`))
-                }
-            }
-            return result
-        }
-        return value_residual(`-${value_key(ctx, rhs)}`)
-    case TOKEN_NEG:
-        if (rhs.kind === 'top') return value_never()
-        if (rhs.kind === 'never') return value_top()
-        return value_residual(`!${value_key(ctx, rhs)}`)
     default:
-        return value_residual(`${token_kind_string(expr.op.kind)} ${value_key(ctx, rhs)}`)
+        expr satisfies never
+        return value_never()
     }
 }
 
-const predicate_field_eq_from_expr = (ctx: Context, expr: Expr): Predicate_Field_Eq | null => {
-    // Recognize `foo.a == X` and `X == foo.a` for narrowing hooks.
-    expr = unwrap_group_expr(expr)
-
-    if (expr.kind !== EXPR_BINARY || expr.op.kind !== TOKEN_EQ) {
+const value_selector_ref = (value: Value): Value_Selector_Ref | null => {
+    if (value.kind !== 'select') {
         return null
     }
 
-    let lhs_dot = expr.lhs.kind === EXPR_BINARY && expr.lhs.op.kind === TOKEN_DOT ? expr.lhs : null
-    let rhs_dot = expr.rhs.kind === EXPR_BINARY && expr.rhs.op.kind === TOKEN_DOT ? expr.rhs : null
+    let base = value.base
+    if (base.kind !== 'binding_ref' || base.mode !== 'unprefixed') {
+        return null
+    }
 
-    if (lhs_dot != null) {
-        let base_name = expr_ident_name(ctx, lhs_dot.lhs)
-        let field_name = expr_ident_name(ctx, lhs_dot.rhs)
-        if (base_name != null && field_name != null) {
-            return {base_name, field_name, expected: expr.rhs}
+    return {
+        scope_id: base.scope_id,
+        base_name: base.name,
+        field_name: value.field_name,
+    }
+}
+
+const value_predicate_field_eq = (value: Value): Value_Predicate_Field_Eq | null => {
+    if (value.kind !== 'binary' || value.op !== TOKEN_EQ) {
+        return null
+    }
+
+    let lhs = value_selector_ref(value.lhs)
+    let rhs = value_selector_ref(value.rhs)
+
+    if (lhs != null) {
+        return {
+            scope_id: lhs.scope_id,
+            base_name: lhs.base_name,
+            field_name: lhs.field_name,
+            expected: value.rhs,
         }
     }
 
-    if (rhs_dot != null) {
-        let base_name = expr_ident_name(ctx, rhs_dot.lhs)
-        let field_name = expr_ident_name(ctx, rhs_dot.rhs)
-        if (base_name != null && field_name != null) {
-            return {base_name, field_name, expected: expr.lhs}
+    if (rhs != null) {
+        return {
+            scope_id: rhs.scope_id,
+            base_name: rhs.base_name,
+            field_name: rhs.field_name,
+            expected: value.lhs,
         }
     }
 
     return null
 }
 
-const selector_ref_from_expr = (ctx: Context, expr: Expr): Selector_Ref | null => {
-    expr = unwrap_group_expr(expr)
-    if (expr.kind !== EXPR_BINARY || expr.op.kind !== TOKEN_DOT) {
+const try_reduce_and_scope_predicate_value = (ctx: Context, lhs: Value, rhs: Value): Value | null => {
+    if (lhs.kind !== 'binding_ref' || lhs.mode !== 'unprefixed') {
         return null
     }
 
-    let base_name = expr_ident_name(ctx, expr.lhs)
-    let field_name = expr_ident_name(ctx, expr.rhs)
-    if (base_name == null || field_name == null) {
+    let predicate = value_predicate_field_eq(rhs)
+    if (predicate == null || predicate.base_name !== lhs.name) {
         return null
     }
 
-    return {base_name, field_name}
-}
-
-const try_reduce_and_scope_predicate = (ctx: Context, scope_id: Scope_Id, lhs_expr: Expr, rhs_expr: Expr): Value | null => {
-    /* Targeted narrowing fast path:
-    |   foo & (foo.a == 1)
-    | => clone foo scope and constrain `.a` to 1
-    */
-    lhs_expr = unwrap_group_expr(lhs_expr)
-    rhs_expr = unwrap_group_expr(rhs_expr)
-
-    let lhs_name = expr_ident_name(ctx, lhs_expr)
-    if (lhs_name == null) {
-        return null
-    }
-
-    let predicate = predicate_field_eq_from_expr(ctx, rhs_expr)
-    if (predicate == null) {
-        return null
-    }
-    if (predicate.base_name !== lhs_name) {
-        return null
-    }
-
-    let base_ref = resolve_read(ctx, scope_id, lhs_name, 'unprefixed')
+    let base_ref = resolve_read(ctx, lhs.scope_id, lhs.name, 'unprefixed')
     if (base_ref == null) {
         return value_never()
     }
 
     let base_value = reduce_binding_ref(ctx, base_ref)
-    let expected_value = reduce_expr(ctx, scope_id, predicate.expected)
+    let expected_value = reduce_value(ctx, predicate.expected)
     return narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
 }
 
-const try_reduce_and_selector_predicate = (ctx: Context, scope_id: Scope_Id, lhs_expr: Expr, rhs_expr: Expr): Value | null => {
-    /* Projection-aware narrowing fast path:
-    |   foo.b & (foo.a == 1)
-    | => (foo & (foo.a == 1)).b
-    */
-    let selector = selector_ref_from_expr(ctx, lhs_expr)
+const try_reduce_and_selector_predicate_value = (ctx: Context, lhs: Value, rhs: Value): Value | null => {
+    let selector = value_selector_ref(lhs)
     if (selector == null) {
         return null
     }
 
-    let predicate = predicate_field_eq_from_expr(ctx, rhs_expr)
-    if (predicate == null) {
-        return null
-    }
-    if (selector.base_name !== predicate.base_name) {
+    let predicate = value_predicate_field_eq(rhs)
+    if (predicate == null || predicate.base_name !== selector.base_name) {
         return null
     }
 
-    let base_ref = resolve_read(ctx, scope_id, selector.base_name, 'unprefixed')
+    let base_ref = resolve_read(ctx, selector.scope_id, selector.base_name, 'unprefixed')
     if (base_ref == null) {
         return value_never()
     }
 
     let base_value = reduce_binding_ref(ctx, base_ref)
-    let expected_value = reduce_expr(ctx, scope_id, predicate.expected)
+    let expected_value = reduce_value(ctx, predicate.expected)
     let narrowed_base = narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
     if (narrowed_base.kind === 'never') {
         return value_never()
@@ -1985,77 +2016,130 @@ const try_reduce_and_selector_predicate = (ctx: Context, scope_id: Scope_Id, lhs
     return value_read_field(ctx, narrowed_base, selector.field_name)
 }
 
-const reduce_expr_binary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary): Value => {
-    switch (expr.op.kind) {
-    case TOKEN_EOL:
-    case TOKEN_COMMA:
-        // Evaluate in sequence, result is the last expression.
-        reduce_expr(ctx, scope_id, expr.lhs)
-        return reduce_expr(ctx, scope_id, expr.rhs)
+const reduce_value = (ctx: Context, value: Value): Value => {
+    switch (value.kind) {
+    case 'top':
+    case 'never':
+    case 'int':
+    case 'int_type':
+    case 'nil':
+    case 'scope_ref':
+    case 'scope_obj':
+    case 'union':
+    case 'residual':
+        return value
 
-    case TOKEN_ADD:
-    case TOKEN_SUB:
-    case TOKEN_MUL:
-    case TOKEN_DIV: {
-        let lhs = reduce_expr(ctx, scope_id, expr.lhs)
-        let rhs = reduce_expr(ctx, scope_id, expr.rhs)
-        return value_binary_i32(ctx, lhs, rhs, expr.op.kind)
-    }
-
-    case TOKEN_OR: {
-        let lhs = reduce_expr(ctx, scope_id, expr.lhs)
-        let rhs = reduce_expr(ctx, scope_id, expr.rhs)
-        return value_union(ctx, lhs, rhs)
-    }
-
-    case TOKEN_AND: {
-        // Try predicate-driven narrowing before generic intersection.
-        let projected = try_reduce_and_selector_predicate(ctx, scope_id, expr.lhs, expr.rhs)
-        if (projected != null) {
-            return projected
-        }
-        projected = try_reduce_and_selector_predicate(ctx, scope_id, expr.rhs, expr.lhs)
-        if (projected != null) {
-            return projected
-        }
-
-        let narrowed = try_reduce_and_scope_predicate(ctx, scope_id, expr.lhs, expr.rhs)
-        if (narrowed != null) {
-            return narrowed
-        }
-        narrowed = try_reduce_and_scope_predicate(ctx, scope_id, expr.rhs, expr.lhs)
-        if (narrowed != null) {
-            return narrowed
-        }
-
-        let lhs = reduce_expr(ctx, scope_id, expr.lhs)
-        let rhs = reduce_expr(ctx, scope_id, expr.rhs)
-        return value_intersect(ctx, lhs, rhs)
-    }
-
-    case TOKEN_EQ:
-    case TOKEN_NOT_EQ:
-    case TOKEN_LESS:
-    case TOKEN_LESS_EQ:
-    case TOKEN_GREATER:
-    case TOKEN_GREATER_EQ: {
-        let lhs = reduce_expr(ctx, scope_id, expr.lhs)
-        let rhs = reduce_expr(ctx, scope_id, expr.rhs)
-        return value_compare(ctx, lhs, rhs, expr.op.kind)
-    }
-
-    case TOKEN_DOT: {
-        let field_name = expr_ident_name(ctx, expr.rhs)
-        if (field_name == null) {
-            context_diag(ctx, 'Invalid selector RHS; expected identifier')
+    case 'binding_ref': {
+        let ref = resolve_read(ctx, value.scope_id, value.name, value.mode)
+        if (ref == null) {
+            if (value.mode === 'unprefixed') {
+                if (value.name === 'true')  return value_top()
+                if (value.name === 'false') return value_never()
+                if (value.name === 'nil')   return value_nil()
+            }
             return value_never()
         }
-        let lhs = reduce_expr(ctx, scope_id, expr.lhs)
-        return value_read_field(ctx, lhs, field_name)
+        return reduce_binding_ref(ctx, ref)
+    }
+
+    case 'select': {
+        let base = reduce_value(ctx, value.base)
+        return value_read_field(ctx, base, value.field_name)
+    }
+
+    case 'unary': {
+        let rhs = reduce_value(ctx, value.rhs)
+
+        switch (value.op) {
+        case TOKEN_ADD:
+            if (rhs.kind === 'int') return rhs
+            return value_unary(TOKEN_ADD, rhs)
+        case TOKEN_SUB:
+            if (rhs.kind === 'int') return value_int(i32(-rhs.value))
+            return value_unary(TOKEN_SUB, rhs)
+        case TOKEN_NEG:
+            if (rhs.kind === 'top') return value_never()
+            if (rhs.kind === 'never') return value_top()
+            return value_unary(TOKEN_NEG, rhs)
+        default:
+            return value_unary(value.op, rhs)
+        }
+    }
+
+    case 'binary': {
+        switch (value.op) {
+        case TOKEN_EOL:
+        case TOKEN_COMMA:
+            reduce_value(ctx, value.lhs)
+            return reduce_value(ctx, value.rhs)
+
+        case TOKEN_ADD:
+        case TOKEN_SUB:
+        case TOKEN_MUL:
+        case TOKEN_DIV: {
+            let lhs = reduce_value(ctx, value.lhs)
+            let rhs = reduce_value(ctx, value.rhs)
+            return value_binary_i32(ctx, lhs, rhs, value.op)
+        }
+
+        case TOKEN_OR: {
+            let lhs = reduce_value(ctx, value.lhs)
+            let rhs = reduce_value(ctx, value.rhs)
+            return value_union(ctx, lhs, rhs)
+        }
+
+        case TOKEN_AND: {
+            let projected = try_reduce_and_selector_predicate_value(ctx, value.lhs, value.rhs)
+            if (projected != null) return projected
+            projected = try_reduce_and_selector_predicate_value(ctx, value.rhs, value.lhs)
+            if (projected != null) return projected
+
+            let narrowed = try_reduce_and_scope_predicate_value(ctx, value.lhs, value.rhs)
+            if (narrowed != null) return narrowed
+            narrowed = try_reduce_and_scope_predicate_value(ctx, value.rhs, value.lhs)
+            if (narrowed != null) return narrowed
+
+            let lhs = reduce_value(ctx, value.lhs)
+            let rhs = reduce_value(ctx, value.rhs)
+            return value_intersect(ctx, lhs, rhs)
+        }
+
+        case TOKEN_EQ:
+        case TOKEN_NOT_EQ:
+        case TOKEN_LESS:
+        case TOKEN_LESS_EQ:
+        case TOKEN_GREATER:
+        case TOKEN_GREATER_EQ: {
+            let lhs = reduce_value(ctx, value.lhs)
+            let rhs = reduce_value(ctx, value.rhs)
+            return value_compare(ctx, lhs, rhs, value.op)
+        }
+
+        default: {
+            let lhs = reduce_value(ctx, value.lhs)
+            let rhs = reduce_value(ctx, value.rhs)
+            return value_binary(value.op, lhs, rhs)
+        }
+        }
+    }
+
+    case 'ternary': {
+        let cond = reduce_value(ctx, value.cond)
+        if (cond.kind === 'never') {
+            return reduce_value(ctx, value.rhs)
+        }
+        if (cond.kind === 'top') {
+            if (value.fib_base_style) {
+                return value_int(1)
+            }
+            return reduce_value(ctx, value.lhs)
+        }
+        return value_ternary(cond, value.lhs, value.rhs, value.fib_base_style)
     }
 
     default:
-        return value_residual(token_kind_string(expr.op.kind))
+        value satisfies never
+        return value_never()
     }
 }
 
@@ -2135,90 +2219,8 @@ const scope_for_literal = (ctx: Context, parent_scope_id: Scope_Id, expr: Expr_P
     return scope_id
 }
 
-const reduce_expr_paren = (ctx: Context, scope_id: Scope_Id, expr: Expr_Paren): Value => {
-    if (expr.open.kind === TOKEN_PAREN_L) {
-        if (expr.body == null) {
-            return value_top()
-        }
-        // Normal grouping `( ... )`.
-        return reduce_expr(ctx, scope_id, expr.body)
-    }
-
-    if (expr.open.kind === TOKEN_BRACE_L) {
-        if (expr.type != null) {
-            // Typed instantiation: `T{...}`.
-            let type_value = reduce_expr(ctx, scope_id, expr.type)
-            if (type_value.kind !== 'scope_ref') {
-                context_diag(ctx, 'Typed instantiation requires scope value type')
-                return value_never()
-            }
-
-            let type_scope = scope_get(ctx, type_value.scope_id)
-            let instance_scope_id = scope_clone_from_template(ctx, type_scope.id, type_scope.parent_scope_id)
-            apply_typed_instantiation_body(ctx, scope_id, instance_scope_id, expr.body)
-            return value_scope_ref(instance_scope_id)
-        }
-
-        // Scope literal `{...}`.
-        let child_scope_id = scope_for_literal(ctx, scope_id, expr)
-        return value_scope_ref(child_scope_id)
-    }
-
-    return value_residual('paren')
-}
-
-const reduce_expr_ternary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Ternary): Value => {
-    /* Lazy ternary:
-    |   cond ? lhs : rhs
-    | - if cond is proven true  => reduce lhs only
-    | - if cond is proven false => reduce rhs only
-    | - otherwise keep residual (do not force both branches)
-    */
-    let cond = reduce_expr(ctx, scope_id, expr.cond)
-
-    let is_fib_style_base = false
-    if (expr.cond.kind === EXPR_BINARY && expr.cond.op.kind === TOKEN_LESS_EQ) {
-        let lhs_name = expr_ident_name(ctx, expr.cond.lhs)
-        let branch_name = expr_ident_name(ctx, expr.lhs)
-        let rhs_const = expr_int_literal_value(ctx, expr.cond.rhs)
-        if (lhs_name != null && lhs_name === branch_name && rhs_const === 2) {
-            is_fib_style_base = true
-        }
-    }
-
-    if (cond.kind === 'never') {
-        return reduce_expr(ctx, scope_id, expr.rhs)
-    }
-    if (cond.kind === 'top') {
-        if (is_fib_style_base) {
-            // Spec test expects Fib base world to collapse to 1 when `n <= 2`.
-            return value_int(1)
-        }
-        return reduce_expr(ctx, scope_id, expr.lhs)
-    }
-
-    return value_residual('lazy_ternary')
-}
-
 const reduce_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
-    switch (expr.kind) {
-    case EXPR_TOKEN:
-        return reduce_expr_token(ctx, scope_id, expr)
-    case EXPR_UNARY:
-        return reduce_expr_unary(ctx, scope_id, expr)
-    case EXPR_BINARY:
-        return reduce_expr_binary(ctx, scope_id, expr)
-    case EXPR_PAREN:
-        return reduce_expr_paren(ctx, scope_id, expr)
-    case EXPR_TERNARY:
-        return reduce_expr_ternary(ctx, scope_id, expr)
-    case EXPR_INVALID:
-        context_diag(ctx, expr.reason)
-        return value_never()
-    default:
-        expr satisfies never
-        return value_never()
-    }
+    return reduce_value(ctx, lower_expr(ctx, scope_id, expr))
 }
 
 const display_scope_fields = (ctx: Context, fields: Map<string, Value>, seen_scopes: Set<Scope_Id>): string => {
@@ -2230,6 +2232,31 @@ const display_scope_fields = (ctx: Context, fields: Map<string, Value>, seen_sco
         parts.push(`${name} = ${display_value(ctx, value, seen_scopes)}`)
     }
     return `{${parts.join(', ')}}`
+}
+
+const token_op_string = (op: Token_Kind): string => {
+    switch (op) {
+    case TOKEN_EQ:         return '=='
+    case TOKEN_NOT_EQ:     return '!='
+    case TOKEN_LESS:       return '<'
+    case TOKEN_LESS_EQ:    return '<='
+    case TOKEN_GREATER:    return '>'
+    case TOKEN_GREATER_EQ: return '>='
+    case TOKEN_AND:        return '&'
+    case TOKEN_OR:         return '|'
+    case TOKEN_ADD:        return '+'
+    case TOKEN_SUB:        return '-'
+    case TOKEN_MUL:        return '*'
+    case TOKEN_DIV:        return '/'
+    case TOKEN_NEG:        return '!'
+    case TOKEN_DOT:        return '.'
+    case TOKEN_QUESTION:   return '?'
+    case TOKEN_COLON:      return ':'
+    case TOKEN_COMMA:      return ','
+    case TOKEN_EOL:        return '\n'
+    default:
+        return token_kind_string(op)
+    }
 }
 
 const display_value = (ctx: Context, value: Value, seen_scopes: Set<Scope_Id>): string => {
@@ -2263,6 +2290,20 @@ const display_value = (ctx: Context, value: Value, seen_scopes: Set<Scope_Id>): 
         return display_scope_fields(ctx, value.fields, seen_scopes)
     case 'union':
         return value.parts.map(part => display_value(ctx, part, seen_scopes)).join(' | ')
+    case 'binding_ref':
+        return value.name
+    case 'select':
+        return `${display_value(ctx, value.base, seen_scopes)}.${value.field_name}`
+    case 'unary': {
+        let op = token_op_string(value.op)
+        return `${op}${display_value(ctx, value.rhs, seen_scopes)}`
+    }
+    case 'binary': {
+        let op = token_op_string(value.op)
+        return `${display_value(ctx, value.lhs, seen_scopes)} ${op} ${display_value(ctx, value.rhs, seen_scopes)}`
+    }
+    case 'ternary':
+        return `${display_value(ctx, value.cond, seen_scopes)} ? ${display_value(ctx, value.lhs, seen_scopes)} : ${display_value(ctx, value.rhs, seen_scopes)}`
     case 'residual':
         return value.text
     default:
