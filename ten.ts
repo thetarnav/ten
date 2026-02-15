@@ -1642,6 +1642,11 @@ type Predicate_Field_Eq = {
     expected:   Expr
 }
 
+type Selector_Ref = {
+    base_name:  string
+    field_name: string
+}
+
 const narrow_scope_ref_by_field = (ctx: Context, scope_ref: Value_Scope_Ref, field_name: string, expected_value: Value): Value => {
     // Clone then narrow so original scope stays immutable.
 
@@ -1901,6 +1906,21 @@ const predicate_field_eq_from_expr = (ctx: Context, expr: Expr): Predicate_Field
     return null
 }
 
+const selector_ref_from_expr = (ctx: Context, expr: Expr): Selector_Ref | null => {
+    expr = unwrap_group_expr(expr)
+    if (expr.kind !== EXPR_BINARY || expr.op.kind !== TOKEN_DOT) {
+        return null
+    }
+
+    let base_name = expr_ident_name(ctx, expr.lhs)
+    let field_name = expr_ident_name(ctx, expr.rhs)
+    if (base_name == null || field_name == null) {
+        return null
+    }
+
+    return {base_name, field_name}
+}
+
 const try_reduce_and_scope_predicate = (ctx: Context, scope_id: Scope_Id, lhs_expr: Expr, rhs_expr: Expr): Value | null => {
     /* Targeted narrowing fast path:
     |   foo & (foo.a == 1)
@@ -1932,6 +1952,39 @@ const try_reduce_and_scope_predicate = (ctx: Context, scope_id: Scope_Id, lhs_ex
     return narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
 }
 
+const try_reduce_and_selector_predicate = (ctx: Context, scope_id: Scope_Id, lhs_expr: Expr, rhs_expr: Expr): Value | null => {
+    /* Projection-aware narrowing fast path:
+    |   foo.b & (foo.a == 1)
+    | => (foo & (foo.a == 1)).b
+    */
+    let selector = selector_ref_from_expr(ctx, lhs_expr)
+    if (selector == null) {
+        return null
+    }
+
+    let predicate = predicate_field_eq_from_expr(ctx, rhs_expr)
+    if (predicate == null) {
+        return null
+    }
+    if (selector.base_name !== predicate.base_name) {
+        return null
+    }
+
+    let base_ref = resolve_read(ctx, scope_id, selector.base_name, 'unprefixed')
+    if (base_ref == null) {
+        return value_never()
+    }
+
+    let base_value = reduce_binding_ref(ctx, base_ref)
+    let expected_value = reduce_expr(ctx, scope_id, predicate.expected)
+    let narrowed_base = narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
+    if (narrowed_base.kind === 'never') {
+        return value_never()
+    }
+
+    return value_read_field(ctx, narrowed_base, selector.field_name)
+}
+
 const reduce_expr_binary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary): Value => {
     switch (expr.op.kind) {
     case TOKEN_EOL:
@@ -1957,6 +2010,15 @@ const reduce_expr_binary = (ctx: Context, scope_id: Scope_Id, expr: Expr_Binary)
 
     case TOKEN_AND: {
         // Try predicate-driven narrowing before generic intersection.
+        let projected = try_reduce_and_selector_predicate(ctx, scope_id, expr.lhs, expr.rhs)
+        if (projected != null) {
+            return projected
+        }
+        projected = try_reduce_and_selector_predicate(ctx, scope_id, expr.rhs, expr.lhs)
+        if (projected != null) {
+            return projected
+        }
+
         let narrowed = try_reduce_and_scope_predicate(ctx, scope_id, expr.lhs, expr.rhs)
         if (narrowed != null) {
             return narrowed
