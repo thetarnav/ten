@@ -714,6 +714,13 @@ test.describe('reducer', {concurrency: true}, () => {
     `, `!()`, [`Illegal field write on 'foo' without explicit scope type`])
 
     test_reducer(`
+        foo = {num: int, a + b}
+        a = foo{num = 2}
+        b = foo{num = 3}
+        output = a.num + b.num
+    `, `5`, [`Unsupported statement in scope body`])
+
+    test_reducer(`
         Fib = {
             n: int
             result = n <= 1
