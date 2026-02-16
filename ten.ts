@@ -917,7 +917,7 @@ const _parse_expr_atom = (p: Parser): Expr => {
     REDUCER
 */
 
-type Scope_Id = number
+type Scope_Id = number & {scope_id: void}
 
 type Lookup_Mode = 'unprefixed' | 'current_only' | 'parent_only'
 
@@ -1059,7 +1059,7 @@ const scope_get = (ctx: Context, scope_id: Scope_Id): Scope_Record => {
 
 const scope_create = (ctx: Context, parent_scope_id: Scope_Id | null): Scope_Id => {
     let id = ctx.next_scope_id
-    ctx.next_scope_id += 1
+    ctx.next_scope_id = (ctx.next_scope_id+1) as Scope_Id
     ctx.scopes.set(id, {
         parent:   parent_scope_id,
         bindings: new Map<string, Binding_Record>(),
@@ -1633,9 +1633,9 @@ const value_compare = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Va
         }
     }
 
-    let lhs_known_non_nil = lhs.kind === 'int' || lhs.kind === 'int_type' || lhs.kind === 'scope_ref' || lhs.kind === 'scope_obj'
-    let rhs_known_non_nil = rhs.kind === 'int' || rhs.kind === 'int_type' || rhs.kind === 'scope_ref' || rhs.kind === 'scope_obj'
-    if ((lhs.kind === 'nil' && rhs_known_non_nil) || (rhs.kind === 'nil' && lhs_known_non_nil)) {
+    if ((lhs.kind === 'nil' && (rhs.kind === 'int' || rhs.kind === 'int_type' || rhs.kind === 'scope_ref' || rhs.kind === 'scope_obj')) ||
+        (rhs.kind === 'nil' && (lhs.kind === 'int' || lhs.kind === 'int_type' || lhs.kind === 'scope_ref' || lhs.kind === 'scope_obj'))
+    ) {
         if (op === TOKEN_EQ) return value_never()
         if (op === TOKEN_NOT_EQ) return value_top()
     }
@@ -2265,13 +2265,13 @@ const display_value = (ctx: Context, value: Value, seen_scopes: Set<Scope_Id>): 
 export function context_make(): Context {
     // Build fixed root chain: builtins -> global.
     let ctx: Context = {
-        src: '',
-        builtins_scope_id: -1,
-        global_scope_id: -1,
-        diagnostics: [],
-        reduced_output: null,
-        next_scope_id: 1,
-        scopes: new Map<Scope_Id, Scope_Record>(),
+        src:               '',
+        builtins_scope_id: (-1) as Scope_Id,
+        global_scope_id:   (-1) as Scope_Id,
+        diagnostics:       [],
+        reduced_output:    null,
+        next_scope_id:     (1) as Scope_Id,
+        scopes:            new Map<Scope_Id, Scope_Record>(),
     }
 
     let builtins_scope_id = scope_create(ctx, null)
