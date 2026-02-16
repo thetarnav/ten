@@ -1883,13 +1883,6 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
     return effective
 }
 
-type Value_Predicate_Field_Eq = {
-    scope_id:   Scope_Id
-    base_name:  string
-    field_name: string
-    expected:   Value
-}
-
 type Value_Selector_Ref = {
     scope_id:   Scope_Id
     base_name:  string
@@ -1997,81 +1990,6 @@ const value_unprefixed_name = (value: Value): string | null => {
     return value.name
 }
 
-const value_predicate_field_eq = (value: Value): Value_Predicate_Field_Eq | null => {
-    if (value.kind !== 'binary' || value.op !== TOKEN_EQ) {
-        return null
-    }
-
-    let lhs = value_selector_ref(value.lhs)
-    let rhs = value_selector_ref(value.rhs)
-
-    if (lhs != null) {
-        return {
-            scope_id: lhs.scope_id,
-            base_name: lhs.base_name,
-            field_name: lhs.field_name,
-            expected: value.rhs,
-        }
-    }
-
-    if (rhs != null) {
-        return {
-            scope_id: rhs.scope_id,
-            base_name: rhs.base_name,
-            field_name: rhs.field_name,
-            expected: value.lhs,
-        }
-    }
-
-    return null
-}
-
-const try_reduce_and_scope_predicate_value = (ctx: Context, lhs: Value, rhs: Value): Value | null => {
-    if (lhs.kind !== 'binding_ref' || lhs.mode !== 'unprefixed') {
-        return null
-    }
-
-    let predicate = value_predicate_field_eq(rhs)
-    if (predicate == null || predicate.base_name !== lhs.name) {
-        return null
-    }
-
-    let base_ref = resolve_read(ctx, lhs.scope_id, lhs.name, 'unprefixed')
-    if (base_ref == null) {
-        return value_never()
-    }
-
-    let base_value = reduce_binding_ref(ctx, base_ref)
-    let expected_value = reduce_value(ctx, predicate.expected)
-    return narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
-}
-
-const try_reduce_and_selector_predicate_value = (ctx: Context, lhs: Value, rhs: Value): Value | null => {
-    let selector = value_selector_ref(lhs)
-    if (selector == null) {
-        return null
-    }
-
-    let predicate = value_predicate_field_eq(rhs)
-    if (predicate == null || predicate.base_name !== selector.base_name) {
-        return null
-    }
-
-    let base_ref = resolve_read(ctx, selector.scope_id, selector.base_name, 'unprefixed')
-    if (base_ref == null) {
-        return value_never()
-    }
-
-    let base_value = reduce_binding_ref(ctx, base_ref)
-    let expected_value = reduce_value(ctx, predicate.expected)
-    let narrowed_base = narrow_value_by_field(ctx, base_value, predicate.field_name, expected_value)
-    if (narrowed_base.kind === 'never') {
-        return value_never()
-    }
-
-    return value_read_field(ctx, narrowed_base, selector.field_name)
-}
-
 const world_get_binding = (world: World | null, ref: Binding_Ref): Value | null => {
     if (world == null) return null
     return world.get(world_key(ref.scope_id, ref.binding.name)) ?? null
@@ -2103,16 +2021,6 @@ const world_constrain_selector = (ctx: Context, world: World, selector: Value_Se
 }
 
 const world_assume_true = (ctx: Context, predicate: Value, world: World): World_Assume_Result | null => {
-    let reduced = reduce_value_with_world(ctx, predicate, world)
-
-    if (reduced.kind === 'top') {
-        return {world, used_rule: false}
-    }
-
-    if (reduced.kind === 'never') {
-        return null
-    }
-
     if (predicate.kind === 'binary' && predicate.op === TOKEN_AND) {
         let lhs = world_assume_true(ctx, predicate.lhs, world)
         if (lhs == null) return null
@@ -2148,6 +2056,16 @@ const world_assume_true = (ctx: Context, predicate: Value, world: World): World_
         let cmp = value_compare(ctx, lhs, rhs, TOKEN_EQ)
         if (cmp.kind === 'never') return null
         if (cmp.kind === 'top') return {world, used_rule: false}
+    }
+
+    let reduced = reduce_value_with_world(ctx, predicate, world)
+
+    if (reduced.kind === 'top') {
+        return {world, used_rule: false}
+    }
+
+    if (reduced.kind === 'never') {
+        return null
     }
 
     return {world, used_rule: false}
@@ -2224,15 +2142,21 @@ const reduce_value_with_world = (ctx: Context, value: Value, world: World | null
         }
 
         case TOKEN_AND: {
-            let projected = try_reduce_and_selector_predicate_value(ctx, value.lhs, value.rhs)
-            if (projected != null) return projected
-            projected = try_reduce_and_selector_predicate_value(ctx, value.rhs, value.lhs)
-            if (projected != null) return projected
+            let base_world = world == null ? new Map<string, Value>() : world
 
-            let narrowed = try_reduce_and_scope_predicate_value(ctx, value.lhs, value.rhs)
-            if (narrowed != null) return narrowed
-            narrowed = try_reduce_and_scope_predicate_value(ctx, value.rhs, value.lhs)
-            if (narrowed != null) return narrowed
+            let lhs_world = world_assume_true(ctx, value.lhs, base_world)
+            if (lhs_world != null && lhs_world.used_rule) {
+                let lhs = reduce_value_with_world(ctx, value.lhs, lhs_world.world)
+                let rhs = reduce_value_with_world(ctx, value.rhs, lhs_world.world)
+                return value_intersect(ctx, lhs, rhs)
+            }
+
+            let rhs_world = world_assume_true(ctx, value.rhs, base_world)
+            if (rhs_world != null && rhs_world.used_rule) {
+                let lhs = reduce_value_with_world(ctx, value.lhs, rhs_world.world)
+                let rhs = reduce_value_with_world(ctx, value.rhs, rhs_world.world)
+                return value_intersect(ctx, lhs, rhs)
+            }
 
             let lhs = reduce_value_with_world(ctx, value.lhs, world)
             let rhs = reduce_value_with_world(ctx, value.rhs, world)
