@@ -1,3 +1,6 @@
+function panic(message?: string): never {
+    throw new Error(message || 'Panic')
+}
 function assert(condition: boolean, message?: string): asserts condition {
     if (!condition) {
         throw new Error(message || 'Assertion failed')
@@ -1977,18 +1980,6 @@ const value_unprefixed_name = (value: Value): string | null => {
     return value.name
 }
 
-const each_scope_statement_value = function* (value: Value): Generator<Value> {
-    if (value.kind === 'binary' &&
-        (value.op === TOKEN_EOL ||
-         value.op === TOKEN_COMMA))
-    {
-        yield* each_scope_statement_value(value.lhs)
-        yield* each_scope_statement_value(value.rhs)
-    } else {
-        yield value
-    }
-}
-
 const value_predicate_field_eq = (value: Value): Value_Predicate_Field_Eq | null => {
     if (value.kind !== 'binary' || value.op !== TOKEN_EQ) {
         return null
@@ -2195,6 +2186,49 @@ const reduce_value = (ctx: Context, value: Value): Value => {
     }
 }
 
+const apply_typed_instantiation_body_statement = (ctx: Context, st: Value, instance_scope_id: Scope_Id, eval_scope_id: Scope_Id) => {
+
+    assert(st.kind === 'binary', "Scope body statement should only be a binary")
+
+    switch (st.op) {
+    // {lhs, rhs}
+    case TOKEN_EOL:
+    case TOKEN_COMMA:
+        apply_typed_instantiation_body_statement(ctx, st.lhs, instance_scope_id, eval_scope_id)
+        apply_typed_instantiation_body_statement(ctx, st.rhs, instance_scope_id, eval_scope_id)
+        return
+    // {lhs = rhs}  |  {lhs: rhs}
+    case TOKEN_BIND:
+    case TOKEN_COLON: {
+        let field_name = value_unprefixed_name(st.lhs)
+        if (field_name == null) {
+            context_diag(ctx, 'Typed-instantiation requires simple field assignments')
+            return
+        }
+
+        let eval_scope = scope_get(ctx, eval_scope_id)
+        let eval_binding = eval_scope.bindings.get(field_name)
+
+        let instance_binding = binding_lookup_current(ctx, instance_scope_id, field_name)?.binding
+
+        if (instance_binding == null || eval_binding == null) {
+            context_diag(ctx, `Unknown field '${field_name}' in typed instantiation`)
+            return
+        }
+
+        let rhs_value = reduce_value(ctx, st.rhs)
+        let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding})
+        let merged = value_intersect(ctx, base_value, rhs_value)
+
+        instance_binding.value_final = merged
+        eval_binding.value_final = merged
+        return
+    }
+    }
+
+    panic('Unsupported typed-instantiation statement')
+}
+
 const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id, instance_scope_id: Scope_Id, body: Value | null) => {
     /* Typed instantiation body:
     |   T = {a = 3, b: int}
@@ -2208,50 +2242,10 @@ const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id,
     }
 
     let eval_scope_id = scope_clone_from_template(ctx, instance_scope_id, caller_scope_id)
-    let eval_scope = scope_get(ctx, eval_scope_id)
-
-    let seen_bindings = new Set<string>()
 
     let eval_body = value_rebind_scope(body, caller_scope_id, eval_scope_id)
 
-    for (let statement of each_scope_statement_value(eval_body)) {
-
-        if (statement.kind !== 'binary') {
-            context_diag(ctx, 'Invalid typed-instantiation statement')
-            continue
-        }
-
-        if (statement.op !== TOKEN_BIND && statement.op !== TOKEN_COLON) {
-            context_diag(ctx, 'Unsupported typed-instantiation statement')
-            continue
-        }
-
-        let field_name = value_unprefixed_name(statement.lhs)
-        if (field_name == null) {
-            context_diag(ctx, 'Typed-instantiation requires simple field assignments')
-            continue
-        }
-
-        if (seen_bindings.has(field_name)) {
-            context_diag(ctx, `Duplicate typed-instantiation constraint for '${field_name}'`)
-        }
-        seen_bindings.add(field_name)
-
-        let instance_binding = binding_lookup_current(ctx, instance_scope_id, field_name)?.binding
-        let eval_binding = eval_scope.bindings.get(field_name)
-
-        if (instance_binding == null || eval_binding == null) {
-            context_diag(ctx, `Unknown field '${field_name}' in typed instantiation`)
-            continue
-        }
-
-        let rhs_value = reduce_value(ctx, statement.rhs)
-        let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding})
-        let merged = value_intersect(ctx, base_value, rhs_value)
-
-        instance_binding.value_final = merged
-        eval_binding.value_final = merged
-    }
+    apply_typed_instantiation_body_statement(ctx, eval_body, instance_scope_id, eval_scope_id)
 }
 
 const scope_for_literal = (ctx: Context, parent_scope_id: Scope_Id, expr: Expr_Paren): Scope_Id => {
