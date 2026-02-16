@@ -1001,7 +1001,7 @@ type Value_Instantiate = {
     kind:            'instantiate'
     caller_scope_id: Scope_Id
     type_value:      Value
-    body_expr:       Expr | null
+    body_value:      Value | null
 }
 
 type Value =
@@ -1033,7 +1033,6 @@ type Context = {
     reduced_output:    Value | null
     next_scope_id:     Scope_Id
     scopes:            Map<Scope_Id, Scope_Record>
-    literal_scope_cache: WeakMap<Expr_Paren, Map<Scope_Id, Scope_Id>>
 }
 
 const VALUE_TOP:      Value_Top      = {kind: 'top'}
@@ -1056,11 +1055,11 @@ const value_select      = (base: Value, field_name: string): Value_Select => ({k
 const value_unary       = (op: Token_Kind, rhs: Value): Value_Unary => ({kind: 'unary', op, rhs})
 const value_binary      = (op: Token_Kind, lhs: Value, rhs: Value): Value_Binary => ({kind: 'binary', op, lhs, rhs})
 const value_ternary     = (cond: Value, lhs: Value, rhs: Value): Value_Ternary => ({kind: 'ternary', cond, lhs, rhs})
-const value_instantiate = (caller_scope_id: Scope_Id, type_value: Value, body_expr: Expr | null): Value_Instantiate => ({
+const value_instantiate = (caller_scope_id: Scope_Id, type_value: Value, body_value: Value | null): Value_Instantiate => ({
     kind: 'instantiate',
     caller_scope_id,
     type_value,
-    body_expr,
+    body_value,
 })
 
 const context_diag = (ctx: Context, message: string) => {
@@ -1289,7 +1288,7 @@ const value_rebind_scope = (value: Value, from_scope_id: Scope_Id, to_scope_id: 
         return value_instantiate(
             value.caller_scope_id === from_scope_id ? to_scope_id : value.caller_scope_id,
             value_rebind_scope(value.type_value, from_scope_id, to_scope_id),
-            value.body_expr,
+            value.body_value == null ? null : value_rebind_scope(value.body_value, from_scope_id, to_scope_id),
         )
 
     case 'union':
@@ -1926,7 +1925,8 @@ const lower_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
 
         if (expr.open.kind === TOKEN_BRACE_L) {
             if (expr.type != null) {
-                return value_instantiate(scope_id, lower_expr(ctx, scope_id, expr.type), expr.body)
+                let body_value = expr.body == null ? null : lower_expr(ctx, scope_id, expr.body)
+                return value_instantiate(scope_id, lower_expr(ctx, scope_id, expr.type), body_value)
             }
 
             let child_scope_id = scope_for_literal(ctx, scope_id, expr)
@@ -1968,6 +1968,24 @@ const value_selector_ref = (value: Value): Value_Selector_Ref | null => {
         scope_id: base.scope_id,
         base_name: base.name,
         field_name: value.field_name,
+    }
+}
+
+const value_unprefixed_name = (value: Value): string | null => {
+    if (value.kind !== 'binding_ref') return null
+    if (value.mode !== 'unprefixed') return null
+    return value.name
+}
+
+const each_scope_statement_value = function* (value: Value): Generator<Value> {
+    if (value.kind === 'binary' &&
+        (value.op === TOKEN_EOL ||
+         value.op === TOKEN_COMMA))
+    {
+        yield* each_scope_statement_value(value.lhs)
+        yield* each_scope_statement_value(value.rhs)
+    } else {
+        yield value
     }
 }
 
@@ -2167,7 +2185,7 @@ const reduce_value = (ctx: Context, value: Value): Value => {
 
         let type_scope = scope_get(ctx, type_value.scope_id)
         let instance_scope_id = scope_clone_from_template(ctx, type_value.scope_id, type_scope.parent)
-        apply_typed_instantiation_body(ctx, value.caller_scope_id, instance_scope_id, value.body_expr)
+        apply_typed_instantiation_body(ctx, value.caller_scope_id, instance_scope_id, value.body_value)
         return value_scope_ref(instance_scope_id)
     }
 
@@ -2177,7 +2195,7 @@ const reduce_value = (ctx: Context, value: Value): Value => {
     }
 }
 
-const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id, instance_scope_id: Scope_Id, body: Expr | null) => {
+const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id, instance_scope_id: Scope_Id, body: Value | null) => {
     /* Typed instantiation body:
     |   T = {a = 3, b: int}
     |   v = T{b = .a + 2}
@@ -2194,19 +2212,21 @@ const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id,
 
     let seen_bindings = new Set<string>()
 
-    for (let statement of each_scope_statement(body)) {
+    let eval_body = value_rebind_scope(body, caller_scope_id, eval_scope_id)
 
-        if (statement.kind !== EXPR_BINARY) {
+    for (let statement of each_scope_statement_value(eval_body)) {
+
+        if (statement.kind !== 'binary') {
             context_diag(ctx, 'Invalid typed-instantiation statement')
             continue
         }
 
-        if (statement.op.kind !== TOKEN_BIND && statement.op.kind !== TOKEN_COLON) {
+        if (statement.op !== TOKEN_BIND && statement.op !== TOKEN_COLON) {
             context_diag(ctx, 'Unsupported typed-instantiation statement')
             continue
         }
 
-        let field_name = expr_ident_name(ctx, statement.lhs)
+        let field_name = value_unprefixed_name(statement.lhs)
         if (field_name == null) {
             context_diag(ctx, 'Typed-instantiation requires simple field assignments')
             continue
@@ -2225,7 +2245,7 @@ const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id,
             continue
         }
 
-        let rhs_value = reduce_expr(ctx, eval_scope_id, statement.rhs)
+        let rhs_value = reduce_value(ctx, statement.rhs)
         let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding})
         let merged = value_intersect(ctx, base_value, rhs_value)
 
@@ -2235,25 +2255,9 @@ const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id,
 }
 
 const scope_for_literal = (ctx: Context, parent_scope_id: Scope_Id, expr: Expr_Paren): Scope_Id => {
-    let parent_map = ctx.literal_scope_cache.get(expr)
-    if (parent_map == null) {
-        parent_map = new Map<Scope_Id, Scope_Id>()
-        ctx.literal_scope_cache.set(expr, parent_map)
-    }
-
-    let existing = parent_map.get(parent_scope_id)
-    if (existing != null) {
-        return existing
-    }
-
     let scope_id = scope_create(ctx, parent_scope_id)
-    parent_map.set(parent_scope_id, scope_id)
     index_scope_expr(ctx, scope_id, expr.body)
     return scope_id
-}
-
-const reduce_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
-    return reduce_value(ctx, lower_expr(ctx, scope_id, expr))
 }
 
 const display_scope_fields = (ctx: Context, fields: Map<string, Value>, seen_scopes: Set<Scope_Id>): string => {
@@ -2355,7 +2359,6 @@ export function context_make(): Context {
         reduced_output:    null,
         next_scope_id:     (1) as Scope_Id,
         scopes:            new Map<Scope_Id, Scope_Record>(),
-        literal_scope_cache: new WeakMap<Expr_Paren, Map<Scope_Id, Scope_Id>>(),
     }
 
     let builtins_scope_id = scope_create(ctx, null)
