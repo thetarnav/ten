@@ -937,9 +937,8 @@ type Binding_Record = {
 }
 
 type Scope_Record = {
-    id:              Scope_Id
-    parent_scope_id: Scope_Id | null
-    bindings_by_name: Map<string, Binding_Record>
+    parent:   Scope_Id | null
+    bindings: Map<string, Binding_Record>
 }
 
 type Value_Top = {
@@ -1062,16 +1061,15 @@ const scope_create = (ctx: Context, parent_scope_id: Scope_Id | null): Scope_Id 
     let id = ctx.next_scope_id
     ctx.next_scope_id += 1
     ctx.scopes.set(id, {
-        id,
-        parent_scope_id,
-        bindings_by_name: new Map<string, Binding_Record>(),
+        parent:   parent_scope_id,
+        bindings: new Map<string, Binding_Record>(),
     })
     return id
 }
 
 const binding_ensure = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Record => {
     let scope = scope_get(ctx, scope_id)
-    let existing = scope.bindings_by_name.get(name)
+    let existing = scope.bindings.get(name)
     if (existing) {
         return existing
     }
@@ -1085,13 +1083,13 @@ const binding_ensure = (ctx: Context, scope_id: Scope_Id, name: string): Binding
         finalized_value: null,
         reducing: false,
     }
-    scope.bindings_by_name.set(name, binding)
+    scope.bindings.set(name, binding)
     return binding
 }
 
 const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Ref | null => {
     let scope = scope_get(ctx, scope_id)
-    let binding = scope.bindings_by_name.get(name)
+    let binding = scope.bindings.get(name)
     if (binding == null) return null
     return {scope_id, binding}
 }
@@ -1099,7 +1097,7 @@ const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, name: string):
 const binding_lookup_parent_chain = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Ref | null => {
     let found: Binding_Ref | null = null
     for (;;) {
-        let s = scope_get(ctx, scope_id).parent_scope_id
+        let s = scope_get(ctx, scope_id).parent
         if (s == null) break
 
         found = binding_lookup_current(ctx, s, name)
@@ -1247,8 +1245,8 @@ const scope_clone_from_template = (ctx: Context, template_scope_id: Scope_Id, pa
     let clone_scope_id = scope_create(ctx, parent_scope_id)
     let clone_scope = scope_get(ctx, clone_scope_id)
 
-    for (let [name, binding] of template_scope.bindings_by_name.entries()) {
-        clone_scope.bindings_by_name.set(name, binding_clone(binding, clone_scope_id))
+    for (let [name, binding] of template_scope.bindings.entries()) {
+        clone_scope.bindings.set(name, binding_clone(binding, clone_scope_id))
     }
 
     return clone_scope_id
@@ -1365,8 +1363,8 @@ const materialize_scope_fields = (ctx: Context, value: Value): Map<string, Value
     if (value.kind === 'scope_ref') {
         let scope = scope_get(ctx, value.scope_id)
         let fields = new Map<string, Value>()
-        for (let [name, binding] of scope.bindings_by_name.entries()) {
-            let reduced = reduce_binding_ref(ctx, {scope_id: scope.id, binding})
+        for (let [name, binding] of scope.bindings.entries()) {
+            let reduced = reduce_binding_ref(ctx, {scope_id: value.scope_id, binding})
             fields.set(name, reduced)
         }
         return fields
@@ -1649,14 +1647,14 @@ const narrow_scope_ref_by_field = (ctx: Context, scope_ref: Value_Scope_Ref, fie
     // Clone then narrow so original scope stays immutable.
 
     let source_scope = scope_get(ctx, scope_ref.scope_id)
-    if (!source_scope.bindings_by_name.has(field_name)) {
+    if (!source_scope.bindings.has(field_name)) {
         context_diag(ctx, `Missing field '${field_name}' for narrowing`)
         return value_never()
     }
 
-    let narrowed_scope_id = scope_clone_from_template(ctx, source_scope.id, source_scope.parent_scope_id)
+    let narrowed_scope_id = scope_clone_from_template(ctx, scope_ref.scope_id, source_scope.parent)
     let narrowed_scope = scope_get(ctx, narrowed_scope_id)
-    let target_binding = narrowed_scope.bindings_by_name.get(field_name)
+    let target_binding = narrowed_scope.bindings.get(field_name)
     assert(target_binding != null)
 
     let current_field_value = reduce_binding_ref(ctx, {scope_id: narrowed_scope_id, binding: target_binding})
@@ -1861,7 +1859,7 @@ const lower_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
                 }
 
                 let type_scope = scope_get(ctx, type_value.scope_id)
-                let instance_scope_id = scope_clone_from_template(ctx, type_scope.id, type_scope.parent_scope_id)
+                let instance_scope_id = scope_clone_from_template(ctx, type_value.scope_id, type_scope.parent)
                 apply_typed_instantiation_body(ctx, scope_id, instance_scope_id, expr.body)
                 return value_scope_ref(instance_scope_id)
             }
@@ -2142,7 +2140,7 @@ const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id,
         seen_bindings.add(field_name)
 
         let instance_binding = binding_lookup_current(ctx, instance_scope_id, field_name)?.binding
-        let eval_binding = eval_scope.bindings_by_name.get(field_name)
+        let eval_binding = eval_scope.bindings.get(field_name)
 
         if (instance_binding == null || eval_binding == null) {
             context_diag(ctx, `Unknown field '${field_name}' in typed instantiation`)
@@ -2304,11 +2302,11 @@ export function add_expr(ctx: Context, expr: Expr, src: string) {
     ctx.diagnostics.length = 0
 
     let global_scope = scope_get(ctx, ctx.global_scope_id)
-    global_scope.bindings_by_name.clear()
+    global_scope.bindings.clear()
 
     index_scope_expr(ctx, ctx.global_scope_id, expr)
 
-    if (!global_scope.bindings_by_name.has('output')) {
+    if (!global_scope.bindings.has('output')) {
         context_diag(ctx, 'Missing required binding: output')
     }
 }
