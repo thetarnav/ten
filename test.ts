@@ -604,6 +604,14 @@ test.describe('reducer', {concurrency: true}, () => {
             a = int
             b = a == 1 ? 2 : 3
         }
+        output = (foo.a == 1) & (foo.b == 2) ? 1 : 0
+    `, `1`)
+
+    test_reducer(`
+        foo = {
+            a = int
+            b = a == 1 ? 2 : 3
+        }
         output = foo.b
     `, `int == 1 ? 2 : 3`)
 
