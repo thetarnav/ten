@@ -86,7 +86,7 @@ Use Node's test name filter because tests live in one file.
 - Keep strict typing; do not weaken `tsconfig` strictness
 - Prefer explicit return types on exported functions
 - Use discriminated unions and exhaustive `switch` checks (`value satisfies never`)
-- Use branded number types where applicable (`Node_Id`, `Ident_Id`)
+- Use branded number/string types where applicable (`type Node_Id = number & {node_id: void}`)
 - Prefer small, deterministic helpers over implicit magic
 - Avoid `any` unless there is no practical typed alternative
 
