@@ -641,26 +641,34 @@ export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0):
 
 export const token_kind_precedence = (kind: Token_Kind): number => {
     switch (kind) {
-    case TOKEN_EOL:        return 1
+    case TOKEN_EOL:
     case TOKEN_COMMA:      return 1
-    case TOKEN_COLON:      return 2
+
+    case TOKEN_COLON:
     case TOKEN_BIND:       return 2
-    case TOKEN_AND:        return 3
-    case TOKEN_OR:         return 3
-    case TOKEN_EQ:         return 4
-    case TOKEN_NOT_EQ:     return 4
-    case TOKEN_ADD_EQ:     return 4
-    case TOKEN_SUB_EQ:     return 4
-    case TOKEN_GREATER:    return 5
-    case TOKEN_GREATER_EQ: return 5
-    case TOKEN_LESS:       return 5
-    case TOKEN_LESS_EQ:    return 5
-    case TOKEN_ADD:        return 6
+
+    case TOKEN_EQ:
+    case TOKEN_NOT_EQ:
+    case TOKEN_ADD_EQ:
+    case TOKEN_SUB_EQ:
+    case TOKEN_GREATER:
+    case TOKEN_GREATER_EQ:
+    case TOKEN_LESS:
+    case TOKEN_LESS_EQ:    return 3
+
+    case TOKEN_AND:
+    case TOKEN_OR:         return 4
+
+    case TOKEN_ADD:
     case TOKEN_SUB:        return 6
-    case TOKEN_MUL:        return 7
+
+    case TOKEN_MUL:
     case TOKEN_DIV:        return 7
+
     case TOKEN_POW:        return 8
+
     case TOKEN_DOT:        return 9
+
     default:               return 0
     }
 }
@@ -815,7 +823,7 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
         }
         // Ternary operator (a ? b : c)
         else if (p.token.kind === TOKEN_QUESTION) {
-            let lbp = 4 // same precedence tier as assignment/equality
+            let lbp = 3 // same precedence tier as assignment/equality
             if (lbp < min_bp) break
 
             let op_q = p.token

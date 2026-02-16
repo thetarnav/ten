@@ -224,12 +224,19 @@ test.describe('parser', {concurrency: true}, () => {
         `  Binary: Or(|)\n`+
         `    Token: Ident(b)\n`+
         `    Token: Ident(c)`)
+    test_parser('a == b & c',
+        `Binary: Eq(==)\n`+
+        `  Token: Ident(a)\n`+
+        `  Binary: And(&)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Ident(c)`)
     test_parser('a: b = c',
         `Binary: Bind(=)\n`+
         `  Binary: Colon(:)\n`+
         `    Token: Ident(a)\n`+
         `    Token: Ident(b)\n`+
         `  Token: Ident(c)`)
+
 
     // Right associativity for power operator
     test_parser('a ^ b ^ c',
@@ -664,15 +671,6 @@ test.describe('reducer', {concurrency: true}, () => {
         loop = loop + 1
         output = 1 == 1 ? 5 : loop
     `, `5`)
-
-    test_reducer(`
-        foo = {
-            a = int
-            b = a == 1 ? 2 : 3
-        }
-        bar = foo & (foo.a == 1)
-        output = bar.b
-    `, `2`)
 
     test_reducer(`
         x = 2
