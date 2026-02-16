@@ -1837,7 +1837,7 @@ const apply_field_assignments = (ctx: Context, binding: Binding_Record, effectiv
             return value_never()
         }
 
-        let rhs = reduce_value(ctx, assignment.value)
+        let rhs = reduce_value(ctx, assignment.value, null)
         let merged = value_intersect(ctx, field_type, rhs)
         if (merged.kind === 'never') {
             return value_never()
@@ -1865,12 +1865,12 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
     // 1) Reduce all `x: T` constraints.
     let type = binding.type_to_reduce == null
         ? VALUE_ANY
-        : reduce_value(ctx, binding.type_to_reduce)
+        : reduce_value(ctx, binding.type_to_reduce, null)
 
     // 2) Reduce all `x = V` constraints.
     let value = binding.value_to_reduce == null
         ? VALUE_ANY
-        : reduce_value(ctx, binding.value_to_reduce)
+        : reduce_value(ctx, binding.value_to_reduce, null)
 
     // 3) Effective value is intersection of type/value worlds.
     let effective = value_intersect(ctx, type, value)
@@ -2037,7 +2037,7 @@ const world_assume_true = (ctx: Context, predicate: Value, world: World): World_
     if (predicate.kind === 'binary' && predicate.op === TOKEN_EQ) {
         let lhs_selector = value_selector_ref(predicate.lhs)
         if (lhs_selector != null) {
-            let expected = reduce_value_with_world(ctx, predicate.rhs, world)
+            let expected = reduce_value(ctx, predicate.rhs, world)
             let narrowed_world = world_constrain_selector(ctx, world, lhs_selector, expected)
             if (narrowed_world == null) return null
             return {world: narrowed_world, used_rule: true}
@@ -2045,20 +2045,20 @@ const world_assume_true = (ctx: Context, predicate: Value, world: World): World_
 
         let rhs_selector = value_selector_ref(predicate.rhs)
         if (rhs_selector != null) {
-            let expected = reduce_value_with_world(ctx, predicate.lhs, world)
+            let expected = reduce_value(ctx, predicate.lhs, world)
             let narrowed_world = world_constrain_selector(ctx, world, rhs_selector, expected)
             if (narrowed_world == null) return null
             return {world: narrowed_world, used_rule: true}
         }
 
-        let lhs = reduce_value_with_world(ctx, predicate.lhs, world)
-        let rhs = reduce_value_with_world(ctx, predicate.rhs, world)
+        let lhs = reduce_value(ctx, predicate.lhs, world)
+        let rhs = reduce_value(ctx, predicate.rhs, world)
         let cmp = value_compare(ctx, lhs, rhs, TOKEN_EQ)
         if (cmp.kind === 'never') return null
         if (cmp.kind === 'top') return {world, used_rule: false}
     }
 
-    let reduced = reduce_value_with_world(ctx, predicate, world)
+    let reduced = reduce_value(ctx, predicate, world)
 
     if (reduced.kind === 'top') {
         return {world, used_rule: false}
@@ -2071,7 +2071,7 @@ const world_assume_true = (ctx: Context, predicate: Value, world: World): World_
     return {world, used_rule: false}
 }
 
-const reduce_value_with_world = (ctx: Context, value: Value, world: World | null): Value => {
+const reduce_value = (ctx: Context, value: Value, world: World | null): Value => {
     switch (value.kind) {
     case 'top':
     case 'never':
@@ -2096,12 +2096,12 @@ const reduce_value_with_world = (ctx: Context, value: Value, world: World | null
     }
 
     case 'select': {
-        let base = reduce_value_with_world(ctx, value.base, world)
+        let base = reduce_value(ctx, value.base, world)
         return value_read_field(ctx, base, value.field_name)
     }
 
     case 'unary': {
-        let rhs = reduce_value_with_world(ctx, value.rhs, world)
+        let rhs = reduce_value(ctx, value.rhs, world)
 
         switch (value.op) {
         case TOKEN_ADD:
@@ -2123,21 +2123,21 @@ const reduce_value_with_world = (ctx: Context, value: Value, world: World | null
         switch (value.op) {
         case TOKEN_EOL:
         case TOKEN_COMMA:
-            reduce_value_with_world(ctx, value.lhs, world)
-            return reduce_value_with_world(ctx, value.rhs, world)
+            reduce_value(ctx, value.lhs, world)
+            return reduce_value(ctx, value.rhs, world)
 
         case TOKEN_ADD:
         case TOKEN_SUB:
         case TOKEN_MUL:
         case TOKEN_DIV: {
-            let lhs = reduce_value_with_world(ctx, value.lhs, world)
-            let rhs = reduce_value_with_world(ctx, value.rhs, world)
+            let lhs = reduce_value(ctx, value.lhs, world)
+            let rhs = reduce_value(ctx, value.rhs, world)
             return value_binary_i32(ctx, lhs, rhs, value.op)
         }
 
         case TOKEN_OR: {
-            let lhs = reduce_value_with_world(ctx, value.lhs, world)
-            let rhs = reduce_value_with_world(ctx, value.rhs, world)
+            let lhs = reduce_value(ctx, value.lhs, world)
+            let rhs = reduce_value(ctx, value.rhs, world)
             return value_union(ctx, lhs, rhs)
         }
 
@@ -2146,20 +2146,20 @@ const reduce_value_with_world = (ctx: Context, value: Value, world: World | null
 
             let lhs_world = world_assume_true(ctx, value.lhs, base_world)
             if (lhs_world != null && lhs_world.used_rule) {
-                let lhs = reduce_value_with_world(ctx, value.lhs, lhs_world.world)
-                let rhs = reduce_value_with_world(ctx, value.rhs, lhs_world.world)
+                let lhs = reduce_value(ctx, value.lhs, lhs_world.world)
+                let rhs = reduce_value(ctx, value.rhs, lhs_world.world)
                 return value_intersect(ctx, lhs, rhs)
             }
 
             let rhs_world = world_assume_true(ctx, value.rhs, base_world)
             if (rhs_world != null && rhs_world.used_rule) {
-                let lhs = reduce_value_with_world(ctx, value.lhs, rhs_world.world)
-                let rhs = reduce_value_with_world(ctx, value.rhs, rhs_world.world)
+                let lhs = reduce_value(ctx, value.lhs, rhs_world.world)
+                let rhs = reduce_value(ctx, value.rhs, rhs_world.world)
                 return value_intersect(ctx, lhs, rhs)
             }
 
-            let lhs = reduce_value_with_world(ctx, value.lhs, world)
-            let rhs = reduce_value_with_world(ctx, value.rhs, world)
+            let lhs = reduce_value(ctx, value.lhs, world)
+            let rhs = reduce_value(ctx, value.rhs, world)
             return value_intersect(ctx, lhs, rhs)
         }
 
@@ -2169,38 +2169,38 @@ const reduce_value_with_world = (ctx: Context, value: Value, world: World | null
         case TOKEN_LESS_EQ:
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQ: {
-            let lhs = reduce_value_with_world(ctx, value.lhs, world)
-            let rhs = reduce_value_with_world(ctx, value.rhs, world)
+            let lhs = reduce_value(ctx, value.lhs, world)
+            let rhs = reduce_value(ctx, value.rhs, world)
             return value_compare(ctx, lhs, rhs, value.op)
         }
 
         default: {
-            let lhs = reduce_value_with_world(ctx, value.lhs, world)
-            let rhs = reduce_value_with_world(ctx, value.rhs, world)
+            let lhs = reduce_value(ctx, value.lhs, world)
+            let rhs = reduce_value(ctx, value.rhs, world)
             return value_binary(value.op, lhs, rhs)
         }
         }
     }
 
     case 'ternary': {
-        let cond = reduce_value_with_world(ctx, value.cond, world)
+        let cond = reduce_value(ctx, value.cond, world)
         if (cond.kind === 'never') {
-            return reduce_value_with_world(ctx, value.rhs, world)
+            return reduce_value(ctx, value.rhs, world)
         }
         if (cond.kind === 'top') {
-            return reduce_value_with_world(ctx, value.lhs, world)
+            return reduce_value(ctx, value.lhs, world)
         }
 
         let world_true = world_assume_true(ctx, value.cond, world == null ? new Map<string, Value>() : world)
         if (world_true != null && world_true.used_rule) {
-            return reduce_value_with_world(ctx, value.lhs, world_true.world)
+            return reduce_value(ctx, value.lhs, world_true.world)
         }
 
         return value_ternary(cond, value.lhs, value.rhs)
     }
 
     case 'instantiate': {
-        let type_value = reduce_value_with_world(ctx, value.type_value, world)
+        let type_value = reduce_value(ctx, value.type_value, world)
         if (type_value.kind !== 'scope_ref') {
             context_diag(ctx, 'Typed instantiation requires scope value type')
             return value_never()
@@ -2216,10 +2216,6 @@ const reduce_value_with_world = (ctx: Context, value: Value, world: World | null
         value satisfies never
         return value_never()
     }
-}
-
-const reduce_value = (ctx: Context, value: Value): Value => {
-    return reduce_value_with_world(ctx, value, null)
 }
 
 const apply_typed_instantiation_body_statement = (ctx: Context, st: Value, instance_scope_id: Scope_Id, eval_scope_id: Scope_Id) => {
@@ -2252,7 +2248,7 @@ const apply_typed_instantiation_body_statement = (ctx: Context, st: Value, insta
             return
         }
 
-        let rhs_value = reduce_value(ctx, st.rhs)
+        let rhs_value = reduce_value(ctx, st.rhs, null)
         let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding})
         let merged = value_intersect(ctx, base_value, rhs_value)
 
