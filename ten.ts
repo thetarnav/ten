@@ -1462,7 +1462,7 @@ const materialize_scope_fields = (ctx: Context, value: Value): Map<string, Value
         let scope = scope_get(ctx, value.scope_id)
         let fields = new Map<string, Value>()
         for (let [name, binding] of scope.bindings.entries()) {
-            let reduced = reduce_binding_ref(ctx, {scope_id: value.scope_id, binding})
+            let reduced = reduce_binding_ref(ctx, {scope_id: value.scope_id, binding}, null)
             fields.set(name, reduced)
         }
         return fields
@@ -1767,7 +1767,7 @@ const narrow_scope_ref_by_field = (ctx: Context, scope_ref: Value_Scope_Ref, fie
     let target_binding = narrowed_scope.bindings.get(field_name)
     assert(target_binding != null)
 
-    let current_field_value = reduce_binding_ref(ctx, {scope_id: narrowed_scope_id, binding: target_binding})
+    let current_field_value = reduce_binding_ref(ctx, {scope_id: narrowed_scope_id, binding: target_binding}, null)
     let narrowed_field_value = value_intersect(ctx, current_field_value, expected_value)
     target_binding.value_final = narrowed_field_value
 
@@ -1808,7 +1808,7 @@ const narrow_value_by_field = (ctx: Context, base_value: Value, field_name: stri
     return value_never()
 }
 
-const apply_field_assignments = (ctx: Context, binding: Binding_Record, effective: Value): Value => {
+const apply_field_assignments = (ctx: Context, binding: Binding_Record, effective: Value, world: World | null): Value => {
     // Apply deferred `foo.a = ...` writes after `foo` constraints are reduced.
     if (binding.field_assignments.length === 0) {
         return effective
@@ -1848,7 +1848,7 @@ const apply_field_assignments = (ctx: Context, binding: Binding_Record, effectiv
             return value_never()
         }
 
-        let rhs = reduce_value(ctx, assignment.value, null)
+        let rhs = reduce_value(ctx, assignment.value, world)
         let merged = value_intersect(ctx, field_type, rhs)
         if (merged.kind === 'never') {
             return value_never()
@@ -1859,10 +1859,10 @@ const apply_field_assignments = (ctx: Context, binding: Binding_Record, effectiv
     return value_scope_obj(fields)
 }
 
-const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
+const reduce_binding_ref = (ctx: Context, ref: Binding_Ref, world: World | null): Value => {
     let binding = ref.binding
 
-    if (binding.value_final != null) {
+    if (world == null && binding.value_final != null) {
         return binding.value_final
     }
 
@@ -1876,19 +1876,21 @@ const reduce_binding_ref = (ctx: Context, ref: Binding_Ref): Value => {
     // 1) Reduce all `x: T` constraints.
     let type = binding.type_to_reduce == null
         ? VALUE_ANY
-        : reduce_value(ctx, binding.type_to_reduce, null)
+        : reduce_value(ctx, binding.type_to_reduce, world)
 
     // 2) Reduce all `x = V` constraints.
     let value = binding.value_to_reduce == null
         ? VALUE_ANY
-        : reduce_value(ctx, binding.value_to_reduce, null)
+        : reduce_value(ctx, binding.value_to_reduce, world)
 
     // 3) Effective value is intersection of type/value worlds.
     let effective = value_intersect(ctx, type, value)
-    effective = apply_field_assignments(ctx, binding, effective)
+    effective = apply_field_assignments(ctx, binding, effective, world)
     effective = value_simplify(ctx, effective)
 
-    binding.value_final     = effective
+    if (world == null) {
+        binding.value_final = effective
+    }
     binding.reducing        = false
 
     return effective
@@ -2020,7 +2022,7 @@ const world_constrain_binding_ref = (ctx: Context, world: World, binding_ref: Va
 
     let current = world_get_binding(world, ref)
     if (current == null) {
-        current = reduce_binding_ref(ctx, ref)
+        current = reduce_binding_ref(ctx, ref, world)
     }
 
     let narrowed = value_intersect(ctx, current, expected)
@@ -2043,7 +2045,7 @@ const world_constrain_selector = (ctx: Context, world: World, selector: Value_Se
 
     let base_value = world_get_binding(world, ref)
     if (base_value == null) {
-        base_value = reduce_binding_ref(ctx, ref)
+        base_value = reduce_binding_ref(ctx, ref, world)
     }
 
     let narrowed = narrow_value_by_field(ctx, base_value, selector.field_name, expected)
@@ -2164,7 +2166,7 @@ const reduce_value = (ctx: Context, value: Value, world: World | null): Value =>
         if (narrowed != null) {
             return narrowed
         }
-        return reduce_binding_ref(ctx, ref)
+        return reduce_binding_ref(ctx, ref, world)
     }
 
     case 'select': {
@@ -2331,7 +2333,7 @@ const apply_typed_instantiation_body_statement = (ctx: Context, st: Value, insta
         }
 
         let rhs_value = reduce_value(ctx, st.rhs, null)
-        let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding})
+        let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding}, null)
         let merged = value_intersect(ctx, base_value, rhs_value)
 
         instance_binding.value_final = merged
@@ -2514,7 +2516,7 @@ export function reduce(ctx: Context) {
         return
     }
 
-    ctx.reduced_output = reduce_binding_ref(ctx, output_ref)
+    ctx.reduced_output = reduce_binding_ref(ctx, output_ref, null)
 }
 
 export function display(ctx: Context): string {
