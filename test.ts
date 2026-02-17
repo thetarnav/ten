@@ -618,9 +618,25 @@ test.describe('reducer', {concurrency: true}, () => {
         foo = int
         output = foo == 1 ? foo + 1 : !()
     `, `int == 1 ? foo + 1 : !()`)
+
     test_reducer(`
         foo = int
         output = (foo == 1) & (foo + 1)
+    `, `2`)
+    test_reducer(`
+        foo = int
+        output = (foo + 1) & (foo == 1)
+    `, `2`)
+
+    test_reducer(`
+        foo = int
+        bar = foo + 1
+        output = (foo == 1) & bar
+    `, `2`)
+    test_reducer(`
+        foo = int
+        bar = foo + 1
+        output = bar & (foo == 1)
     `, `2`)
 
     test_reducer(`
