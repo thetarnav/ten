@@ -598,6 +598,13 @@ test.describe('reducer', {concurrency: true}, () => {
         }
         output = foo.b & (foo.a == 1)
     `, `2`)
+    test_reducer(`
+        foo = {
+            a = int
+            b = a == 1 ? 2 : 3
+        }
+        output = (foo.a == 1) & foo.b
+    `, `2`)
 
     test_reducer(`
         foo = {
@@ -606,6 +613,15 @@ test.describe('reducer', {concurrency: true}, () => {
         }
         output = (foo.a == 1) & (foo.b == 2) ? 1 : 0
     `, `1`)
+
+    test_reducer(`
+        foo = int
+        output = foo == 1 ? foo + 1 : !()
+    `, `int == 1 ? foo + 1 : !()`)
+    test_reducer(`
+        foo = int
+        output = (foo == 1) & (foo + 1)
+    `, `2`)
 
     test_reducer(`
         foo = {
@@ -667,17 +683,28 @@ test.describe('reducer', {concurrency: true}, () => {
         output = ^int
     `, `int`)
 
+    // Ternary
     test_reducer(`
         output = 1 == 1 ? 5 : 7
     `, `5`)
-
     test_reducer(`
         output = 1 == 2 ? 5 : 7
     `, `7`)
-
     test_reducer(`
         loop = loop + 1
         output = 1 == 1 ? 5 : loop
+    `, `5`)
+
+    // Ternary unwrapped
+    test_reducer(`
+        output = ((1 == 1) & 5) | (!(1 == 1) & 7)
+    `, `5`)
+    test_reducer(`
+        output = ((1 == 2) & 5) | (!(1 == 2) & 7)
+    `, `7`)
+    test_reducer(`
+        loop = loop + 1
+        output = ((1 == 1) & 5) | (!(1 == 1) & loop)
     `, `5`)
 
     test_reducer(`
@@ -735,15 +762,6 @@ test.describe('reducer', {concurrency: true}, () => {
         }
         output = Fib{n = 10}.result
     `, `55`)
-
-    // test_reducer(`
-    //     Fib = {
-    //         n: int
-    //         _calc_value = Fib{n = n-1}.result + Fib{n = n-2}.result
-    //         result = n <= 2 ? n : _calc_value
-    //     }
-    //     output = Fib{n = 10}.result
-    // `, `55`)
 
     test_reducer(`
         Node = {value: int, end: 1 | 0, next: Node}
