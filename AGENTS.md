@@ -7,7 +7,8 @@ It documents practical conventions observed in the codebase.
 
 - `ten.ts`: core implementation (tokenizer, parser, reducer, display helpers)
 - `run.ts`: CLI entrypoint with `-i/--input` and stdin handling
-- `test.ts`: full `node:test` test suite
+- `test/setup.ts`: shared test helpers (`fail`, `expect`)
+- `test/lexer.test.ts`, `test/parser.test.ts`, `test/reducer.test.ts`: test suites
 - `package.json`: scripts and dependencies
 - `tsconfig.json`: strict TS settings for NodeNext ESM
 - `.github/workflows/test.yml`: CI flow (typecheck + tests on Node 24)
@@ -35,14 +36,14 @@ There is no build/emit step; `tsc` runs with `--noEmit`.
 
 ## Single-Test Execution
 
-Use Node's test name filter because tests live in one file.
+Use Node's test name filter to run targeted tests/suites.
 
-- Run one test by exact/partial name:
-  `pnpm test --test-name-pattern='`x`'`
 - Run one suite:
-  `pnpm test --test-name-pattern='^tokenizer'`
+  `pnpm test --test-name-pattern='lexer operators'`
 - Run a parser-focused subset:
   `pnpm test --test-name-pattern='parser'`
+- Run only one test file:
+  `pnpm test test/parser.test.ts`
 
 ## Import and Module Conventions
 
@@ -108,9 +109,11 @@ Use Node's test name filter because tests live in one file.
 
 ## Testing Conventions
 
-- Add tests to `test.ts` near the relevant describe block
+- Add tests to the appropriate file in `test/` (`lexer`, `parser`, or `reducer`)
 - Keep test names descriptive (often the input expression wrapped in backticks)
+- Import `./setup.ts` at the top of each test file
 - Reuse helper functions (`test_tokenizer`, `test_parser`, `test_reducer`) when appropriate
+- Group related tests with `test.suite` categories
 - Keep tests deterministic and independent
 - Prefer focused regression tests for bug fixes
 
