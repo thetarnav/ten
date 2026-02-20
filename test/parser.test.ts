@@ -399,3 +399,31 @@ test.suite('parser complex and multiline expressions', {concurrency: true}, () =
         `    Token: Ident(x)\n`+
         `    Token: Int(123)`)
 })
+
+
+function test_expr_range(input: string, expected_pos: number, expected_len: number, expected_text: string) {
+    test.test('range `'+input+'`', () => {
+        let [result, errors] = ten.parse_src(input)
+
+        if (errors.length !== 0) {
+            fail(`Parse errors: ${JSON.stringify(errors)}`)
+        }
+
+        let actual_range = ten.expr_range(input, result)
+        let actual_text = ten.expr_string(input, result)
+
+        expect(actual_range.pos === expected_pos, 'Expr range pos mismatch', String(expected_pos), String(actual_range.pos))
+        expect(actual_range.len === expected_len, 'Expr range len mismatch', String(expected_len), String(actual_range.len))
+        expect(actual_text === expected_text, 'Expr string mismatch', expected_text, actual_text)
+    })
+}
+
+test.suite('parser expr source span helpers', {concurrency: true}, () => {
+    test_expr_range('a + b', 0, 5, 'a + b')
+    test_expr_range('  a + b  ', 2, 5, 'a + b')
+    test_expr_range('Foo{a = 1}', 0, 10, 'Foo{a = 1}')
+    test_expr_range('foo ? bar : baz', 0, 15, 'foo ? bar : baz')
+
+    let multiline = 'foo = a + b == 20\n\t? a + 1\n\t: b + 1'
+    test_expr_range(multiline, 0, multiline.length, multiline)
+})

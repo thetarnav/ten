@@ -143,6 +143,11 @@ const CLOSE_TOKEN_TABLE = {
     [TOKEN_BRACE_L]: TOKEN_BRACE_R,
 } as Record<Token_Kind, Token_Kind>
 
+export type Source_Span = {
+    pos: number
+    len: number
+}
+
 export type Token = {
     pos:  number
     kind: Token_Kind
@@ -457,8 +462,24 @@ export const token_len = (src: string, tok: Token): number => {
     }
 }
 
+export const token_end = (src: string, tok: Token): number => {
+    return tok.pos + token_len(src, tok)
+}
+
+export const token_span = (src: string, tok: Token): Source_Span => {
+    return {
+        pos: tok.pos,
+        len: token_len(src, tok),
+    }
+}
+
+export const span_string = (src: string, range: Source_Span): string => {
+    return src.substring(range.pos, range.pos + range.len)
+}
+
 export const token_string = (src: string, tok: Token): string => {
-    return src.substring(tok.pos, tok.pos + token_len(src, tok))
+    let end = token_end(src, tok)
+    return src.substring(tok.pos, end)
 }
 
 export const token_display = (src: string, tok: Token): string => {
@@ -597,6 +618,47 @@ export const expr_invalid_push = (p: Parser, tok: Token, reason = 'Unexpected to
     let expr = expr_invalid(tok, reason)
     p.errors.push(expr)
     return expr
+}
+
+const expr_pos = (expr: Expr): number => {
+    switch (expr.kind) {
+    case EXPR_TOKEN:
+    case EXPR_INVALID: return expr.tok.pos
+    case EXPR_UNARY:   return expr.op.pos
+    case EXPR_BINARY:  return expr_pos(expr.lhs)
+    case EXPR_TERNARY: return expr_pos(expr.cond)
+    case EXPR_PAREN:   return expr.type != null ? expr_pos(expr.type) : expr.open.pos
+    }
+}
+
+export const expr_end = (src: string, expr: Expr): number => {
+    switch (expr.kind) {
+    case EXPR_TOKEN:
+    case EXPR_INVALID: return token_end(src, expr.tok)
+
+    case EXPR_UNARY:
+    case EXPR_BINARY:
+    case EXPR_TERNARY: return expr_end(src, expr.rhs)
+
+    case EXPR_PAREN:   return token_end(src, expr.close)
+    }
+}
+
+export const expr_len = (src: string, expr: Expr): number => {
+    return expr_end(src, expr) - expr_pos(expr)
+}
+
+export const expr_range = (src: string, expr: Expr): Source_Span => {
+    return {
+        pos: expr_pos(expr),
+        len: expr_len(src, expr),
+    }
+}
+
+export const expr_string = (src: string, expr: Expr): string => {
+    let pos = expr_pos(expr)
+    let end = expr_end(src, expr)
+    return src.substring(pos, end)
 }
 
 export const expr_display = (src: string, expr: Expr, indent = '\t', depth = 0): string => {
