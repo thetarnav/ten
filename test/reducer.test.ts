@@ -41,6 +41,11 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
     `, `1`)
 
     test_reducer(`
+        int = 5
+        output = ^int
+    `, `int`)
+
+    test_reducer(`
         a = 1
         foo = {a = 2, x = .a, y = ^a}
         output = {x = foo.x, y = foo.y}
@@ -81,6 +86,44 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
         foo.a = 3
         output = foo
     `, `!()`)
+})
+
+test.suite('reducer integer arithmetic', {concurrency: true}, () => {
+    test_reducer(`
+        output = 1 + 2
+    `, `3`)
+
+    test_reducer(`
+        output = 7 - 3
+    `, `4`)
+
+    test_reducer(`
+        output = 6 * 7
+    `, `42`)
+
+    test_reducer(`
+        output = 8 / 2
+    `, `4`)
+
+    test_reducer(`
+        output = 1 + 2 * 3
+    `, `7`)
+
+    test_reducer(`
+        output = (1 + 2) * 3
+    `, `9`)
+
+    test_reducer(`
+        output = -5 + 2
+    `, `-3`)
+
+    test_reducer(`
+        output = 2147483647 + 1
+    `, `-2147483648`)
+
+    test_reducer(`
+        output = -2147483648 - 1
+    `, `2147483647`)
 })
 
 test.suite('reducer union, intersection, and nil', {concurrency: true}, () => {
@@ -254,15 +297,7 @@ test.suite('reducer diagnostics', {concurrency: true}, () => {
     `, `5`, [`Unsupported statement in scope body`])
 })
 
-test.suite('reducer arithmetic and recursion', {concurrency: true}, () => {
-    test_reducer(`
-        output = 2147483647 + 1
-    `, `-2147483648`)
-
-    test_reducer(`
-        int = 5
-        output = ^int
-    `, `int`)
+test.suite('reducer recursion', {concurrency: true}, () => {
 
     test_reducer(`
         Fib = {
