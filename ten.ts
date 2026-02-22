@@ -6,6 +6,10 @@ function assert(condition: boolean, message?: string): asserts condition {
         throw new Error(message || 'Assertion failed')
     }
 }
+function unreachable(): never {
+    throw new Error('Should\'t reach here')
+}
+
 /*--------------------------------------------------------------*
 
     TOKENIZER
@@ -53,6 +57,7 @@ export const
     TOKEN_IDENT      = 33 as const, // identifier `foo`
     TOKEN_INT        = 34 as const, // integer literal `123`
     TOKEN_FLOAT      = 35 as const, // floating-point literal `123.456`
+    TOKEN_NONE       = TOKEN_INVALID,
     TOKEN_ENUM_START = TOKEN_INVALID,
     TOKEN_ENUM_END   = TOKEN_FLOAT,
     TOKEN_ENUM_RANGE = TOKEN_ENUM_END - TOKEN_ENUM_START + 1
@@ -860,7 +865,7 @@ const _parse_expr = (p: Parser, min_bp = 1): Expr => {
         // Special-case multiline ternary
         _parser_skip_eol_for_ternary(p)
 
-        // Selector operator (foo.bar)
+        // Select operator (foo.bar)
         if (p.token.kind === TOKEN_DOT) {
             let op = p.token
             let rhs_tok = parser_next_token(p)
@@ -990,329 +995,812 @@ const _parse_expr_atom = (p: Parser): Expr => {
     REDUCER
 */
 
-type Scope_Id = number & {scope_id: void}
+type Scope_Id = number & {__scope_id: void}
+type Ident_Id = number & {__ident_id: void}
+type Term_Id  = number & {__term_id:  void}
 
-type Lookup_Mode = 'unprefixed' | 'current_only' | 'parent_only'
+const SCOPE_ID_BUILTIN  = 0 as Scope_Id
+const SCOPE_ID_GLOBAL   = 1 as Scope_Id
 
-type Field_Assignment = {
-    field_name: string
-    value:      Value
-}
+const IDENT_ID_NONE     = 0 as Ident_Id
 
-class Binding_Record {
-    name:              string             = ''
-    scope_id:          Scope_Id           = 0 as Scope_Id
-    type_to_reduce:    Value | null       = null
-    value_to_reduce:   Value | null       = null
-    value_final:       Value | null       = null
-    field_assignments: Field_Assignment[] = []
-    reducing:          boolean            = false
-}
+const TERM_ID_NONE      = 0 as Term_Id
+const TERM_ID_ANY       = TERM_ID_NONE
+const TERM_ID_NEVER     = 1 as Term_Id
+const TERM_ID_NIL       = 2 as Term_Id
+const TERM_ID_TYPE_INT  = 3 as Term_Id
+const TERM_ID_TYPE_BOOL = 4 as Term_Id
+const TERM_ID_TRUE      = 5 as Term_Id
+const TERM_ID_FALSE     = 6 as Term_Id
+const TERM_ID_ZERO      = 7 as Term_Id
 
-type Scope_Record = {
-    parent:   Scope_Id | null
-    bindings: Map<string, Binding_Record>
-}
+const MAX_ID            = 4194304 // 2^22
 
-type Value_Top = {
-    kind: 'top'
-}
-type Value_Never = {
-    kind: 'never'
-}
-type Value_Int = {
-    kind:  'int'
-    value: number
-}
-type Value_Int_Type = {
-    kind: 'int_type'
-}
-type Value_Nil = {
-    kind: 'nil'
-}
-type Value_Scope_Ref = {
-    kind:     'scope_ref'
-    scope_id: Scope_Id
-}
-type Value_Scope_Obj = {
-    kind:   'scope_obj'
-    fields: Map<string, Value>
-}
-type Value_Union = {
-    kind:  'union'
-    parts: Value[]
-}
-type Value_Binding_Ref = {
-    kind:     'binding_ref'
-    scope_id: Scope_Id
-    mode:     Lookup_Mode
-    name:     string
-}
-type Value_Select = {
-    kind:       'select'
-    base:       Value
-    field_name: string
-}
-type Value_Unary = {
-    kind: 'unary'
-    op:   Token_Kind
-    rhs:  Value
-}
-type Value_Binary = {
-    kind: 'binary'
-    op:   Token_Kind
-    lhs:  Value
-    rhs:  Value
-}
-type Value_Ternary = {
-    kind: 'ternary'
-    cond: Value
-    lhs:  Value
-    rhs:  Value
-}
-type Value_Instantiate = {
-    kind:            'instantiate'
-    caller_scope_id: Scope_Id
-    type_value:      Value
-    body_value:      Value | null
+const
+    TERM_ANY        = 200 as const,
+    TERM_NEVER      = 201 as const,
+    TERM_NIL        = 202 as const,
+    TERM_NEG        = 203 as const,
+    TERM_BINARY     = 204 as const,
+    TERM_TERNARY    = 205 as const,
+    TERM_VAR        = 206 as const,
+    TERM_SELECT     = 207 as const,
+    TERM_SCOPE      = 208 as const,
+    TERM_WORLD      = 209 as const,
+    TERM_BOOL       = 210 as const,
+    TERM_INT        = 211 as const,
+    TERM_TYPE_BOOL  = 212 as const,
+    TERM_TYPE_INT   = 213 as const,
+    TERM_TOP        = TERM_ANY,
+    TERM_BOTTOM     = TERM_NEVER,
+    TERM_ENUM_START = TERM_ANY,
+    TERM_ENUM_END   = TERM_TYPE_INT,
+    TERM_ENUM_RANGE = TERM_ENUM_END - TERM_ENUM_START + 1
+
+export const Term_Kind = {
+    Any:       TERM_ANY,
+    Never:     TERM_NEVER,
+    Nil:       TERM_NIL,
+    Neg:       TERM_NEG,
+    Binary:    TERM_BINARY,
+    Ternary:   TERM_TERNARY,
+    Var:       TERM_VAR,
+    Select:    TERM_SELECT,
+    Scope:     TERM_SCOPE,
+    World:     TERM_WORLD,
+    Bool:      TERM_BOOL,
+    Int:       TERM_INT,
+    Type_Bool: TERM_TYPE_BOOL,
+    Type_Int:  TERM_TYPE_INT,
+} as const
+
+export type Term_Kind = typeof Term_Kind[keyof typeof Term_Kind]
+
+export const term_kind_string = (kind: Term_Kind): string => {
+    switch (kind) {
+    case TERM_ANY:       return "Any"
+    case TERM_NEVER:     return "Never"
+    case TERM_NIL:       return "Nil"
+    case TERM_NEG:       return "Neg"
+    case TERM_BINARY:    return "Binary"
+    case TERM_TERNARY:   return "Ternary"
+    case TERM_VAR:       return "Var"
+    case TERM_SELECT:    return "Select"
+    case TERM_SCOPE:     return "Scope"
+    case TERM_WORLD:     return "World"
+    case TERM_BOOL:      return "Bool"
+    case TERM_INT:       return "Int"
+    case TERM_TYPE_BOOL: return "Type_Bool"
+    case TERM_TYPE_INT:  return "Type_Int"
+    default:
+        kind satisfies never // exhaustive check
+        return "Unknown"
+    }
 }
 
-type Value =
-    | Value_Top
-    | Value_Never
-    | Value_Int
-    | Value_Int_Type
-    | Value_Nil
-    | Value_Scope_Ref
-    | Value_Scope_Obj
-    | Value_Union
-    | Value_Binding_Ref
-    | Value_Select
-    | Value_Unary
-    | Value_Binary
-    | Value_Ternary
-    | Value_Instantiate
+export type Term =
+    | Term_Any
+    | Term_Never
+    | Term_Nil
+    | Term_Neg
+    | Term_Binary
+    | Term_Ternary
+    | Term_Var
+    | Term_Select
+    | Term_Scope
+    | Term_World
+    | Term_Bool
+    | Term_Int
+    | Term_Type_Bool
+    | Term_Type_Int
 
-type Binding_Ref = {
-    scope_id: Scope_Id
-    binding:  Binding_Record
+export class Term_Any {
+    kind = TERM_ANY
+}
+export class Term_Never {
+    kind = TERM_NEVER
+}
+export class Term_Nil {
+    kind = TERM_NIL
+}
+export class Term_Neg {
+    kind = TERM_NEG
+    rhs:   Term_Id    = TERM_ID_NONE
+}
+export class Term_Binary {
+    kind = TERM_BINARY
+    op:    Token_Kind = TOKEN_INVALID
+    lhs:   Term_Id    = TERM_ID_NONE
+    rhs:   Term_Id    = TERM_ID_NONE
+}
+export class Term_Ternary {
+    kind = TERM_TERNARY
+    cond:  Term_Id    = TERM_ID_NONE
+    lhs:   Term_Id    = TERM_ID_NONE
+    rhs:   Term_Id    = TERM_ID_NONE
+}
+export class Term_Var {
+    kind = TERM_VAR
+    prefix: Token_Kind = TOKEN_NONE
+    ident:  Ident_Id   = IDENT_ID_NONE // Field(.foo)
+}
+export class Term_Select {
+    kind = TERM_SELECT
+    lhs:   Term_Id    = TERM_ID_NONE  // Select(foo) | Scope({...})
+    rhs:   Ident_Id   = IDENT_ID_NONE // Field(.foo)
+}
+export class Term_Scope {
+    kind = TERM_SCOPE
+    id:    Scope_Id   = SCOPE_ID_BUILTIN
+}
+export class Term_World {
+    kind = TERM_WORLD
+    body:  Term_Id    = TERM_ID_NONE
+    world: World      = new World
+}
+export class Term_Bool {
+    kind = TERM_BOOL
+    value: boolean    = false
+}
+export class Term_Int {
+    kind = TERM_INT
+    value: number     = 0
+}
+export class Term_Type_Bool {
+    kind = TERM_TYPE_BOOL
+}
+export class Term_Type_Int {
+    kind = TERM_TYPE_INT
 }
 
-type World = Map<string, Value>
-
-type World_Assume_Result = {
-    world:     World
-    used_rule: boolean
+class Scope {
+    parent: Scope_Id | null = null
+    type:   Scope_Id | null = null
 }
 
-type Context = {
-    src:               string
-    builtins_scope_id: Scope_Id
-    global_scope_id:   Scope_Id
-    diagnostics:       string[]
-    reduced_output:    Value | null
-    next_scope_id:     Scope_Id
-    scopes:            Map<Scope_Id, Scope_Record>
+class Context {
+    scope_arr: Scope[]                = []
+
+    term_arr:  Term[]                 = []
+    term_map:  Map<Term_Key, Term_Id> = new Map
+
+    ident_src: string[]               = []
+    ident_map: Map<string, Ident_Id>  = new Map
 }
 
-const VALUE_TOP:      Value_Top      = {kind: 'top'}
-const VALUE_NEVER:    Value_Never    = {kind: 'never'}
-const VALUE_INT_TYPE: Value_Int_Type = {kind: 'int_type'}
-const VALUE_NIL:      Value_Nil      = {kind: 'nil'}
+export function context_make(): Context {
 
-const VALUE_ANY = VALUE_TOP
+    let ctx = new Context
 
-const value_top         = (): Value => VALUE_TOP
-const value_never       = (): Value => VALUE_NEVER
-const value_int         = (value: number): Value_Int => ({kind: 'int', value: value | 0})
-const value_int_type    = (): Value => VALUE_INT_TYPE
-const value_nil         = (): Value => VALUE_NIL
-const value_scope_ref   = (scope_id: Scope_Id): Value_Scope_Ref => ({kind: 'scope_ref', scope_id})
-const value_scope_obj   = (fields: Map<string, Value>): Value_Scope_Obj => ({kind: 'scope_obj', fields})
-const value_union_parts = (parts: Value[]): Value_Union => ({kind: 'union', parts})
-const value_binding_ref = (scope_id: Scope_Id, mode: Lookup_Mode, name: string): Value_Binding_Ref => ({kind: 'binding_ref', scope_id, mode, name})
-const value_select      = (base: Value, field_name: string): Value_Select => ({kind: 'select', base, field_name})
-const value_unary       = (op: Token_Kind, rhs: Value): Value_Unary => ({kind: 'unary', op, rhs})
-const value_binary      = (op: Token_Kind, lhs: Value, rhs: Value): Value_Binary => ({kind: 'binary', op, lhs, rhs})
-const value_ternary     = (cond: Value, lhs: Value, rhs: Value): Value_Ternary => ({kind: 'ternary', cond, lhs, rhs})
-const value_instantiate = (caller_scope_id: Scope_Id, type_value: Value, body_value: Value | null): Value_Instantiate => ({
-    kind: 'instantiate',
-    caller_scope_id,
-    type_value,
-    body_value,
-})
+    ctx.scope_arr[SCOPE_ID_BUILTIN] = new Scope
+    ctx.scope_arr[SCOPE_ID_GLOBAL]  = new Scope
 
-const context_diag = (ctx: Context, message: string) => {
-    ctx.diagnostics.push(message)
+    ctx.term_arr[TERM_ID_ANY]       = new Term_Any
+    ctx.term_arr[TERM_ID_NEVER]     = new Term_Never
+    ctx.term_arr[TERM_ID_NIL]       = new Term_Nil
+    ctx.term_arr[TERM_ID_TYPE_BOOL] = new Term_Type_Bool
+    ctx.term_arr[TERM_ID_TYPE_INT]  = new Term_Type_Int
+    ctx.term_arr[TERM_ID_TRUE]      = new Term_Bool
+    ctx.term_arr[TERM_ID_TRUE].value = true
+    ctx.term_arr[TERM_ID_FALSE]     = new Term_Bool
+    ctx.term_arr[TERM_ID_ZERO]      = new Term_Int
+
+    ctx.ident_src[IDENT_ID_NONE] = ''
+
+    return ctx
 }
 
-const world_key = (scope_id: Scope_Id, name: string): string => `${scope_id}:${name}`
-
-const scope_get = (ctx: Context, scope_id: Scope_Id): Scope_Record => {
-    let scope = ctx.scopes.get(scope_id)
-    assert(scope != null, `Missing scope ${scope_id}`)
-    return scope
+const ident_id = (ctx: Context, name: string): Ident_Id => {
+    let ident = ctx.ident_map.get(name)
+    if (ident == null) {
+        ident = ctx.ident_src.length as Ident_Id
+        assert(ident <= MAX_ID, "Exceeded maximum number of identifiers")
+        ctx.ident_map.set(name, ident)
+        ctx.ident_src[ident] = name
+    }
+    return ident
+}
+const ident_expr_id_or_error = (ctx: Context, expr: Expr, src: string): Ident_Id | null => {
+    if (expr.kind !== EXPR_TOKEN || expr.tok.kind !== TOKEN_IDENT) {
+        error_semantic(ctx, expr, src, 'Invalid token, expected identifier')
+        return null
+    }
+    let string = token_string(src, expr.tok)
+    let ident  = ident_id(ctx, string)
+    return ident
+}
+export const ident_string = (ctx: Context, ident: Ident_Id): string => {
+    let str = ctx.ident_src[ident]
+    assert(str != null, "Ident Id out of range")
+    return str
 }
 
-const scope_create = (ctx: Context, parent_scope_id: Scope_Id | null): Scope_Id => {
-    let id = ctx.next_scope_id
-    ctx.next_scope_id = (ctx.next_scope_id+1) as Scope_Id
-    ctx.scopes.set(id, {
-        parent:   parent_scope_id,
-        bindings: new Map<string, Binding_Record>(),
-    })
+/**
+ * Node Key for looking up nodes in maps/sets.
+ * The key is constructed from the node structure to uniquely identify it.
+ * The same structure will always produce the same key.
+ *
+ * Layout:
+ *                                        [kind]
+ *                               [rhs id] * TERM_ENUM_RANGE
+ *                      [lhs/id] * MAX_ID * TERM_ENUM_RANGE
+ *            [value/ident] * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+ */
+export type Term_Key = number & {__term_key: void}
+
+export const term_bool_encode = (value: boolean): Term_Key => {
+    let key = TERM_BOOL - TERM_ENUM_START
+    key += (+value) * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_int_encode = (value: number): Term_Key => {
+    let key = TERM_BOOL - TERM_ENUM_START
+    key += (value|0) * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_neg_encode = (rhs: Term_Id) => {
+    let key = TERM_NEG - TERM_ENUM_START
+    key += rhs * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Key => {
+    let key = TERM_BINARY - TERM_ENUM_START
+    key += op * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+    key += lhs * MAX_ID * TERM_ENUM_RANGE
+    key += rhs * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
+    let key = TERM_BINARY - TERM_ENUM_START
+    key += cond * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+    key += lhs * MAX_ID * TERM_ENUM_RANGE
+    key += rhs * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_select_encode = (lhs: Term_Id, rhs: Ident_Id): Term_Key => {
+    let key = TERM_SELECT - TERM_ENUM_START
+    key += lhs * MAX_ID * TERM_ENUM_RANGE
+    key += rhs * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_var_encode = (prefix: Token_Kind, id: Ident_Id): Term_Key => {
+    let key = TERM_VAR - TERM_ENUM_START
+    key += prefix * MAX_ID * TERM_ENUM_RANGE
+    key += id * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_scope_encode = (id: Scope_Id): Term_Key => {
+    let key = TERM_SCOPE - TERM_ENUM_START
+    key += id * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+export const term_world_encode = (body: Term_Id): Term_Key => {
+    let key = TERM_WORLD - TERM_ENUM_START
+    key += body * TERM_ENUM_RANGE
+    return key as Term_Key
+}
+
+export const term_decode = (_key: Term_Key): Term => {
+
+    let kind = ((_key % TERM_ENUM_RANGE) + TERM_ENUM_START) as Term_Kind
+    let key = Math.floor(_key / TERM_ENUM_RANGE)
+
+    switch (kind) {
+    case TERM_ANY:
+        return new Term_Any
+    case TERM_NEVER:
+        return new Term_Never
+    case TERM_NIL:
+        return new Term_Nil
+    case TERM_NEG: {
+        let node = new Term_Neg
+
+        // key = rhs
+
+        node.rhs = (key % MAX_ID) as Term_Id
+
+        return node
+    }
+    case TERM_BINARY: {
+        let node = new Term_Binary
+
+        // key = op * MAX_ID * MAX_ID + lhs * MAX_ID + rhs
+
+        node.rhs = (key % MAX_ID) as Term_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.lhs = (key % MAX_ID) as Term_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.op = (key % MAX_ID) as Token_Kind
+
+        return node
+    }
+    case TERM_TERNARY: {
+        let node = new Term_Ternary
+
+        // key = cond * MAX_ID * MAX_ID + lhs * MAX_ID + rhs
+
+        node.rhs = (key % MAX_ID) as Term_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.lhs = (key % MAX_ID) as Term_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.cond = (key % MAX_ID) as Term_Id
+
+        return node
+    }
+    case TERM_SELECT: {
+        let node = new Term_Select
+
+        // key = lhs * MAX_ID + rhs
+
+        node.rhs = (key % MAX_ID) as Ident_Id
+        key = Math.floor(key / MAX_ID)
+
+        node.lhs = (key % MAX_ID) as Term_Id
+
+        return node
+    }
+    case TERM_VAR: {
+        let node = new Term_Var
+
+        // key = prefix * MAX_ID + ident
+
+        node.ident = (key % MAX_ID) as Ident_Id
+
+        return node
+    }
+    case TERM_SCOPE: {
+        let node = new Term_Scope
+
+        // key = body
+
+        node.id = (key % MAX_ID) as Scope_Id
+
+        return node
+    }
+    case TERM_WORLD: {
+        let node = new Term_World
+
+        // key = body
+
+        node.body = (key % MAX_ID) as Term_Id
+
+        return node
+    }
+    case TERM_BOOL: {
+        let node = new Term_Bool
+
+        // key = value * MAX_ID * MAX_ID
+        node.value = Math.floor(key / (MAX_ID * MAX_ID)) !== 0
+
+        return node
+    }
+    case TERM_INT: {
+        let node = new Term_Int
+
+        // key = value * MAX_ID * MAX_ID
+        node.value = Math.floor(key / (MAX_ID * MAX_ID))
+
+        return node
+    }
+    case TERM_TYPE_BOOL:
+        return new Term_Type_Bool
+    case TERM_TYPE_INT:
+        return new Term_Type_Int
+    }
+
+    kind satisfies never
+    unreachable()
+}
+
+export const term_from_key = (ctx: Context, key: Term_Key): Term_Id => {
+    let id = ctx.term_map.get(key)
+    if (id == null) {
+        id = ctx.term_arr.length as Term_Id
+        assert(id <= MAX_ID, "Exceeded maximum number of terms")
+        ctx.term_map.set(key, id)
+        ctx.term_arr[id] = term_decode(key)
+    }
     return id
 }
 
-const binding_ensure = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Record => {
-    let scope = scope_get(ctx, scope_id)
-    let existing = scope.bindings.get(name)
-    if (existing) {
-        return existing
-    }
-
-    let binding = new Binding_Record
-    binding.name     = name
-    binding.scope_id = scope_id
-
-    scope.bindings.set(name, binding)
-    return binding
+export const term_by_id = (ctx: Context, term_id: Term_Id): Term | null => {
+    return ctx.term_arr[term_id]
+}
+export const term_by_id_assert = (ctx: Context, term_id: Term_Id): Term => {
+    let node = ctx.term_arr[term_id]
+    assert(node != null, 'Accessed node id does not exist')
+    return node
 }
 
-const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Ref | null => {
-    let scope = scope_get(ctx, scope_id)
-    let binding = scope.bindings.get(name)
-    if (binding == null) return null
-    return {scope_id, binding}
+function term_chain_priority(value: number): number {
+    // Treap priority for a leaf id (deterministic mix)
+    let x = value | 0
+    x ^= x >>> 16
+    x = Math.imul(x, 0x7feb352d)
+    x ^= x >>> 15
+    x = Math.imul(x, 0x846ca68b)
+    x ^= x >>> 16
+    return x >>> 0
 }
-
-const binding_lookup_parent_chain = (ctx: Context, scope_id: Scope_Id, name: string): Binding_Ref | null => {
-    let found: Binding_Ref | null = null
-    for (;;) {
-        let s = scope_get(ctx, scope_id).parent
-        if (s == null) break
-
-        found = binding_lookup_current(ctx, s, name)
-        if (found != null) break
-
-        scope_id = s
-    }
-    return found
+function term_chain_pick_best(lhs: Term_Id, rhs: Term_Id): Term_Id {
+    // Treap root choice: smaller priority wins; tie-breaker on id
+    let lhs_priority = term_chain_priority(lhs)
+    let rhs_priority = term_chain_priority(rhs)
+    if (lhs_priority < rhs_priority) return lhs
+    if (lhs_priority > rhs_priority) return rhs
+    return lhs < rhs ? lhs : rhs
 }
-
-const resolve_read = (ctx: Context, scope_id: Scope_Id, name: string, mode: Lookup_Mode): Binding_Ref | null => {
-    /* Lookup policy:
-    |   - `.foo` => current scope only
-    |   - `^foo` => parent chain only
-    |   - `foo`  => parent-first, then current
-    */
-    if (mode !== 'current_only') {
-        let found = binding_lookup_parent_chain(ctx, scope_id, name)
-        if (found != null) return found
-
-        if (mode === 'parent_only') {
-            context_diag(ctx, `Missing parent-scope binding: ^${name}`)
-            return null
-        }
+function term_chain_get(ctx: Context, kind: Term_Kind, term_id: Term_Id): Term_And | Term_Or | null {
+    // Treap node access for this chain kind
+    let node = term_by_id(ctx, term_id)
+    if (node != null && node.kind === kind) {
+        return node as Term_And | Term_Or
     }
-
-    let found = binding_lookup_current(ctx, scope_id, name)
-    if (found != null) return found
-
-    if (mode === 'current_only') {
-        context_diag(ctx, `Missing current-scope binding: .${name}`)
-        return null
-    }
-
-    context_diag(ctx, `Undefined binding: ${name}`)
     return null
 }
+function term_chain_pick(ctx: Context, kind: Term_Kind, term_id: Term_Id): Term_Id {
+    // Pick treap root candidate from a tree (min-priority leaf)
 
-const expr_ident_name = (ctx: Context, expr: Expr): string | null => {
-    if (expr.kind !== EXPR_TOKEN) return null
-    if (expr.tok.kind !== TOKEN_IDENT) return null
-    return token_string(ctx.src, expr.tok)
+    let node = term_chain_get(ctx, kind, term_id)
+    if (node == null) return term_id
+
+    let lhs_pick = term_chain_pick(ctx, kind, node.lhs)
+    let rhs_pick = term_chain_pick(ctx, kind, node.rhs)
+    return term_chain_pick_best(lhs_pick, rhs_pick)
 }
+function term_chain_max(ctx: Context, kind: Term_Kind, term_id: Term_Id): Term_Id {
+    // Rightmost leaf id (BST max) for split pivots
 
-const each_scope_statement = function* (expr: Expr): Generator<Expr> {
-    // Flatten `a=1, b=2\nc=3` into statement list [`a=1`, `b=2`, `c=3`].
-    if (expr.kind === EXPR_BINARY &&
-        (expr.op.kind === TOKEN_EOL ||
-         expr.op.kind === TOKEN_COMMA))
-    {
-        yield* each_scope_statement(expr.lhs)
-        yield* each_scope_statement(expr.rhs)
-    } else {
-        yield expr
+    let node = term_chain_get(ctx, kind, term_id)
+    if (node == null) return term_id
+
+    return term_chain_max(ctx, kind, node.rhs)
+}
+function term_chain_node(
+    ctx:  Context,
+    kind: Term_Kind,
+    lhs:  Term_Id | null,
+    rhs:  Term_Id | null,
+): Term_Id | null {
+    // Treap node constructor (binary op node)
+    if (lhs == null) return rhs
+    if (rhs == null) return lhs
+    let key: Term_Key
+    switch (kind) {
+    case TERM_AND:
+        key = term_and_encode(lhs, rhs)
+        return term_from_key(ctx, key)
+    case TERM_OR:
+        key = term_or_encode(lhs, rhs)
+        return term_from_key(ctx, key)
     }
+    unreachable()
 }
+type Term_Chain_Split = {l: Term_Id | null, r: Term_Id | null}
+function term_chain_split(
+    ctx:     Context,
+    kind:    Term_Kind,
+    term_id: Term_Id,
+    key:     Term_Id,
+    out:     Term_Chain_Split = {l: null, r: null},
+): Term_Chain_Split {
 
-const index_scope_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr | null) => {
-
-    if (expr != null) for (let st of each_scope_statement(expr)) {
-        // Scope bodies only support bindings/constraints
-        if (st.kind === EXPR_BINARY) {
-            index_scope_statement(ctx, scope_id, st.op.kind, st.lhs, st.rhs)
+    let node = term_chain_get(ctx, kind, term_id)
+    if (node == null) {
+        // Leaf split: route to side or drop duplicates
+        if (term_id < key) {
+            out.l = term_id
+            out.r = null
+        } else if (term_id > key) {
+            out.l = null
+            out.r = term_id
         } else {
-            context_diag(ctx, 'Unsupported statement in scope body')
+            out.l = null
+            out.r = null
+        }
+    } else {
+        let pivot = term_chain_max(ctx, kind, node.lhs)
+        if (key <= pivot) {
+            // Split descends into left subtree
+            term_chain_split(ctx, kind, node.lhs, key, out)
+
+            // Everything >= key goes right
+            out.r = term_chain_node(ctx, kind, out.r, node.rhs)
+        } else {
+            // Split descends into right subtree
+            term_chain_split(ctx, kind, node.rhs, key, out)
+
+            // Everything < key goes left
+            out.l = term_chain_node(ctx, kind, node.lhs, out.l)
         }
     }
+
+    return out
+}
+function term_chain_join(
+    ctx:  Context,
+    kind: Term_Kind,
+    lhs:  Term_Id | null,
+    rhs:  Term_Id | null,
+): Term_Id | null {
+    // Treap union: choose a pivot leaf, split both sides, then stitch
+    if (lhs == null) return rhs
+    if (rhs == null) return lhs
+
+    let lhs_pick = term_chain_pick(ctx, kind, lhs)
+    let rhs_pick = term_chain_pick(ctx, kind, rhs)
+    let pick = term_chain_pick_best(lhs_pick, rhs_pick)
+
+    // Partition both trees around the chosen pivot id
+    let {l: lhs_l, r: lhs_r} = term_chain_split(ctx, kind, lhs, pick)
+    let {l: rhs_l, r: rhs_r} = term_chain_split(ctx, kind, rhs, pick)
+
+    // Recurse into partitions and attach pivot between them
+    return term_chain_node(ctx, kind,
+        term_chain_node(ctx, kind, term_chain_join(ctx, kind, lhs_l, rhs_l), pick),
+        term_chain_join(ctx, kind, lhs_r, rhs_r),
+    )
 }
 
-const index_scope_statement = (ctx: Context, scope_id: Scope_Id, op: Token_Kind, lhs: Expr, rhs: Expr) => {
+export const term_any   = (): Term_Id => TERM_ID_ANY
+export const term_never = (): Term_Id => TERM_ID_NEVER
+export const term_any_or_never = (cond: boolean): Term_Id => {
+    return cond ? TERM_ID_ANY : TERM_ID_NEVER
+}
 
+export const term_nil = (): Term_Id => TERM_ID_NIL
+
+export const term_type_int  = (): Term_Id => TERM_ID_TYPE_INT
+export const term_type_bool = (): Term_Id => TERM_ID_TYPE_BOOL
+
+export const term_true  = (): Term_Id => TERM_ID_TRUE
+export const term_false = (): Term_Id => TERM_ID_FALSE
+export const term_bool = (value: boolean): Term_Id => {
+    return value ? TERM_ID_TRUE : TERM_ID_FALSE
+}
+
+export const term_int = (ctx: Context, value: number): Term_Id => {
+    let key = term_int_encode(value)
+    return term_from_key(ctx, key)
+}
+
+export const term_neg = (ctx: Context, rhs: Term_Id): Term_Id => {
+    let rhs_node = term_by_id(ctx, rhs)
+    if (rhs_node != null && rhs_node.kind === TERM_NEG) {
+        return rhs_node.rhs /*  !!x  ->  x  */
+    }
+    let key = term_neg_encode(rhs)
+    return term_from_key(ctx, key)
+}
+
+export const term_binary = (ctx: Context, op: Token_Kind, lhs: Term_Id, rhs: Term_Id) => {
+    let key = term_binary_encode(op, lhs, rhs)
+    return term_from_key(ctx, key)
+}
+
+export const term_ternary = (ctx: Context, cond: Term_Id, lhs: Term_Id, rhs: Term_Id) => {
+    let key = term_ternary_encode(cond, lhs, rhs)
+    return term_from_key(ctx, key)
+}
+
+export const term_and = (ctx: Context, lhs_id: Term_Id, rhs_id: Term_Id): Term_Id => {
+    if (lhs_id === TERM_ID_NONE) return rhs_id
+    if (rhs_id === TERM_ID_NONE) return lhs_id
+    // Canonical treap merge for AND chains
+    // `lhs` and `rhs` should already be normalized
+    let merged = term_chain_join(ctx, TERM_AND, lhs_id, rhs_id)
+    assert(merged != null, 'Expected AND chain result')
+    return merged
+}
+export const term_or = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
+    // Canonical treap merge for OR chains
+    // `lhs` and `rhs` should already be normalized
+    let merged = term_chain_join(ctx, TERM_OR, lhs, rhs)
+    assert(merged != null, 'Expected OR chain result')
+    return merged
+}
+export const term_eq = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
+    let key = term_eq_encode(lhs, rhs)
+    return term_from_key(ctx, key)
+}
+
+export const term_select = (ctx: Context, lhs: Term_Id, rhs: Ident_Id): Term_Id => {
+    let key = term_select_encode(lhs, rhs)
+    return term_from_key(ctx, key)
+}
+export const term_var = (ctx: Context, id: Ident_Id, prefix: Token_Kind = TOKEN_NONE): Term_Id => {
+    let key = term_var_encode(prefix, id)
+    return term_from_key(ctx, key)
+}
+
+export const term_scope = (ctx: Context, id: Scope_Id): Term_Id => {
+    let key = term_scope_encode(id)
+    return term_from_key(ctx, key)
+}
+// export const term_scope_clone = (ctx: Context, body: Term_Id, from: Term_Id, world_id: Term_Id): Term_Id => {
+//     let term_id = term_scope(ctx, body)
+//     if (term_id !== from) {
+//         let world = world_get_assert(ctx, world_id)
+//         world.vars.set(term_id, new Map(world.vars.get(from)))
+//     }
+//     return term_id
+// }
+
+export const term_world = (ctx: Context, body_id: Term_Id): Term_Id => {
+    let node = term_by_id_assert(ctx, body_id)
+    if (node.kind === TERM_WORLD) {
+        return body_id // Avoid nesting world in world
+    }
+    let key = term_world_encode(body_id)
+    return term_from_key(ctx, key)
+}
+
+const error_semantic = (ctx: Context, expr: Expr, src: string, message: string) => {
+    console.error(`${message}: \`${expr_string(src, expr)}\``)
+}
+
+const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): Term_Id => {
+    switch (expr.kind) {
+    case EXPR_TOKEN:
+        // 123
+        if (expr.tok.kind === TOKEN_INT) {
+            let string = token_string(src, expr.tok)
+            let parsed = Number.parseInt(string, 10)
+            if (!Number.isFinite(parsed)) {
+                error_semantic(ctx, expr, src, "Invalid integer literal")
+                return TERM_ID_NEVER
+            }
+            return term_int(ctx, parsed)
+        }
+        // foo
+        let ident = ident_expr_id_or_error(ctx, expr, src)
+        if (ident == null) return TERM_ID_NEVER
+
+        return term_var(ctx, ident)
+
+    case EXPR_UNARY:
+        switch (expr.op.kind) {
+        case TOKEN_DOT: // .foo  ->  var
+        case TOKEN_POW: // ^foo  ->  var
+            let ident = ident_expr_id_or_error(ctx, expr.rhs, src)
+            if (ident == null) return TERM_ID_NEVER
+            return term_var(ctx, ident, expr.op.kind)
+        case TOKEN_ADD: // +foo  ->  0 + foo
+        case TOKEN_SUB: // -foo  ->  0 - foo
+            return term_binary(ctx, expr.op.kind, TERM_ID_ZERO, lower_expr(ctx, expr.rhs, src, scope_id))
+        case TOKEN_NEG: /* !foo */
+            return term_neg(ctx, lower_expr(ctx, expr.rhs, src, scope_id))
+        }
+
+        error_semantic(ctx, expr, src, "Unsupported unary expression in reducer")
+        return TERM_ID_NEVER
+
+    case EXPR_BINARY:
+        // foo.bar
+        if (expr.op.kind === TOKEN_DOT) {
+            let ident = ident_expr_id_or_error(ctx, expr.rhs, src)
+            if (ident == null) return TERM_ID_NEVER
+            return term_select(ctx, lower_expr(ctx, expr.lhs, src, scope_id), ident)
+        }
+        // foo + bar
+        return term_binary(ctx, expr.op.kind, lower_expr(ctx, expr.lhs, src, scope_id), lower_expr(ctx, expr.rhs, src, scope_id))
+
+    case EXPR_PAREN:
+        switch (expr.open.kind) {
+        // (...)
+        case TOKEN_PAREN_L:
+            // ()
+            if (expr.body == null) {
+                return TERM_ID_ANY
+            }
+            // (body)
+            return lower_expr(ctx, expr.body, src, scope_id)
+        // {...}
+        case TOKEN_BRACE_L: {
+
+            let new_scope_id = ctx.scope_arr.length as Scope_Id
+            assert(new_scope_id <= MAX_ID, "Exceeded maximum number of scopes")
+
+            let scope = new Scope
+            ctx.scope_arr[new_scope_id] = scope
+
+            let scope_term = term_scope(ctx, new_scope_id)
+
+            // type{...}
+            if (expr.type != null) {
+                let scope_type = lower_expr(ctx, expr.type, src, scope_id)
+                // TODO: store type — which isn't resolved yet
+            }
+
+            if (expr.body != null) {
+                index_scope_body(ctx, expr.body, src, new_scope_id)
+            }
+
+            return scope_term
+        }
+        }
+
+        error_semantic(ctx, expr, src, 'Invalid paren expression in reducer')
+        return TERM_ID_NEVER
+
+    case EXPR_TERNARY:
+        return term_ternary(ctx,
+            lower_expr(ctx, expr.cond, src, scope_id),
+            lower_expr(ctx, expr.lhs,  src, scope_id),
+            lower_expr(ctx, expr.rhs,  src, scope_id),
+        )
+
+    case EXPR_INVALID:
+        error_semantic(ctx, expr, src, expr.reason)
+        return TERM_ID_NEVER
+
+    default:
+        expr satisfies never
+        return TERM_ID_NEVER
+    }
+}
+const term_from_expr = lower_expr
+
+const index_scope_binary = (
+    ctx: Context,
+    op: Token_Kind, lhs: Expr, rhs: Expr,
+    expr: Expr, src: string, scope_id: Scope_Id,
+) => {
     switch (op) {
     // lhs = rhs
     case TOKEN_BIND: {
 
         // lhs.lhs : lhs.rhs = rhs
         if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_COLON) {
-            index_scope_statement(ctx, scope_id, TOKEN_COLON, lhs.lhs, lhs.rhs)
+            index_scope_binary(ctx, TOKEN_COLON, lhs.lhs, lhs.rhs, expr, src, scope_id)
             lhs = lhs.lhs
         }
 
-        let rhs_value = lower_expr(ctx, scope_id, rhs)
+        let rhs_value = lower_expr(ctx, rhs, src, scope_id)
 
+        // foo.bar = rhs
+        if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_DOT) {
+
+            let base_name  = ident_expr_id_or_error(ctx, lhs.lhs, src)
+            let field_name = ident_expr_id_or_error(ctx, lhs.rhs, src)
+            if (base_name == null && field_name == null) return
+
+            let binding = binding_ensure(ctx, scope_id, base_name)
+            binding.field_assignments.push({field_name, value: rhs_value})
+            binding.value_final = null
+        }
         // foo = rhs
-        let lhs_name = expr_ident_name(ctx, lhs)
-        if (lhs_name != null) {
-            let binding = binding_ensure(ctx, scope_id, lhs_name)
+        else {
+            let lhs_ident = ident_expr_id_or_error(ctx, lhs, src)
+            if (lhs_ident == null) return
+
+            let binding = binding_ensure(ctx, scope_id, lhs_ident)
             if (binding.value_to_reduce != null) {
-                context_diag(ctx, `Duplicate value binding for '${lhs_name}'`)
-                binding.value_to_reduce = value_binary(TOKEN_AND, binding.value_to_reduce, rhs_value)
+                error_semantic(ctx, expr, src, `Duplicate value binding for '${lhs_ident}'`)
+                binding.value_to_reduce = term_binary(ctx, TOKEN_AND, binding.value_to_reduce, rhs_value)
             } else {
                 binding.value_to_reduce = rhs_value
             }
             binding.value_final = null
-            return
         }
 
-        // foo.bar = rhs
-        if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_DOT) {
-            let base_name  = expr_ident_name(ctx, lhs.lhs)
-            let field_name = expr_ident_name(ctx, lhs.rhs)
-
-            if (base_name != null && field_name != null) {
-                let binding = binding_ensure(ctx, scope_id, base_name)
-                binding.field_assignments.push({field_name, value: rhs_value})
-                binding.value_final = null
-                return
-            }
-        }
-
-        break
+        return
     }
     // lhs : rhs
     case TOKEN_COLON: {
-        let name = expr_ident_name(ctx, lhs)
-        if (name == null) break
+        let name = ident_expr_id_or_error(ctx, lhs, src)
+        if (name == null) return
 
-        let rhs_value = lower_expr(ctx, scope_id, rhs)
+        let rhs_value = lower_expr(ctx, rhs, src, scope_id)
 
         let binding = binding_ensure(ctx, scope_id, name)
         if (binding.type_to_reduce != null) {
-            context_diag(ctx, `Duplicate type constraint for '${name}'`)
-            binding.type_to_reduce = value_binary(TOKEN_AND, binding.type_to_reduce, rhs_value)
+            error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
+            binding.type_to_reduce = term_binary(ctx, TOKEN_AND, binding.type_to_reduce, rhs_value)
         } else {
             binding.type_to_reduce = rhs_value
         }
@@ -1322,1272 +1810,38 @@ const index_scope_statement = (ctx: Context, scope_id: Scope_Id, op: Token_Kind,
     }
     }
 
-    context_diag(ctx, 'Unsupported statement in scope body')
+    error_semantic(ctx, expr, src, 'Unsupported expression in scope body')
 }
 
-const binding_clone = (src: Binding_Record, owner_scope_id: Scope_Id): Binding_Record => {
-    let dst = new Binding_Record
+function index_scope_body(ctx: Context, expr: Expr, src: string, scope_id: Scope_Id) {
 
-    dst.name              = src.name
-    dst.scope_id          = owner_scope_id
-    dst.type_to_reduce    = src.type_to_reduce == null ? null : value_rebind_scope(src.type_to_reduce, src.scope_id, owner_scope_id)
-    dst.value_to_reduce   = src.value_to_reduce == null ? null : value_rebind_scope(src.value_to_reduce, src.scope_id, owner_scope_id)
-    dst.field_assignments = src.field_assignments.map(x => ({
-        field_name: x.field_name,
-        value: value_rebind_scope(x.value, src.scope_id, owner_scope_id),
-    }))
-
-    return dst
-}
-
-const value_rebind_scope = (value: Value, from_scope_id: Scope_Id, to_scope_id: Scope_Id): Value => {
-    switch (value.kind) {
-    case 'binding_ref':
-        if (value.scope_id !== from_scope_id) return value
-        return value_binding_ref(to_scope_id, value.mode, value.name)
-
-    case 'select':
-        return value_select(value_rebind_scope(value.base, from_scope_id, to_scope_id), value.field_name)
-
-    case 'unary':
-        return value_unary(value.op, value_rebind_scope(value.rhs, from_scope_id, to_scope_id))
-
-    case 'binary':
-        return value_binary(
-            value.op,
-            value_rebind_scope(value.lhs, from_scope_id, to_scope_id),
-            value_rebind_scope(value.rhs, from_scope_id, to_scope_id),
-        )
-
-    case 'ternary':
-        return value_ternary(
-            value_rebind_scope(value.cond, from_scope_id, to_scope_id),
-            value_rebind_scope(value.lhs, from_scope_id, to_scope_id),
-            value_rebind_scope(value.rhs, from_scope_id, to_scope_id),
-        )
-
-    case 'instantiate':
-        return value_instantiate(
-            value.caller_scope_id === from_scope_id ? to_scope_id : value.caller_scope_id,
-            value_rebind_scope(value.type_value, from_scope_id, to_scope_id),
-            value.body_value == null ? null : value_rebind_scope(value.body_value, from_scope_id, to_scope_id),
-        )
-
-    case 'union':
-        return value_union_parts(value.parts.map(part => value_rebind_scope(part, from_scope_id, to_scope_id)))
-
-    case 'scope_obj': {
-        let fields = new Map<string, Value>()
-        for (let [name, field] of value.fields.entries()) {
-            fields.set(name, value_rebind_scope(field, from_scope_id, to_scope_id))
-        }
-        return value_scope_obj(fields)
-    }
-
-    case 'top':
-    case 'never':
-    case 'int':
-    case 'int_type':
-    case 'nil':
-    case 'scope_ref':
-        return value
-
-    default:
-        value satisfies never
-        return value
-    }
-}
-
-const scope_clone_from_template = (ctx: Context, template_scope_id: Scope_Id, parent_scope_id: Scope_Id | null): Scope_Id => {
-    let template_scope = scope_get(ctx, template_scope_id)
-    let clone_scope_id = scope_create(ctx, parent_scope_id)
-    let clone_scope = scope_get(ctx, clone_scope_id)
-
-    for (let [name, binding] of template_scope.bindings.entries()) {
-        clone_scope.bindings.set(name, binding_clone(binding, clone_scope_id))
-    }
-
-    return clone_scope_id
-}
-
-const value_key = (ctx: Context, value: Value): string => {
-    switch (value.kind) {
-    case 'top':
-        return '()'
-    case 'never':
-        return '!()'
-    case 'int':
-        return `i32(${value.value})`
-    case 'int_type':
-        return 'int'
-    case 'nil':
-        return 'nil'
-    case 'scope_ref':
-        return `scope#${value.scope_id}`
-    case 'scope_obj': {
-        let names = Array.from(value.fields.keys()).sort()
-        let parts: string[] = []
-        for (let name of names) {
-            let field = value.fields.get(name)
-            assert(field != null)
-            parts.push(`${name}:${value_key(ctx, field)}`)
-        }
-        return `{${parts.join(',')}}`
-    }
-    case 'union': {
-        let keys = value.parts.map(part => value_key(ctx, part)).sort()
-        return keys.join('|')
-    }
-    case 'binding_ref':
-        return `ref(${value.scope_id},${value.mode},${value.name})`
-    case 'select':
-        return `sel(${value_key(ctx, value.base)},${value.field_name})`
-    case 'unary':
-        return `u(${token_kind_string(value.op)},${value_key(ctx, value.rhs)})`
-    case 'binary':
-        return `b(${token_kind_string(value.op)},${value_key(ctx, value.lhs)},${value_key(ctx, value.rhs)})`
-    case 'ternary':
-        return `t(${value_key(ctx, value.cond)},${value_key(ctx, value.lhs)},${value_key(ctx, value.rhs)})`
-    case 'instantiate':
-        return `inst(${value_key(ctx, value.type_value)})`
-    default:
-        value satisfies never
-        return 'unknown'
-    }
-}
-
-const value_union = (ctx: Context, lhs: Value, rhs: Value): Value => {
-    /* Union canonicalization:
-    |   - flatten nested unions
-    |   - drop never branches
-    |   - dedupe equal branches
-    |   - top absorbs all (`() | X => ()`)
-    */
-    let queue: Value[] = [lhs, rhs]
-    let parts: Value[] = []
-
-    while (queue.length !== 0) {
-        let value = queue.pop()
-        assert(value != null)
-
-        if (value.kind === 'union') {
-            for (let part of value.parts) {
-                queue.push(part)
-            }
-            continue
-        }
-
-        if (value.kind === 'top') {
-            return value_top()
-        }
-
-        if (value.kind === 'never') {
-            continue
-        }
-
-        parts.push(value)
-    }
-
-    if (parts.length === 0) {
-        return value_never()
-    }
-
-    let dedup = new Map<string, Value>()
-    for (let part of parts) {
-        dedup.set(value_key(ctx, part), part)
-    }
-
-    let unique = Array.from(dedup.entries())
-    unique.sort((a, b) => a[0].localeCompare(b[0]))
-
-    if (unique.length === 1) {
-        return unique[0][1]
-    }
-
-    return value_union_parts(unique.map(x => x[1]))
-}
-
-const clone_fields = (fields: Map<string, Value>): Map<string, Value> => {
-    let copy = new Map<string, Value>()
-    for (let [name, value] of fields.entries()) {
-        copy.set(name, value)
-    }
-    return copy
-}
-
-const materialize_scope_fields = (ctx: Context, value: Value): Map<string, Value> | null => {
-    if (value.kind === 'scope_obj') {
-        return clone_fields(value.fields)
-    }
-
-    if (value.kind === 'scope_ref') {
-        let scope = scope_get(ctx, value.scope_id)
-        let fields = new Map<string, Value>()
-        for (let [name, binding] of scope.bindings.entries()) {
-            let reduced = reduce_binding_ref(ctx, {scope_id: value.scope_id, binding}, null)
-            fields.set(name, reduced)
-        }
-        return fields
-    }
-
-    return null
-}
-
-const value_intersect_scope = (ctx: Context, lhs: Value, rhs: Value): Value => {
-    // Closed-shape rule: scopes intersect only when field sets match exactly.
-    let lhs_fields = materialize_scope_fields(ctx, lhs)
-    let rhs_fields = materialize_scope_fields(ctx, rhs)
-    if (lhs_fields == null || rhs_fields == null) {
-        return value_never()
-    }
-
-    let lhs_names = Array.from(lhs_fields.keys()).sort()
-    let rhs_names = Array.from(rhs_fields.keys()).sort()
-    if (lhs_names.length !== rhs_names.length) {
-        return value_never()
-    }
-
-    for (let i = 0; i < lhs_names.length; i++) {
-        if (lhs_names[i] !== rhs_names[i]) {
-            return value_never()
-        }
-    }
-
-    let merged = new Map<string, Value>()
-    for (let name of lhs_names) {
-        let lhs_field = lhs_fields.get(name)
-        let rhs_field = rhs_fields.get(name)
-        assert(lhs_field != null)
-        assert(rhs_field != null)
-
-        let result = value_intersect(ctx, lhs_field, rhs_field)
-        if (result.kind === 'never') {
-            return value_never()
-        }
-        merged.set(name, result)
-    }
-
-    return value_scope_obj(merged)
-}
-
-const value_intersect = (ctx: Context, lhs: Value, rhs: Value): Value => {
-    /* Intersection core rules:
-    |   !() & X => !()
-    |   ()  & X => X
-    |   (A | B) & C => (A & C) | (B & C)
-    */
-    if (lhs.kind === 'never' || rhs.kind === 'never') {
-        return value_never()
-    }
-    if (lhs.kind === 'top') {
-        return rhs
-    }
-    if (rhs.kind === 'top') {
-        return lhs
-    }
-
-    if (value_key(ctx, lhs) === value_key(ctx, rhs)) {
-        return lhs
-    }
-
-    if (lhs.kind === 'union') {
-        // Distribute over left union branches.
-        let result: Value = value_never()
-        for (let part of lhs.parts) {
-            result = value_union(ctx, result, value_intersect(ctx, part, rhs))
-        }
-        return result
-    }
-
-    if (rhs.kind === 'union') {
-        // Distribute over right union branches.
-        let result: Value = value_never()
-        for (let part of rhs.parts) {
-            result = value_union(ctx, result, value_intersect(ctx, lhs, part))
-        }
-        return result
-    }
-
-    if (lhs.kind === 'int' && rhs.kind === 'int') {
-        if (lhs.value === rhs.value) {
-            return lhs
-        }
-        return value_never()
-    }
-
-    if ((lhs.kind === 'int' && rhs.kind === 'int_type') ||
-        (lhs.kind === 'int_type' && rhs.kind === 'int')) {
-        return lhs.kind === 'int' ? lhs : rhs
-    }
-
-    if (lhs.kind === 'int_type' && rhs.kind === 'int_type') {
-        return value_int_type()
-    }
-
-    if (lhs.kind === 'nil' && rhs.kind === 'nil') {
-        return value_nil()
-    }
-
-    if (lhs.kind === 'nil' || rhs.kind === 'nil') {
-        let other = lhs.kind === 'nil' ? rhs : lhs
-
-        switch (other.kind) {
-        case 'int':
-        case 'int_type':
-        case 'scope_ref':
-        case 'scope_obj':
-            return value_never()
-        case 'binding_ref':
-        case 'select':
-        case 'unary':
-        case 'binary':
-        case 'ternary':
-        case 'instantiate':
-            return value_binary(TOKEN_AND, value_nil(), other)
-        case 'nil':
-            return value_nil()
-        default:
-            other satisfies never
-            return value_never()
-        }
-    }
-
-    let lhs_is_scope = lhs.kind === 'scope_ref' || lhs.kind === 'scope_obj'
-    let rhs_is_scope = rhs.kind === 'scope_ref' || rhs.kind === 'scope_obj'
-    if (lhs_is_scope && rhs_is_scope) {
-        return value_intersect_scope(ctx, lhs, rhs)
-    }
-    if (lhs_is_scope || rhs_is_scope) {
-        return value_never()
-    }
-
-    return value_binary(TOKEN_AND, lhs, rhs)
-}
-
-const value_simplify = (ctx: Context, value: Value): Value => {
-    if (value.kind === 'union') {
-        let merged: Value = value_never()
-        for (let part of value.parts) {
-            merged = value_union(ctx, merged, part)
-        }
-        return merged
-    }
-    return value
-}
-
-const i32 = (value: number): number => value | 0
-
-const value_binary_i32 = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Value => {
-    // Arithmetic distributes over unions branch-by-branch.
-    if (lhs.kind === 'union') {
-        let result: Value = value_never()
-        for (let part of lhs.parts) {
-            result = value_union(ctx, result, value_binary_i32(ctx, part, rhs, op))
-        }
-        return result
-    }
-    if (rhs.kind === 'union') {
-        let result: Value = value_never()
-        for (let part of rhs.parts) {
-            result = value_union(ctx, result, value_binary_i32(ctx, lhs, part, op))
-        }
-        return result
-    }
-
-    if (lhs.kind === 'never' || rhs.kind === 'never') {
-        return value_never()
-    }
-
-    if (lhs.kind !== 'int' || rhs.kind !== 'int') {
-        return value_binary(op, lhs, rhs)
-    }
-
-    switch (op) {
-    case TOKEN_ADD:
-        return value_int(i32(lhs.value + rhs.value))
-    case TOKEN_SUB:
-        return value_int(i32(lhs.value - rhs.value))
-    case TOKEN_MUL:
-        return value_int(i32(Math.imul(lhs.value, rhs.value)))
-    case TOKEN_DIV:
-        if (rhs.value === 0) {
-            context_diag(ctx, 'Division by zero')
-            return value_never()
-        }
-        return value_int(i32(Math.trunc(lhs.value / rhs.value)))
-    default:
-        return value_binary(op, lhs, rhs)
-    }
-}
-
-const value_read_field = (ctx: Context, base: Value, field_name: string): Value => {
-    /* Selector read distribution:
-    |   ({a=2} | {b=3}).a
-    | => ({a=2}.a) | ({b=3}.a)
-    | => 2 | !()
-    | => 2
-    */
-    if (base.kind === 'union') {
-        let result: Value = value_never()
-        for (let part of base.parts) {
-            result = value_union(ctx, result, value_read_field(ctx, part, field_name))
-        }
-        return result
-    }
-
-    if (base.kind === 'never') {
-        return value_never()
-    }
-
-    let fields = materialize_scope_fields(ctx, base)
-    if (fields == null) {
-        context_diag(ctx, `Selector read on non-scope for .${field_name}`)
-        return value_never()
-    }
-
-    let field = fields.get(field_name)
-    if (field == null) {
-        context_diag(ctx, `Missing field '${field_name}' on scope`)
-        return value_never()
-    }
-
-    return field
-}
-
-const value_compare = (ctx: Context, lhs: Value, rhs: Value, op: Token_Kind): Value => {
-    if (lhs.kind === 'union') {
-        let result: Value = value_never()
-        for (let part of lhs.parts) {
-            result = value_union(ctx, result, value_compare(ctx, part, rhs, op))
-        }
-        return result
-    }
-    if (rhs.kind === 'union') {
-        let result: Value = value_never()
-        for (let part of rhs.parts) {
-            result = value_union(ctx, result, value_compare(ctx, lhs, part, op))
-        }
-        return result
-    }
-
-    if (lhs.kind === 'int' && rhs.kind === 'int') {
-        let ok = false
-        switch (op) {
-        case TOKEN_EQ:         ok = lhs.value === rhs.value; break
-        case TOKEN_NOT_EQ:     ok = lhs.value !== rhs.value; break
-        case TOKEN_LESS:       ok = lhs.value < rhs.value; break
-        case TOKEN_LESS_EQ:    ok = lhs.value <= rhs.value; break
-        case TOKEN_GREATER:    ok = lhs.value > rhs.value; break
-        case TOKEN_GREATER_EQ: ok = lhs.value >= rhs.value; break
-        default:
-            return value_binary(op, lhs, rhs)
-        }
-        return ok ? value_top() : value_never()
-    }
-
-    if ((lhs.kind === 'top' || lhs.kind === 'never') &&
-        (rhs.kind === 'top' || rhs.kind === 'never'))
-    {
-        if (op === TOKEN_EQ) {
-            return lhs.kind === rhs.kind ? value_top() : value_never()
-        }
-        if (op === TOKEN_NOT_EQ) {
-            return lhs.kind !== rhs.kind ? value_top() : value_never()
-        }
-    }
-
-    if (lhs.kind === 'nil' && rhs.kind === 'nil') {
-        if (op === TOKEN_EQ || op === TOKEN_LESS_EQ || op === TOKEN_GREATER_EQ) {
-            return value_top()
-        }
-        if (op === TOKEN_NOT_EQ || op === TOKEN_LESS || op === TOKEN_GREATER) {
-            return value_never()
-        }
-    }
-
-    if ((lhs.kind === 'nil' && (rhs.kind === 'int' || rhs.kind === 'int_type' || rhs.kind === 'scope_ref' || rhs.kind === 'scope_obj')) ||
-        (rhs.kind === 'nil' && (lhs.kind === 'int' || lhs.kind === 'int_type' || lhs.kind === 'scope_ref' || lhs.kind === 'scope_obj'))
-    ) {
-        if (op === TOKEN_EQ) return value_never()
-        if (op === TOKEN_NOT_EQ) return value_top()
-    }
-
-    return value_binary(op, lhs, rhs)
-}
-
-const narrow_scope_ref_by_field = (ctx: Context, scope_ref: Value_Scope_Ref, field_name: string, expected_value: Value): Value => {
-    // Clone then narrow so original scope stays immutable.
-
-    let source_scope = scope_get(ctx, scope_ref.scope_id)
-    if (!source_scope.bindings.has(field_name)) {
-        context_diag(ctx, `Missing field '${field_name}' for narrowing`)
-        return value_never()
-    }
-
-    let narrowed_scope_id = scope_clone_from_template(ctx, scope_ref.scope_id, source_scope.parent)
-    let narrowed_scope = scope_get(ctx, narrowed_scope_id)
-    let target_binding = narrowed_scope.bindings.get(field_name)
-    assert(target_binding != null)
-
-    let current_field_value = reduce_binding_ref(ctx, {scope_id: narrowed_scope_id, binding: target_binding}, null)
-    let narrowed_field_value = value_intersect(ctx, current_field_value, expected_value)
-    target_binding.value_final = narrowed_field_value
-
-    if (narrowed_field_value.kind === 'never') {
-        return value_never()
-    }
-
-    return value_scope_ref(narrowed_scope_id)
-}
-
-const narrow_value_by_field = (ctx: Context, base_value: Value, field_name: string, expected_value: Value): Value => {
-    if (base_value.kind === 'union') {
-        let result: Value = value_never()
-        for (let part of base_value.parts) {
-            result = value_union(ctx, result, narrow_value_by_field(ctx, part, field_name, expected_value))
-        }
-        return result
-    }
-
-    if (base_value.kind === 'scope_ref') {
-        return narrow_scope_ref_by_field(ctx, base_value, field_name, expected_value)
+    if (expr.kind !== EXPR_BINARY) {
+        error_semantic(ctx, expr, src, 'Unsupported expression in scope body')
+        return
     }
-
-    if (base_value.kind === 'scope_obj') {
-        let current = base_value.fields.get(field_name)
-        if (current == null) {
-            return value_never()
-        }
-        let narrowed = value_intersect(ctx, current, expected_value)
-        if (narrowed.kind === 'never') {
-            return value_never()
-        }
-        let fields = clone_fields(base_value.fields)
-        fields.set(field_name, narrowed)
-        return value_scope_obj(fields)
-    }
-
-    return value_never()
-}
-
-const apply_field_assignments = (ctx: Context, binding: Binding_Record, effective: Value, world: World | null): Value => {
-    // Apply deferred `foo.a = ...` writes after `foo` constraints are reduced.
-    if (binding.field_assignments.length === 0) {
-        return effective
-    }
-
-    if (binding.value_to_reduce != null) {
-        if (materialize_scope_fields(ctx, effective) != null) {
-            context_diag(ctx, `Illegal field write on closed scope value '${binding.name}'`)
-        } else {
-            context_diag(ctx, `Illegal field write on '${binding.name}' without explicit scope type`)
-        }
-        return value_never()
-    }
-
-    if (binding.type_to_reduce == null) {
-        context_diag(ctx, `Illegal field write on '${binding.name}' without explicit scope type`)
-        return value_never()
-    }
-
-    let fields = materialize_scope_fields(ctx, effective)
-    if (fields == null) {
-        context_diag(ctx, `Illegal field write on non-scope binding '${binding.name}'`)
-        return value_never()
-    }
-
-    let seen = new Set<string>()
-
-    for (let assignment of binding.field_assignments) {
-        if (seen.has(assignment.field_name)) {
-            context_diag(ctx, `Duplicate field assignment for '${binding.name}.${assignment.field_name}'`)
-        }
-        seen.add(assignment.field_name)
-
-        let field_type = fields.get(assignment.field_name)
-        if (field_type == null) {
-            context_diag(ctx, `Unknown field '${binding.name}.${assignment.field_name}'`)
-            return value_never()
-        }
-
-        let rhs = reduce_value(ctx, assignment.value, world)
-        let merged = value_intersect(ctx, field_type, rhs)
-        if (merged.kind === 'never') {
-            return value_never()
-        }
-        fields.set(assignment.field_name, merged)
-    }
-
-    return value_scope_obj(fields)
-}
-
-const reduce_binding_ref = (ctx: Context, ref: Binding_Ref, world: World | null): Value => {
-    let binding = ref.binding
-
-    if (world == null && binding.value_final != null) {
-        return binding.value_final
-    }
-
-    if (binding.reducing) {
-        // Cycle guard for recursive bindings; keep a symbolic self reference.
-        return value_binding_ref(binding.scope_id, 'current_only', binding.name)
-    }
-
-    binding.reducing = true
-
-    // 1) Reduce all `x: T` constraints.
-    let type = binding.type_to_reduce == null
-        ? VALUE_ANY
-        : reduce_value(ctx, binding.type_to_reduce, world)
-
-    // 2) Reduce all `x = V` constraints.
-    let value = binding.value_to_reduce == null
-        ? VALUE_ANY
-        : reduce_value(ctx, binding.value_to_reduce, world)
-
-    // 3) Effective value is intersection of type/value worlds.
-    let effective = value_intersect(ctx, type, value)
-    effective = apply_field_assignments(ctx, binding, effective, world)
-    effective = value_simplify(ctx, effective)
-
-    if (world == null) {
-        binding.value_final = effective
-    }
-    binding.reducing        = false
-
-    return effective
-}
-
-type Value_Selector_Ref = {
-    scope_id:   Scope_Id
-    base_name:  string
-    field_name: string
-}
-
-const lower_expr = (ctx: Context, scope_id: Scope_Id, expr: Expr): Value => {
-    switch (expr.kind) {
-    case EXPR_TOKEN: {
-        if (expr.tok.kind === TOKEN_INT) {
-            let text = token_string(ctx.src, expr.tok)
-            let parsed = Number.parseInt(text, 10)
-            if (!Number.isFinite(parsed)) {
-                context_diag(ctx, `Invalid integer literal '${text}'`)
-                return value_never()
-            }
-            return value_int(parsed)
-        }
-
-        if (expr.tok.kind === TOKEN_IDENT) {
-            return value_binding_ref(scope_id, 'unprefixed', token_string(ctx.src, expr.tok))
-        }
-
-        context_diag(ctx, `Unsupported token in reducer: ${token_display(ctx.src, expr.tok)}`)
-        return value_never()
-    }
-
-    case EXPR_UNARY:
-        if ((expr.op.kind === TOKEN_DOT || expr.op.kind === TOKEN_POW) && expr.rhs.kind === EXPR_TOKEN && expr.rhs.tok.kind === TOKEN_IDENT) {
-            let mode: Lookup_Mode = expr.op.kind === TOKEN_DOT ? 'current_only' : 'parent_only'
-            return value_binding_ref(scope_id, mode, token_string(ctx.src, expr.rhs.tok))
-        }
-        return value_unary(expr.op.kind, lower_expr(ctx, scope_id, expr.rhs))
-
-    case EXPR_BINARY:
-        if (expr.op.kind === TOKEN_DOT) {
-            let field_name = expr_ident_name(ctx, expr.rhs)
-            if (field_name == null) {
-                context_diag(ctx, 'Invalid selector RHS; expected identifier')
-                return value_never()
-            }
-            return value_select(lower_expr(ctx, scope_id, expr.lhs), field_name)
-        }
-        return value_binary(expr.op.kind, lower_expr(ctx, scope_id, expr.lhs), lower_expr(ctx, scope_id, expr.rhs))
-
-    case EXPR_PAREN:
-        if (expr.open.kind === TOKEN_PAREN_L) {
-            if (expr.body == null) {
-                return value_top()
-            }
-            return lower_expr(ctx, scope_id, expr.body)
-        }
-
-        if (expr.open.kind === TOKEN_BRACE_L) {
-            if (expr.type != null) {
-                let body_value = expr.body == null ? null : lower_expr(ctx, scope_id, expr.body)
-                return value_instantiate(scope_id, lower_expr(ctx, scope_id, expr.type), body_value)
-            }
-
-            let child_scope_id = scope_for_literal(ctx, scope_id, expr)
-            return value_scope_ref(child_scope_id)
-        }
-
-        context_diag(ctx, 'Invalid paren expression in reducer')
-        return value_never()
-
-    case EXPR_TERNARY: {
-        return value_ternary(
-            lower_expr(ctx, scope_id, expr.cond),
-            lower_expr(ctx, scope_id, expr.lhs),
-            lower_expr(ctx, scope_id, expr.rhs),
-        )
-    }
-
-    case EXPR_INVALID:
-        context_diag(ctx, expr.reason)
-        return value_never()
-
-    default:
-        expr satisfies never
-        return value_never()
-    }
-}
-
-const value_selector_ref = (value: Value): Value_Selector_Ref | null => {
-    if (value.kind !== 'select') {
-        return null
-    }
-
-    let base = value.base
-    if (base.kind !== 'binding_ref' || base.mode !== 'unprefixed') {
-        return null
-    }
-
-    return {
-        scope_id: base.scope_id,
-        base_name: base.name,
-        field_name: value.field_name,
-    }
-}
-
-const value_unprefixed_name = (value: Value): string | null => {
-    if (value.kind !== 'binding_ref') return null
-    if (value.mode !== 'unprefixed') return null
-    return value.name
-}
-
-const world_get_binding = (world: World | null, ref: Binding_Ref): Value | null => {
-    if (world == null) return null
-    return world.get(world_key(ref.scope_id, ref.binding.name)) ?? null
-}
-
-const world_set_binding = (world: World, ref: Binding_Ref, value: Value): World => {
-    let copy = new Map<string, Value>(world)
-    copy.set(world_key(ref.scope_id, ref.binding.name), value)
-    return copy
-}
-
-const world_constrain_binding_ref = (ctx: Context, world: World, binding_ref: Value_Binding_Ref, expected: Value): World | null => {
-    let ref = resolve_read(ctx, binding_ref.scope_id, binding_ref.name, binding_ref.mode)
-    if (ref == null) {
-        return null
-    }
-
-    let current = world_get_binding(world, ref)
-    if (current == null) {
-        current = reduce_binding_ref(ctx, ref, world)
-    }
-
-    let narrowed = value_intersect(ctx, current, expected)
-    if (narrowed.kind === 'never') {
-        return null
-    }
-
-    if (value_key(ctx, narrowed) === value_key(ctx, current)) {
-        return world
-    }
-
-    return world_set_binding(world, ref, narrowed)
-}
-
-const world_constrain_selector = (ctx: Context, world: World, selector: Value_Selector_Ref, expected: Value): World | null => {
-    let ref = resolve_read(ctx, selector.scope_id, selector.base_name, 'unprefixed')
-    if (ref == null) {
-        return null
-    }
-
-    let base_value = world_get_binding(world, ref)
-    if (base_value == null) {
-        base_value = reduce_binding_ref(ctx, ref, world)
-    }
-
-    let narrowed = narrow_value_by_field(ctx, base_value, selector.field_name, expected)
-    if (narrowed.kind === 'never') {
-        return null
-    }
-
-    if (value_key(ctx, narrowed) === value_key(ctx, base_value)) {
-        return world
-    }
-
-    return world_set_binding(world, ref, narrowed)
-}
-
-const world_assume_true = (ctx: Context, predicate: Value, world: World): World_Assume_Result | null => {
-    if (predicate.kind === 'binary' && predicate.op === TOKEN_AND) {
-        let lhs = world_assume_true(ctx, predicate.lhs, world)
-        if (lhs == null) return null
-
-        let rhs = world_assume_true(ctx, predicate.rhs, lhs.world)
-        if (rhs == null) return null
-
-        return {
-            world: rhs.world,
-            used_rule: lhs.used_rule || rhs.used_rule,
-        }
-    }
-
-    if (predicate.kind === 'binary' && predicate.op === TOKEN_EQ) {
-        if (predicate.rhs.kind === 'top') {
-            let nested = world_assume_true(ctx, predicate.lhs, world)
-            if (nested != null) return nested
-        }
-
-        if (predicate.lhs.kind === 'top') {
-            let nested = world_assume_true(ctx, predicate.rhs, world)
-            if (nested != null) return nested
-        }
-
-        if (predicate.lhs.kind === 'binding_ref') {
-            let expected = reduce_value(ctx, predicate.rhs, world)
-            let narrowed_world = world_constrain_binding_ref(ctx, world, predicate.lhs, expected)
-            if (narrowed_world == null) return null
-            return {world: narrowed_world, used_rule: narrowed_world !== world}
-        }
-
-        if (predicate.rhs.kind === 'binding_ref') {
-            let expected = reduce_value(ctx, predicate.lhs, world)
-            let narrowed_world = world_constrain_binding_ref(ctx, world, predicate.rhs, expected)
-            if (narrowed_world == null) return null
-            return {world: narrowed_world, used_rule: narrowed_world !== world}
-        }
-
-        let lhs_selector = value_selector_ref(predicate.lhs)
-        if (lhs_selector != null) {
-            let expected = reduce_value(ctx, predicate.rhs, world)
-            let narrowed_world = world_constrain_selector(ctx, world, lhs_selector, expected)
-            if (narrowed_world == null) return null
-            return {world: narrowed_world, used_rule: narrowed_world !== world}
-        }
-
-        let rhs_selector = value_selector_ref(predicate.rhs)
-        if (rhs_selector != null) {
-            let expected = reduce_value(ctx, predicate.lhs, world)
-            let narrowed_world = world_constrain_selector(ctx, world, rhs_selector, expected)
-            if (narrowed_world == null) return null
-            return {world: narrowed_world, used_rule: narrowed_world !== world}
-        }
-
-        let lhs = reduce_value(ctx, predicate.lhs, world)
-        let rhs = reduce_value(ctx, predicate.rhs, world)
-        let cmp = value_compare(ctx, lhs, rhs, TOKEN_EQ)
-        if (cmp.kind === 'never') return null
-        if (cmp.kind === 'top') return {world, used_rule: false}
-    }
-
-    let reduced = reduce_value(ctx, predicate, world)
-
-    if (reduced.kind === 'top') {
-        return {world, used_rule: false}
-    }
-
-    if (reduced.kind === 'never') {
-        return null
-    }
-
-    return {world, used_rule: false}
-}
-
-const value_is_world_predicate_candidate = (value: Value): boolean => {
-    if (value.kind !== 'binary') return false
-    if (value.op === TOKEN_EQ) return true
-    if (value.op === TOKEN_AND) {
-        return value_is_world_predicate_candidate(value.lhs) ||
-               value_is_world_predicate_candidate(value.rhs)
-    }
-    return false
-}
-
-const reduce_value = (ctx: Context, value: Value, world: World | null): Value => {
-    switch (value.kind) {
-    case 'top':
-    case 'never':
-    case 'int':
-    case 'int_type':
-    case 'nil':
-    case 'scope_ref':
-    case 'scope_obj':
-    case 'union':
-        return value
-
-    case 'binding_ref': {
-        let ref = resolve_read(ctx, value.scope_id, value.name, value.mode)
-        if (ref == null) {
-            return value_never()
-        }
-        let narrowed = world_get_binding(world, ref)
-        if (narrowed != null) {
-            return narrowed
-        }
-        return reduce_binding_ref(ctx, ref, world)
-    }
-
-    case 'select': {
-        let base = reduce_value(ctx, value.base, world)
-        return value_read_field(ctx, base, value.field_name)
-    }
-
-    case 'unary': {
-        let rhs = reduce_value(ctx, value.rhs, world)
-
-        switch (value.op) {
-        case TOKEN_ADD:
-            if (rhs.kind === 'int') return rhs
-            return value_unary(TOKEN_ADD, rhs)
-        case TOKEN_SUB:
-            if (rhs.kind === 'int') return value_int(i32(-rhs.value))
-            return value_unary(TOKEN_SUB, rhs)
-        case TOKEN_NEG:
-            if (rhs.kind === 'top') return value_never()
-            if (rhs.kind === 'never') return value_top()
-            return value_unary(TOKEN_NEG, rhs)
-        default:
-            return value_unary(value.op, rhs)
-        }
-    }
-
-    case 'binary': {
-        switch (value.op) {
-        case TOKEN_EOL:
-        case TOKEN_COMMA:
-            reduce_value(ctx, value.lhs, world)
-            return reduce_value(ctx, value.rhs, world)
-
-        case TOKEN_ADD:
-        case TOKEN_SUB:
-        case TOKEN_MUL:
-        case TOKEN_DIV: {
-            let lhs = reduce_value(ctx, value.lhs, world)
-            let rhs = reduce_value(ctx, value.rhs, world)
-            return value_binary_i32(ctx, lhs, rhs, value.op)
-        }
-
-        case TOKEN_OR: {
-            let lhs = reduce_value(ctx, value.lhs, world)
-            if (lhs.kind === 'top') return value_top()
-            if (lhs.kind === 'never') return reduce_value(ctx, value.rhs, world)
-
-            let rhs = reduce_value(ctx, value.rhs, world)
-            if (rhs.kind === 'top') return value_top()
-            if (rhs.kind === 'never') return lhs
-
-            return value_union(ctx, lhs, rhs)
-        }
-
-        case TOKEN_AND: {
-            let base_world = world == null ? new Map<string, Value>() : world
-
-            let lhs = reduce_value(ctx, value.lhs, world)
-            if (lhs.kind === 'never') return value_never()
-            if (lhs.kind === 'top') return reduce_value(ctx, value.rhs, world)
-
-            if (value_is_world_predicate_candidate(value.lhs)) {
-                let lhs_world = world_assume_true(ctx, value.lhs, base_world)
-                if (lhs_world != null && lhs_world.used_rule) {
-                    lhs = reduce_value(ctx, value.lhs, lhs_world.world)
-                    let rhs = reduce_value(ctx, value.rhs, lhs_world.world)
-                    return value_intersect(ctx, lhs, rhs)
-                }
-            }
-
-            if (value_is_world_predicate_candidate(value.rhs)) {
-                let rhs_world = world_assume_true(ctx, value.rhs, base_world)
-                if (rhs_world != null && rhs_world.used_rule) {
-                    lhs = reduce_value(ctx, value.lhs, rhs_world.world)
-                    let rhs = reduce_value(ctx, value.rhs, rhs_world.world)
-                    return value_intersect(ctx, lhs, rhs)
-                }
-            }
-
-            let rhs = reduce_value(ctx, value.rhs, world)
-            if (rhs.kind === 'never') return value_never()
-            if (rhs.kind === 'top') return lhs
-
-            return value_intersect(ctx, lhs, rhs)
-        }
-
-        case TOKEN_EQ:
-        case TOKEN_NOT_EQ:
-        case TOKEN_LESS:
-        case TOKEN_LESS_EQ:
-        case TOKEN_GREATER:
-        case TOKEN_GREATER_EQ: {
-            let lhs = reduce_value(ctx, value.lhs, world)
-            let rhs = reduce_value(ctx, value.rhs, world)
-            return value_compare(ctx, lhs, rhs, value.op)
-        }
-
-        default: {
-            let lhs = reduce_value(ctx, value.lhs, world)
-            let rhs = reduce_value(ctx, value.rhs, world)
-            return value_binary(value.op, lhs, rhs)
-        }
-        }
-    }
-
-    case 'ternary': {
-        let cond = reduce_value(ctx, value.cond, world)
-        if (cond.kind === 'never') {
-            return reduce_value(ctx, value.rhs, world)
-        }
-        if (cond.kind === 'top') {
-            return reduce_value(ctx, value.lhs, world)
-        }
-        return value_ternary(cond, value.lhs, value.rhs)
-    }
-
-    case 'instantiate': {
-        let type_value = reduce_value(ctx, value.type_value, world)
-        if (type_value.kind !== 'scope_ref') {
-            context_diag(ctx, 'Typed instantiation requires scope value type')
-            return value_never()
-        }
-
-        let type_scope = scope_get(ctx, type_value.scope_id)
-        let instance_scope_id = scope_clone_from_template(ctx, type_value.scope_id, type_scope.parent)
-        apply_typed_instantiation_body(ctx, value.caller_scope_id, instance_scope_id, value.body_value)
-        return value_scope_ref(instance_scope_id)
-    }
-
-    default:
-        value satisfies never
-        return value_never()
-    }
-}
-
-const apply_typed_instantiation_body_statement = (ctx: Context, st: Value, instance_scope_id: Scope_Id, eval_scope_id: Scope_Id) => {
-
-    assert(st.kind === 'binary', "Scope body statement should only be a binary")
 
-    switch (st.op) {
-    // {lhs, rhs}
-    case TOKEN_EOL:
+    switch (expr.op.kind) {
     case TOKEN_COMMA:
-        apply_typed_instantiation_body_statement(ctx, st.lhs, instance_scope_id, eval_scope_id)
-        apply_typed_instantiation_body_statement(ctx, st.rhs, instance_scope_id, eval_scope_id)
-        return
-    // {lhs = rhs}  |  {lhs: rhs}
-    case TOKEN_BIND:
-    case TOKEN_COLON: {
-        let field_name = value_unprefixed_name(st.lhs)
-        if (field_name == null) {
-            context_diag(ctx, 'Typed-instantiation requires simple field assignments')
-            return
-        }
-
-        let eval_scope = scope_get(ctx, eval_scope_id)
-        let eval_binding = eval_scope.bindings.get(field_name)
-
-        let instance_binding = binding_lookup_current(ctx, instance_scope_id, field_name)?.binding
-
-        if (instance_binding == null || eval_binding == null) {
-            context_diag(ctx, `Unknown field '${field_name}' in typed instantiation`)
-            return
-        }
-
-        let rhs_value = reduce_value(ctx, st.rhs, null)
-        let base_value = reduce_binding_ref(ctx, {scope_id: instance_scope_id, binding: instance_binding}, null)
-        let merged = value_intersect(ctx, base_value, rhs_value)
-
-        instance_binding.value_final = merged
-        eval_binding.value_final = merged
-        return
-    }
-    }
-
-    panic('Unsupported typed-instantiation statement')
-}
-
-const apply_typed_instantiation_body = (ctx: Context, caller_scope_id: Scope_Id, instance_scope_id: Scope_Id, body: Value | null) => {
-    /* Typed instantiation body:
-    |   T = {a = 3, b: int}
-    |   v = T{b = .a + 2}
-    |
-    | We evaluate body expressions in a helper scope that can read sibling
-    | fields, then intersect each assignment with the template field type/value.
-    */
-    if (body == null) {
+    case TOKEN_EOL:
+        index_scope_body(ctx, expr.lhs, src, scope_id)
+        index_scope_body(ctx, expr.rhs, src, scope_id)
         return
     }
 
-    let eval_scope_id = scope_clone_from_template(ctx, instance_scope_id, caller_scope_id)
-
-    let eval_body = value_rebind_scope(body, caller_scope_id, eval_scope_id)
-
-    apply_typed_instantiation_body_statement(ctx, eval_body, instance_scope_id, eval_scope_id)
-}
-
-const scope_for_literal = (ctx: Context, parent_scope_id: Scope_Id, expr: Expr_Paren): Scope_Id => {
-    let scope_id = scope_create(ctx, parent_scope_id)
-    index_scope_expr(ctx, scope_id, expr.body)
-    return scope_id
-}
-
-const display_scope_fields = (ctx: Context, fields: Map<string, Value>, seen_scopes: Set<Scope_Id>): string => {
-    let names = Array.from(fields.keys()).sort()
-    let parts: string[] = []
-    for (let name of names) {
-        let value = fields.get(name)
-        assert(value != null)
-        parts.push(`${name} = ${display_value(ctx, value, seen_scopes)}`)
-    }
-    return `{${parts.join(', ')}}`
-}
-
-const token_op_string = (op: Token_Kind): string => {
-    switch (op) {
-    case TOKEN_EQ:         return '=='
-    case TOKEN_NOT_EQ:     return '!='
-    case TOKEN_LESS:       return '<'
-    case TOKEN_LESS_EQ:    return '<='
-    case TOKEN_GREATER:    return '>'
-    case TOKEN_GREATER_EQ: return '>='
-    case TOKEN_AND:        return '&'
-    case TOKEN_OR:         return '|'
-    case TOKEN_ADD:        return '+'
-    case TOKEN_SUB:        return '-'
-    case TOKEN_MUL:        return '*'
-    case TOKEN_DIV:        return '/'
-    case TOKEN_NEG:        return '!'
-    case TOKEN_DOT:        return '.'
-    case TOKEN_QUESTION:   return '?'
-    case TOKEN_COLON:      return ':'
-    case TOKEN_COMMA:      return ','
-    case TOKEN_EOL:        return '\n'
-    default:
-        return token_kind_string(op)
-    }
-}
-
-const display_value = (ctx: Context, value: Value, seen_scopes: Set<Scope_Id>): string => {
-    switch (value.kind) {
-    case 'top':
-        return '()'
-    case 'never':
-        return '!()'
-    case 'int':
-        return `${value.value}`
-    case 'int_type':
-        return 'int'
-    case 'nil':
-        return 'nil'
-    case 'scope_ref': {
-        if (seen_scopes.has(value.scope_id)) {
-            return '{...}'
-        }
-
-        seen_scopes.add(value.scope_id)
-        let fields = materialize_scope_fields(ctx, value)
-        if (fields == null) {
-            seen_scopes.delete(value.scope_id)
-            return '!()'
-        }
-        let text = display_scope_fields(ctx, fields, seen_scopes)
-        seen_scopes.delete(value.scope_id)
-        return text
-    }
-    case 'scope_obj':
-        return display_scope_fields(ctx, value.fields, seen_scopes)
-    case 'union':
-        return value.parts.map(part => display_value(ctx, part, seen_scopes)).join(' | ')
-    case 'binding_ref':
-        return value.name
-    case 'select':
-        return `${display_value(ctx, value.base, seen_scopes)}.${value.field_name}`
-    case 'unary': {
-        let op = token_op_string(value.op)
-        return `${op}${display_value(ctx, value.rhs, seen_scopes)}`
-    }
-    case 'binary': {
-        let op = token_op_string(value.op)
-        return `${display_value(ctx, value.lhs, seen_scopes)} ${op} ${display_value(ctx, value.rhs, seen_scopes)}`
-    }
-    case 'ternary':
-        return `${display_value(ctx, value.cond, seen_scopes)} ? ${display_value(ctx, value.lhs, seen_scopes)} : ${display_value(ctx, value.rhs, seen_scopes)}`
-    case 'instantiate':
-        return `${display_value(ctx, value.type_value, seen_scopes)}{...}`
-    default:
-        value satisfies never
-        return '!()'
-    }
-}
-
-export function context_make(): Context {
-    // Build fixed root chain: builtins -> global.
-    let ctx: Context = {
-        src:               '',
-        builtins_scope_id: (-1) as Scope_Id,
-        global_scope_id:   (-1) as Scope_Id,
-        diagnostics:       [],
-        reduced_output:    null,
-        next_scope_id:     (1) as Scope_Id,
-        scopes:            new Map<Scope_Id, Scope_Record>(),
-    }
-
-    let builtins_scope_id = scope_create(ctx, null)
-    let global_scope_id = scope_create(ctx, builtins_scope_id)
-
-    ctx.builtins_scope_id = builtins_scope_id
-    ctx.global_scope_id = global_scope_id
-
-    let int_binding = binding_ensure(ctx, builtins_scope_id, 'int')
-    int_binding.value_final = value_int_type()
-
-    let true_binding = binding_ensure(ctx, builtins_scope_id, 'true')
-    true_binding.value_final = value_top()
-
-    let false_binding = binding_ensure(ctx, builtins_scope_id, 'false')
-    false_binding.value_final = value_never()
-
-    let nil_binding = binding_ensure(ctx, builtins_scope_id, 'nil')
-    nil_binding.value_final = value_nil()
-
-    return ctx
+    index_scope_binary(ctx, expr.op.kind, expr.lhs, expr.rhs, expr, src, scope_id)
 }
 
 export function add_expr(ctx: Context, expr: Expr, src: string) {
-    // Phase 1 only: index global bindings without reducing RHS expressions.
-    ctx.src = src
-    ctx.reduced_output = null
-    ctx.diagnostics.length = 0
-
-    let global_scope = scope_get(ctx, ctx.global_scope_id)
-    global_scope.bindings.clear()
-
-    index_scope_expr(ctx, ctx.global_scope_id, expr)
-
-    if (!global_scope.bindings.has('output')) {
-        context_diag(ctx, 'Missing required binding: output')
-    }
+    index_scope_body(ctx, expr, src, SCOPE_ID_GLOBAL)
 }
 
 export function reduce(ctx: Context) {
-    // Program entry point: reduce global `output` binding.
-    let output_ref = resolve_read(ctx, ctx.global_scope_id, 'output', 'unprefixed')
-    if (output_ref == null) {
-        ctx.reduced_output = value_never()
-        return
-    }
-
-    ctx.reduced_output = reduce_binding_ref(ctx, output_ref, null)
 }
 
 export function display(ctx: Context): string {
-    if (ctx.reduced_output == null) {
-        return ''
-    }
-    return display_value(ctx, ctx.reduced_output, new Set<Scope_Id>())
+    return ''
 }
 
 export function diagnostics(ctx: Context): string[] {
-    return ctx.diagnostics.slice()
+    return []
 }
