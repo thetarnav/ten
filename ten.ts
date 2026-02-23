@@ -1135,8 +1135,8 @@ export class Term_Scope {
 }
 export class Term_World {
     kind = TERM_WORLD
-    body:  Term_Id    = TERM_ID_NONE
-    world: World      = new World
+    // body:  Term_Id    = TERM_ID_NONE
+    // world: World      = new World
 }
 export class Term_Bool {
     kind = TERM_BOOL
@@ -1366,7 +1366,7 @@ export const term_decode = (_key: Term_Key): Term => {
 
         // key = body
 
-        node.body = (key % MAX_ID) as Term_Id
+        // node.body = (key % MAX_ID) as Term_Id
 
         return node
     }
@@ -1434,63 +1434,55 @@ function term_chain_pick_best(lhs: Term_Id, rhs: Term_Id): Term_Id {
     if (lhs_priority > rhs_priority) return rhs
     return lhs < rhs ? lhs : rhs
 }
-function term_chain_get(ctx: Context, kind: Term_Kind, term_id: Term_Id): Term_And | Term_Or | null {
+function term_chain_get(ctx: Context, op: Token_Kind, term_id: Term_Id): Term_Binary | null {
     // Treap node access for this chain kind
-    let node = term_by_id(ctx, term_id)
-    if (node != null && node.kind === kind) {
-        return node as Term_And | Term_Or
+    let term = term_by_id(ctx, term_id)
+    if (term != null && term.kind === TERM_BINARY && term.op === op) {
+        return term
     }
     return null
 }
-function term_chain_pick(ctx: Context, kind: Term_Kind, term_id: Term_Id): Term_Id {
+function term_chain_pick(ctx: Context, op: Token_Kind, term_id: Term_Id): Term_Id {
     // Pick treap root candidate from a tree (min-priority leaf)
 
-    let node = term_chain_get(ctx, kind, term_id)
-    if (node == null) return term_id
+    let term = term_chain_get(ctx, op, term_id)
+    if (term == null) return term_id
 
-    let lhs_pick = term_chain_pick(ctx, kind, node.lhs)
-    let rhs_pick = term_chain_pick(ctx, kind, node.rhs)
+    let lhs_pick = term_chain_pick(ctx, op, term.lhs)
+    let rhs_pick = term_chain_pick(ctx, op, term.rhs)
     return term_chain_pick_best(lhs_pick, rhs_pick)
 }
-function term_chain_max(ctx: Context, kind: Term_Kind, term_id: Term_Id): Term_Id {
+function term_chain_max(ctx: Context, op: Token_Kind, term_id: Term_Id): Term_Id {
     // Rightmost leaf id (BST max) for split pivots
 
-    let node = term_chain_get(ctx, kind, term_id)
-    if (node == null) return term_id
+    let term = term_chain_get(ctx, op, term_id)
+    if (term == null) return term_id
 
-    return term_chain_max(ctx, kind, node.rhs)
+    return term_chain_max(ctx, op, term.rhs)
 }
 function term_chain_node(
-    ctx:  Context,
-    kind: Term_Kind,
-    lhs:  Term_Id | null,
-    rhs:  Term_Id | null,
+    ctx: Context,
+    op:  Token_Kind,
+    lhs: Term_Id | null,
+    rhs: Term_Id | null,
 ): Term_Id | null {
     // Treap node constructor (binary op node)
     if (lhs == null) return rhs
     if (rhs == null) return lhs
-    let key: Term_Key
-    switch (kind) {
-    case TERM_AND:
-        key = term_and_encode(lhs, rhs)
-        return term_from_key(ctx, key)
-    case TERM_OR:
-        key = term_or_encode(lhs, rhs)
-        return term_from_key(ctx, key)
-    }
-    unreachable()
+    let key = term_binary_encode(op, lhs, rhs)
+    return term_from_key(ctx, key)
 }
 type Term_Chain_Split = {l: Term_Id | null, r: Term_Id | null}
 function term_chain_split(
     ctx:     Context,
-    kind:    Term_Kind,
+    op:      Token_Kind,
     term_id: Term_Id,
     key:     Term_Id,
     out:     Term_Chain_Split = {l: null, r: null},
 ): Term_Chain_Split {
 
-    let node = term_chain_get(ctx, kind, term_id)
-    if (node == null) {
+    let term = term_chain_get(ctx, op, term_id)
+    if (term == null) {
         // Leaf split: route to side or drop duplicates
         if (term_id < key) {
             out.l = term_id
@@ -1503,19 +1495,19 @@ function term_chain_split(
             out.r = null
         }
     } else {
-        let pivot = term_chain_max(ctx, kind, node.lhs)
+        let pivot = term_chain_max(ctx, op, term.lhs)
         if (key <= pivot) {
             // Split descends into left subtree
-            term_chain_split(ctx, kind, node.lhs, key, out)
+            term_chain_split(ctx, op, term.lhs, key, out)
 
             // Everything >= key goes right
-            out.r = term_chain_node(ctx, kind, out.r, node.rhs)
+            out.r = term_chain_node(ctx, op, out.r, term.rhs)
         } else {
             // Split descends into right subtree
-            term_chain_split(ctx, kind, node.rhs, key, out)
+            term_chain_split(ctx, op, term.rhs, key, out)
 
             // Everything < key goes left
-            out.l = term_chain_node(ctx, kind, node.lhs, out.l)
+            out.l = term_chain_node(ctx, op, term.lhs, out.l)
         }
     }
 
@@ -1523,7 +1515,7 @@ function term_chain_split(
 }
 function term_chain_join(
     ctx:  Context,
-    kind: Term_Kind,
+    op:   Token_Kind,
     lhs:  Term_Id | null,
     rhs:  Term_Id | null,
 ): Term_Id | null {
@@ -1531,44 +1523,44 @@ function term_chain_join(
     if (lhs == null) return rhs
     if (rhs == null) return lhs
 
-    let lhs_pick = term_chain_pick(ctx, kind, lhs)
-    let rhs_pick = term_chain_pick(ctx, kind, rhs)
+    let lhs_pick = term_chain_pick(ctx, op, lhs)
+    let rhs_pick = term_chain_pick(ctx, op, rhs)
     let pick = term_chain_pick_best(lhs_pick, rhs_pick)
 
     // Partition both trees around the chosen pivot id
-    let {l: lhs_l, r: lhs_r} = term_chain_split(ctx, kind, lhs, pick)
-    let {l: rhs_l, r: rhs_r} = term_chain_split(ctx, kind, rhs, pick)
+    let {l: lhs_l, r: lhs_r} = term_chain_split(ctx, op, lhs, pick)
+    let {l: rhs_l, r: rhs_r} = term_chain_split(ctx, op, rhs, pick)
 
     // Recurse into partitions and attach pivot between them
-    return term_chain_node(ctx, kind,
-        term_chain_node(ctx, kind, term_chain_join(ctx, kind, lhs_l, rhs_l), pick),
-        term_chain_join(ctx, kind, lhs_r, rhs_r),
+    return term_chain_node(ctx, op,
+        term_chain_node(ctx, op, term_chain_join(ctx, op, lhs_l, rhs_l), pick),
+        term_chain_join(ctx, op, lhs_r, rhs_r),
     )
 }
 
-export const term_any   = (): Term_Id => TERM_ID_ANY
-export const term_never = (): Term_Id => TERM_ID_NEVER
-export const term_any_or_never = (cond: boolean): Term_Id => {
+const term_any   = (): Term_Id => TERM_ID_ANY
+const term_never = (): Term_Id => TERM_ID_NEVER
+const term_any_or_never = (cond: boolean): Term_Id => {
     return cond ? TERM_ID_ANY : TERM_ID_NEVER
 }
 
-export const term_nil = (): Term_Id => TERM_ID_NIL
+const term_nil = (): Term_Id => TERM_ID_NIL
 
-export const term_type_int  = (): Term_Id => TERM_ID_TYPE_INT
-export const term_type_bool = (): Term_Id => TERM_ID_TYPE_BOOL
+const term_type_int  = (): Term_Id => TERM_ID_TYPE_INT
+const term_type_bool = (): Term_Id => TERM_ID_TYPE_BOOL
 
-export const term_true  = (): Term_Id => TERM_ID_TRUE
-export const term_false = (): Term_Id => TERM_ID_FALSE
-export const term_bool = (value: boolean): Term_Id => {
+const term_true  = (): Term_Id => TERM_ID_TRUE
+const term_false = (): Term_Id => TERM_ID_FALSE
+const term_bool = (value: boolean): Term_Id => {
     return value ? TERM_ID_TRUE : TERM_ID_FALSE
 }
 
-export const term_int = (ctx: Context, value: number): Term_Id => {
+const term_int = (ctx: Context, value: number): Term_Id => {
     let key = term_int_encode(value)
     return term_from_key(ctx, key)
 }
 
-export const term_neg = (ctx: Context, rhs: Term_Id): Term_Id => {
+const term_neg = (ctx: Context, rhs: Term_Id): Term_Id => {
     let rhs_node = term_by_id(ctx, rhs)
     if (rhs_node != null && rhs_node.kind === TERM_NEG) {
         return rhs_node.rhs /*  !!x  ->  x  */
@@ -1577,51 +1569,54 @@ export const term_neg = (ctx: Context, rhs: Term_Id): Term_Id => {
     return term_from_key(ctx, key)
 }
 
-export const term_binary = (ctx: Context, op: Token_Kind, lhs: Term_Id, rhs: Term_Id) => {
+const term_binary = (ctx: Context, op: Token_Kind, lhs: Term_Id, rhs: Term_Id) => {
+    switch (op) {
+    case TOKEN_ADD: return term_and(ctx, lhs, rhs)
+    case TOKEN_OR:  return term_or(ctx, lhs, rhs)
+    }
     let key = term_binary_encode(op, lhs, rhs)
     return term_from_key(ctx, key)
 }
-
-export const term_ternary = (ctx: Context, cond: Term_Id, lhs: Term_Id, rhs: Term_Id) => {
-    let key = term_ternary_encode(cond, lhs, rhs)
+const term_eq = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
+    let key = term_binary_encode(TOKEN_EQ, lhs, rhs)
     return term_from_key(ctx, key)
 }
-
-export const term_and = (ctx: Context, lhs_id: Term_Id, rhs_id: Term_Id): Term_Id => {
+const term_and = (ctx: Context, lhs_id: Term_Id, rhs_id: Term_Id): Term_Id => {
     if (lhs_id === TERM_ID_NONE) return rhs_id
     if (rhs_id === TERM_ID_NONE) return lhs_id
     // Canonical treap merge for AND chains
     // `lhs` and `rhs` should already be normalized
-    let merged = term_chain_join(ctx, TERM_AND, lhs_id, rhs_id)
+    let merged = term_chain_join(ctx, TOKEN_AND, lhs_id, rhs_id)
     assert(merged != null, 'Expected AND chain result')
     return merged
 }
-export const term_or = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
+const term_or = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
     // Canonical treap merge for OR chains
     // `lhs` and `rhs` should already be normalized
-    let merged = term_chain_join(ctx, TERM_OR, lhs, rhs)
+    let merged = term_chain_join(ctx, TOKEN_OR, lhs, rhs)
     assert(merged != null, 'Expected OR chain result')
     return merged
 }
-export const term_eq = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
-    let key = term_eq_encode(lhs, rhs)
+
+const term_ternary = (ctx: Context, cond: Term_Id, lhs: Term_Id, rhs: Term_Id) => {
+    let key = term_ternary_encode(cond, lhs, rhs)
     return term_from_key(ctx, key)
 }
 
-export const term_select = (ctx: Context, lhs: Term_Id, rhs: Ident_Id): Term_Id => {
+const term_select = (ctx: Context, lhs: Term_Id, rhs: Ident_Id): Term_Id => {
     let key = term_select_encode(lhs, rhs)
     return term_from_key(ctx, key)
 }
-export const term_var = (ctx: Context, id: Ident_Id, prefix: Token_Kind = TOKEN_NONE): Term_Id => {
+const term_var = (ctx: Context, id: Ident_Id, prefix: Token_Kind = TOKEN_NONE): Term_Id => {
     let key = term_var_encode(prefix, id)
     return term_from_key(ctx, key)
 }
 
-export const term_scope = (ctx: Context, id: Scope_Id): Term_Id => {
+const term_scope = (ctx: Context, id: Scope_Id): Term_Id => {
     let key = term_scope_encode(id)
     return term_from_key(ctx, key)
 }
-// export const term_scope_clone = (ctx: Context, body: Term_Id, from: Term_Id, world_id: Term_Id): Term_Id => {
+// const term_scope_clone = (ctx: Context, body: Term_Id, from: Term_Id, world_id: Term_Id): Term_Id => {
 //     let term_id = term_scope(ctx, body)
 //     if (term_id !== from) {
 //         let world = world_get_assert(ctx, world_id)
@@ -1630,7 +1625,7 @@ export const term_scope = (ctx: Context, id: Scope_Id): Term_Id => {
 //     return term_id
 // }
 
-export const term_world = (ctx: Context, body_id: Term_Id): Term_Id => {
+const term_world = (ctx: Context, body_id: Term_Id): Term_Id => {
     let node = term_by_id_assert(ctx, body_id)
     if (node.kind === TERM_WORLD) {
         return body_id // Avoid nesting world in world
@@ -1781,7 +1776,7 @@ const index_scope_binary = (
             let binding = binding_ensure(ctx, scope_id, lhs_ident)
             if (binding.value_to_reduce != null) {
                 error_semantic(ctx, expr, src, `Duplicate value binding for '${lhs_ident}'`)
-                binding.value_to_reduce = term_binary(ctx, TOKEN_AND, binding.value_to_reduce, rhs_value)
+                binding.value_to_reduce = term_and(ctx, binding.value_to_reduce, rhs_value)
             } else {
                 binding.value_to_reduce = rhs_value
             }
@@ -1800,7 +1795,7 @@ const index_scope_binary = (
         let binding = binding_ensure(ctx, scope_id, name)
         if (binding.type_to_reduce != null) {
             error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
-            binding.type_to_reduce = term_binary(ctx, TOKEN_AND, binding.type_to_reduce, rhs_value)
+            binding.type_to_reduce = term_and(ctx, binding.type_to_reduce, rhs_value)
         } else {
             binding.type_to_reduce = rhs_value
         }
