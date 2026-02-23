@@ -1154,8 +1154,14 @@ export class Term_Type_Int {
 }
 
 class Scope {
-    parent: Scope_Id | null = null
-    type:   Scope_Id | null = null
+    parent: Scope_Id | null        = null
+    type:   Scope_Id | null        = null
+    fields: Map<Ident_Id, Binding> = new Map
+}
+
+class Binding {
+    type:  Term_Id | null = null
+    value: Term_Id | null = null
 }
 
 class Context {
@@ -1188,6 +1194,10 @@ export function context_make(): Context {
     ctx.ident_src[IDENT_ID_NONE] = ''
 
     return ctx
+}
+
+const scope_get = (ctx: Context, scope_id: Scope_Id): Scope => {
+    return ctx.scope_arr[scope_id]
 }
 
 const ident_id = (ctx: Context, name: string): Ident_Id => {
@@ -1740,6 +1750,16 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
 }
 const term_from_expr = lower_expr
 
+const binding_ensure = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Binding => {
+    let scope = scope_get(ctx, scope_id)
+    let field = scope.fields.get(ident)
+    if (field == null) {
+        field = new Binding
+        scope.fields.set(ident, field)
+    }
+    return field
+}
+
 const index_scope_binary = (
     ctx: Context,
     op: Token_Kind, lhs: Expr, rhs: Expr,
@@ -1762,25 +1782,21 @@ const index_scope_binary = (
 
             let base_name  = ident_expr_id_or_error(ctx, lhs.lhs, src)
             let field_name = ident_expr_id_or_error(ctx, lhs.rhs, src)
-            if (base_name == null && field_name == null) return
+            if (base_name == null || field_name == null) return
 
-            let binding = binding_ensure(ctx, scope_id, base_name)
+            let binding = binding_ensure(ctx, base_name, scope_id)
             binding.field_assignments.push({field_name, value: rhs_value})
-            binding.value_final = null
         }
         // foo = rhs
         else {
             let lhs_ident = ident_expr_id_or_error(ctx, lhs, src)
             if (lhs_ident == null) return
 
-            let binding = binding_ensure(ctx, scope_id, lhs_ident)
-            if (binding.value_to_reduce != null) {
+            let binding = binding_ensure(ctx, lhs_ident, scope_id)
+            if (binding.value != null) {
                 error_semantic(ctx, expr, src, `Duplicate value binding for '${lhs_ident}'`)
-                binding.value_to_reduce = term_and(ctx, binding.value_to_reduce, rhs_value)
-            } else {
-                binding.value_to_reduce = rhs_value
             }
-            binding.value_final = null
+            binding.value = rhs_value
         }
 
         return
@@ -1792,14 +1808,11 @@ const index_scope_binary = (
 
         let rhs_value = lower_expr(ctx, rhs, src, scope_id)
 
-        let binding = binding_ensure(ctx, scope_id, name)
-        if (binding.type_to_reduce != null) {
+        let binding = binding_ensure(ctx, name, scope_id)
+        if (binding.type != null) {
             error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
-            binding.type_to_reduce = term_and(ctx, binding.type_to_reduce, rhs_value)
-        } else {
-            binding.type_to_reduce = rhs_value
         }
-        binding.value_final = null
+        binding.type = rhs_value
 
         return
     }
