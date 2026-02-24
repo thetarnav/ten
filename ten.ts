@@ -1581,7 +1581,7 @@ const term_neg = (ctx: Context, rhs: Term_Id): Term_Id => {
 
 const term_binary = (ctx: Context, op: Token_Kind, lhs: Term_Id, rhs: Term_Id) => {
     switch (op) {
-    case TOKEN_ADD: return term_and(ctx, lhs, rhs)
+    case TOKEN_AND: return term_and(ctx, lhs, rhs)
     case TOKEN_OR:  return term_or(ctx, lhs, rhs)
     }
     let key = term_binary_encode(op, lhs, rhs)
