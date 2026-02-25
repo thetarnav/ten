@@ -1155,7 +1155,7 @@ export class Term_Type_Int {
 
 class Scope {
     parent: Scope_Id | null        = null
-    type:   Scope_Id | null        = null
+    type:   Term_Id | null         = null
     fields: Map<Ident_Id, Binding> = new Map
 }
 
@@ -1235,17 +1235,22 @@ export const ident_string = (ctx: Context, ident: Ident_Id): string => {
  *                               [rhs id] * TERM_ENUM_RANGE
  *                      [lhs/id] * MAX_ID * TERM_ENUM_RANGE
  *            [value/ident] * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+ *
+ * For scalar payload terms (`TERM_BOOL`, `TERM_INT`) we use a compact layout:
+ *   key = kind_offset + payload * TERM_ENUM_RANGE
+ * This keeps integer payloads inside safe 53-bit integer range.
  */
 export type Term_Key = number & {__term_key: void}
 
 export const term_bool_encode = (value: boolean): Term_Key => {
     let key = TERM_BOOL - TERM_ENUM_START
-    key += (+value) * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+    key += (+value) * TERM_ENUM_RANGE
     return key as Term_Key
 }
 export const term_int_encode = (value: number): Term_Key => {
-    let key = TERM_BOOL - TERM_ENUM_START
-    key += (value|0) * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+    let key = TERM_INT - TERM_ENUM_START
+    let bits = ((value|0) >>> 0)
+    key += bits * TERM_ENUM_RANGE
     return key as Term_Key
 }
 export const term_neg_encode = (rhs: Term_Id) => {
@@ -1261,7 +1266,7 @@ export const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): 
     return key as Term_Key
 }
 export const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
-    let key = TERM_BINARY - TERM_ENUM_START
+    let key = TERM_TERNARY - TERM_ENUM_START
     key += cond * MAX_ID * MAX_ID * TERM_ENUM_RANGE
     key += lhs * MAX_ID * TERM_ENUM_RANGE
     key += rhs * TERM_ENUM_RANGE
@@ -1359,6 +1364,8 @@ export const term_decode = (_key: Term_Key): Term => {
         // key = prefix * MAX_ID + ident
 
         node.ident = (key % MAX_ID) as Ident_Id
+        key = Math.floor(key / MAX_ID)
+        node.prefix = (key % MAX_ID) as Token_Kind
 
         return node
     }
@@ -1383,16 +1390,16 @@ export const term_decode = (_key: Term_Key): Term => {
     case TERM_BOOL: {
         let node = new Term_Bool
 
-        // key = value * MAX_ID * MAX_ID
-        node.value = Math.floor(key / (MAX_ID * MAX_ID)) !== 0
+        // key = value
+        node.value = (key % MAX_ID) !== 0
 
         return node
     }
     case TERM_INT: {
         let node = new Term_Int
 
-        // key = value * MAX_ID * MAX_ID
-        node.value = Math.floor(key / (MAX_ID * MAX_ID))
+        // key = unsigned i32 payload
+        node.value = ((key >>> 0) | 0)
 
         return node
     }
@@ -1713,12 +1720,13 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
             let scope = new Scope
             ctx.scope_arr[new_scope_id] = scope
 
+            scope.parent = scope_id
+
             let scope_term = term_scope(ctx, new_scope_id)
 
             // type{...}
             if (expr.type != null) {
-                let scope_type = lower_expr(ctx, expr.type, src, scope_id)
-                // TODO: store type — which isn't resolved yet
+                scope.type = lower_expr(ctx, expr.type, src, scope_id)
             }
 
             if (expr.body != null) {
@@ -1785,7 +1793,7 @@ const index_scope_binary = (
             if (base_name == null || field_name == null) return
 
             let binding = binding_ensure(ctx, base_name, scope_id)
-            binding.field_assignments.push({field_name, value: rhs_value})
+            // binding.field_assignments.push({field_name, value: rhs_value})
         }
         // foo = rhs
         else {
