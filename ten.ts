@@ -1316,7 +1316,7 @@ const ident_string = (ctx: Context, ident: Ident_Id): string => {
 type Term_Key = number & {__term_key: void}
 type Task_Key = number & {__task_key: void}
 
-// key = TERM_BOOL - TERM_ENUM_START + (+value) * TERM_ENUM_RANGE
+// key = value as 0|1
 const term_bool_encode = (value: boolean): Term_Key => {
     let key = TERM_BOOL - TERM_ENUM_START
     key += (+value) * TERM_ENUM_RANGE
@@ -1328,19 +1328,20 @@ const term_bool_decode = (key: number): Term_Bool => {
     return node
 }
 
-// key = TERM_INT - TERM_ENUM_START + ((value|0) >>> 0) * TERM_ENUM_RANGE
+// key = value as u32
 const term_int_encode = (value: number): Term_Key => {
     let key = TERM_INT - TERM_ENUM_START
-    key += ((value|0) >>> 0) * TERM_ENUM_RANGE
+    let u32 = (value | 0) >>> 0 // f64 -> i32 -> u32
+    key += u32 * TERM_ENUM_RANGE
     return key as Term_Key
 }
 const term_int_decode = (key: number): Term_Int => {
     let node = new Term_Int
-    node.value = (key >>> 0)|0
+    node.value = key|0 // u32 -> i32
     return node
 }
 
-// key = TERM_NEG - TERM_ENUM_START + rhs * TERM_ENUM_RANGE
+// key = rhs
 const term_neg_encode = (rhs: Term_Id): Term_Key => {
     let key = TERM_NEG - TERM_ENUM_START
     key += rhs * TERM_ENUM_RANGE
@@ -1352,7 +1353,7 @@ const term_neg_decode = (key: number): Term_Neg => {
     return node
 }
 
-// key = TERM_BINARY - TERM_ENUM_START + (op * MAX_ID * MAX_ID + lhs * MAX_ID + rhs) * TERM_ENUM_RANGE
+// key = op + lhs + rhs
 const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Key => {
     let key = TERM_BINARY - TERM_ENUM_START
     key += op * MAX_ID * MAX_ID * TERM_ENUM_RANGE
@@ -1374,7 +1375,7 @@ const term_binary_decode = (key: number): Term_Binary => {
     return node
 }
 
-// key = TERM_TERNARY - TERM_ENUM_START + (cond * MAX_ID * MAX_ID + lhs * MAX_ID + rhs) * TERM_ENUM_RANGE
+// key = cond + lhs + rhs
 const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
     let key = TERM_TERNARY - TERM_ENUM_START
     key += cond * MAX_ID * MAX_ID * TERM_ENUM_RANGE
@@ -1396,7 +1397,7 @@ const term_ternary_decode = (key: number): Term_Ternary => {
     return node
 }
 
-// key = TERM_SELECT - TERM_ENUM_START + (lhs * MAX_ID + rhs) * TERM_ENUM_RANGE
+// key = lhs + rhs
 const term_select_encode = (lhs: Term_Id, rhs: Ident_Id): Term_Key => {
     let key = TERM_SELECT - TERM_ENUM_START
     key += lhs * MAX_ID * TERM_ENUM_RANGE
@@ -1414,7 +1415,7 @@ const term_select_decode = (key: number): Term_Select => {
     return node
 }
 
-// key = TERM_VAR - TERM_ENUM_START + (prefix * MAX_ID + ident) * TERM_ENUM_RANGE
+// key = prefix + ident
 const term_var_encode = (prefix: Token_Kind, id: Ident_Id): Term_Key => {
     let key = TERM_VAR - TERM_ENUM_START
     key += prefix * MAX_ID * TERM_ENUM_RANGE
@@ -1432,7 +1433,7 @@ const term_var_decode = (key: number): Term_Var => {
     return node
 }
 
-// key = TERM_SCOPE - TERM_ENUM_START + id * TERM_ENUM_RANGE
+// key = id
 const term_scope_encode = (id: Scope_Id): Term_Key => {
     let key = TERM_SCOPE - TERM_ENUM_START
     key += id * TERM_ENUM_RANGE
@@ -1444,7 +1445,7 @@ const term_scope_decode = (key: number): Term_Scope => {
     return node
 }
 
-// key = TERM_WORLD - TERM_ENUM_START + body * TERM_ENUM_RANGE
+// key = body
 const term_world_encode = (body: Term_Id): Term_Key => {
     let key = TERM_WORLD - TERM_ENUM_START
     key += body * TERM_ENUM_RANGE
