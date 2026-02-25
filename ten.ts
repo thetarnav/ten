@@ -1316,22 +1316,43 @@ const ident_string = (ctx: Context, ident: Ident_Id): string => {
 type Term_Key = number & {__term_key: void}
 type Task_Key = number & {__task_key: void}
 
+// key = TERM_BOOL - TERM_ENUM_START + (+value) * TERM_ENUM_RANGE
 const term_bool_encode = (value: boolean): Term_Key => {
     let key = TERM_BOOL - TERM_ENUM_START
     key += (+value) * TERM_ENUM_RANGE
     return key as Term_Key
 }
+const term_bool_decode = (key: number): Term_Bool => {
+    let node = new Term_Bool
+    node.value = (key % MAX_ID) !== 0
+    return node
+}
+
+// key = TERM_INT - TERM_ENUM_START + ((value|0) >>> 0) * TERM_ENUM_RANGE
 const term_int_encode = (value: number): Term_Key => {
     let key = TERM_INT - TERM_ENUM_START
-    let bits = ((value|0) >>> 0)
-    key += bits * TERM_ENUM_RANGE
+    key += ((value|0) >>> 0) * TERM_ENUM_RANGE
     return key as Term_Key
 }
-const term_neg_encode = (rhs: Term_Id) => {
+const term_int_decode = (key: number): Term_Int => {
+    let node = new Term_Int
+    node.value = (key >>> 0)|0
+    return node
+}
+
+// key = TERM_NEG - TERM_ENUM_START + rhs * TERM_ENUM_RANGE
+const term_neg_encode = (rhs: Term_Id): Term_Key => {
     let key = TERM_NEG - TERM_ENUM_START
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
+const term_neg_decode = (key: number): Term_Neg => {
+    let node = new Term_Neg
+    node.rhs = (key % MAX_ID) as Term_Id
+    return node
+}
+
+// key = TERM_BINARY - TERM_ENUM_START + (op * MAX_ID * MAX_ID + lhs * MAX_ID + rhs) * TERM_ENUM_RANGE
 const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Key => {
     let key = TERM_BINARY - TERM_ENUM_START
     key += op * MAX_ID * MAX_ID * TERM_ENUM_RANGE
@@ -1339,6 +1360,21 @@ const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Ke
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
+const term_binary_decode = (key: number): Term_Binary => {
+    let node = new Term_Binary
+
+    node.rhs = (key % MAX_ID) as Term_Id
+    key = Math.floor(key / MAX_ID)
+
+    node.lhs = (key % MAX_ID) as Term_Id
+    key = Math.floor(key / MAX_ID)
+
+    node.op = (key % MAX_ID) as Token_Kind
+
+    return node
+}
+
+// key = TERM_TERNARY - TERM_ENUM_START + (cond * MAX_ID * MAX_ID + lhs * MAX_ID + rhs) * TERM_ENUM_RANGE
 const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
     let key = TERM_TERNARY - TERM_ENUM_START
     key += cond * MAX_ID * MAX_ID * TERM_ENUM_RANGE
@@ -1346,27 +1382,77 @@ const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Ke
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
+const term_ternary_decode = (key: number): Term_Ternary => {
+    let node = new Term_Ternary
+
+    node.rhs = (key % MAX_ID) as Term_Id
+    key = Math.floor(key / MAX_ID)
+
+    node.lhs = (key % MAX_ID) as Term_Id
+    key = Math.floor(key / MAX_ID)
+
+    node.cond = (key % MAX_ID) as Term_Id
+
+    return node
+}
+
+// key = TERM_SELECT - TERM_ENUM_START + (lhs * MAX_ID + rhs) * TERM_ENUM_RANGE
 const term_select_encode = (lhs: Term_Id, rhs: Ident_Id): Term_Key => {
     let key = TERM_SELECT - TERM_ENUM_START
     key += lhs * MAX_ID * TERM_ENUM_RANGE
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
+const term_select_decode = (key: number): Term_Select => {
+    let node = new Term_Select
+
+    node.rhs = (key % MAX_ID) as Ident_Id
+    key = Math.floor(key / MAX_ID)
+
+    node.lhs = (key % MAX_ID) as Term_Id
+
+    return node
+}
+
+// key = TERM_VAR - TERM_ENUM_START + (prefix * MAX_ID + ident) * TERM_ENUM_RANGE
 const term_var_encode = (prefix: Token_Kind, id: Ident_Id): Term_Key => {
     let key = TERM_VAR - TERM_ENUM_START
     key += prefix * MAX_ID * TERM_ENUM_RANGE
     key += id * TERM_ENUM_RANGE
     return key as Term_Key
 }
+const term_var_decode = (key: number): Term_Var => {
+    let node = new Term_Var
+
+    node.ident = (key % MAX_ID) as Ident_Id
+    key = Math.floor(key / MAX_ID)
+
+    node.prefix = (key % MAX_ID) as Token_Kind
+
+    return node
+}
+
+// key = TERM_SCOPE - TERM_ENUM_START + id * TERM_ENUM_RANGE
 const term_scope_encode = (id: Scope_Id): Term_Key => {
     let key = TERM_SCOPE - TERM_ENUM_START
     key += id * TERM_ENUM_RANGE
     return key as Term_Key
 }
+const term_scope_decode = (key: number): Term_Scope => {
+    let node = new Term_Scope
+    node.id = (key % MAX_ID) as Scope_Id
+    return node
+}
+
+// key = TERM_WORLD - TERM_ENUM_START + body * TERM_ENUM_RANGE
 const term_world_encode = (body: Term_Id): Term_Key => {
     let key = TERM_WORLD - TERM_ENUM_START
     key += body * TERM_ENUM_RANGE
     return key as Term_Key
+}
+const term_world_decode = (key: number): Term_World => {
+    let node = new Term_World
+    return node
 }
 
 const term_decode = (_key: Term_Key): Term => {
@@ -1375,112 +1461,20 @@ const term_decode = (_key: Term_Key): Term => {
     let key = Math.floor(_key / TERM_ENUM_RANGE)
 
     switch (kind) {
-    case TERM_ANY:
-        return new Term_Any
-    case TERM_NEVER:
-        return new Term_Never
-    case TERM_NIL:
-        return new Term_Nil
-    case TERM_NEG: {
-        let node = new Term_Neg
-
-        // key = rhs
-
-        node.rhs = (key % MAX_ID) as Term_Id
-
-        return node
-    }
-    case TERM_BINARY: {
-        let node = new Term_Binary
-
-        // key = op * MAX_ID * MAX_ID + lhs * MAX_ID + rhs
-
-        node.rhs = (key % MAX_ID) as Term_Id
-        key = Math.floor(key / MAX_ID)
-
-        node.lhs = (key % MAX_ID) as Term_Id
-        key = Math.floor(key / MAX_ID)
-
-        node.op = (key % MAX_ID) as Token_Kind
-
-        return node
-    }
-    case TERM_TERNARY: {
-        let node = new Term_Ternary
-
-        // key = cond * MAX_ID * MAX_ID + lhs * MAX_ID + rhs
-
-        node.rhs = (key % MAX_ID) as Term_Id
-        key = Math.floor(key / MAX_ID)
-
-        node.lhs = (key % MAX_ID) as Term_Id
-        key = Math.floor(key / MAX_ID)
-
-        node.cond = (key % MAX_ID) as Term_Id
-
-        return node
-    }
-    case TERM_SELECT: {
-        let node = new Term_Select
-
-        // key = lhs * MAX_ID + rhs
-
-        node.rhs = (key % MAX_ID) as Ident_Id
-        key = Math.floor(key / MAX_ID)
-
-        node.lhs = (key % MAX_ID) as Term_Id
-
-        return node
-    }
-    case TERM_VAR: {
-        let node = new Term_Var
-
-        // key = prefix * MAX_ID + ident
-
-        node.ident = (key % MAX_ID) as Ident_Id
-        key = Math.floor(key / MAX_ID)
-        node.prefix = (key % MAX_ID) as Token_Kind
-
-        return node
-    }
-    case TERM_SCOPE: {
-        let node = new Term_Scope
-
-        // key = body
-
-        node.id = (key % MAX_ID) as Scope_Id
-
-        return node
-    }
-    case TERM_WORLD: {
-        let node = new Term_World
-
-        // key = body
-
-        // node.body = (key % MAX_ID) as Term_Id
-
-        return node
-    }
-    case TERM_BOOL: {
-        let node = new Term_Bool
-
-        // key = value
-        node.value = (key % MAX_ID) !== 0
-
-        return node
-    }
-    case TERM_INT: {
-        let node = new Term_Int
-
-        // key = unsigned i32 payload
-        node.value = ((key >>> 0) | 0)
-
-        return node
-    }
-    case TERM_TYPE_BOOL:
-        return new Term_Type_Bool
-    case TERM_TYPE_INT:
-        return new Term_Type_Int
+    case TERM_ANY:       return new Term_Any
+    case TERM_NEVER:     return new Term_Never
+    case TERM_NIL:       return new Term_Nil
+    case TERM_NEG:       return term_neg_decode(key)
+    case TERM_BINARY:    return term_binary_decode(key)
+    case TERM_TERNARY:   return term_ternary_decode(key)
+    case TERM_VAR:       return term_var_decode(key)
+    case TERM_SELECT:    return term_select_decode(key)
+    case TERM_SCOPE:     return term_scope_decode(key)
+    case TERM_WORLD:     return term_world_decode(key)
+    case TERM_BOOL:      return term_bool_decode(key)
+    case TERM_INT:       return term_int_decode(key)
+    case TERM_TYPE_BOOL: return new Term_Type_Bool
+    case TERM_TYPE_INT:  return new Term_Type_Int
     }
 
     kind satisfies never
