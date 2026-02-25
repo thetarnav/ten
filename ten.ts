@@ -998,6 +998,12 @@ const _parse_expr_atom = (p: Parser): Expr => {
 type Scope_Id = number & {__scope_id: void}
 type Ident_Id = number & {__ident_id: void}
 type Term_Id  = number & {__term_id:  void}
+type Task_Id  = number & {__task_id: void}
+type World_Id = number & {__world_id: void}
+
+const MAX_ID            = 4194304 // 2^22
+
+const WORLD_ID_EMPTY    = 0 as World_Id
 
 const SCOPE_ID_BUILTIN  = 0 as Scope_Id
 const SCOPE_ID_GLOBAL   = 1 as Scope_Id
@@ -1013,8 +1019,6 @@ const TERM_ID_TYPE_BOOL = 4 as Term_Id
 const TERM_ID_TRUE      = 5 as Term_Id
 const TERM_ID_FALSE     = 6 as Term_Id
 const TERM_ID_ZERO      = 7 as Term_Id
-
-const MAX_ID            = 4194304 // 2^22
 
 const
     TERM_ANY        = 200 as const,
@@ -1037,7 +1041,7 @@ const
     TERM_ENUM_END   = TERM_TYPE_INT,
     TERM_ENUM_RANGE = TERM_ENUM_END - TERM_ENUM_START + 1
 
-export const Term_Kind = {
+const Term_Kind = {
     Any:       TERM_ANY,
     Never:     TERM_NEVER,
     Nil:       TERM_NIL,
@@ -1053,10 +1057,9 @@ export const Term_Kind = {
     Type_Bool: TERM_TYPE_BOOL,
     Type_Int:  TERM_TYPE_INT,
 } as const
+type Term_Kind = typeof Term_Kind[keyof typeof Term_Kind]
 
-export type Term_Kind = typeof Term_Kind[keyof typeof Term_Kind]
-
-export const term_kind_string = (kind: Term_Kind): string => {
+const term_kind_string = (kind: Term_Kind): string => {
     switch (kind) {
     case TERM_ANY:       return "Any"
     case TERM_NEVER:     return "Never"
@@ -1078,7 +1081,59 @@ export const term_kind_string = (kind: Term_Kind): string => {
     }
 }
 
-export type Term =
+const
+    TASK_NONE         = 300 as const,
+    TASK_EVAL_OUTPUT  = 301 as const,
+    TASK_EVAL_BINDING = 302 as const,
+    TASK_EVAL_TERM    = 303 as const,
+    TASK_ENUM_START   = TASK_NONE,
+    TASK_ENUM_END     = TASK_EVAL_TERM,
+    TASK_ENUM_RANGE   = TASK_ENUM_END - TASK_ENUM_START + 1
+
+const Task_Kind = {
+    None:         TASK_NONE,
+    Eval_Output:  TASK_EVAL_OUTPUT,
+    Eval_Binding: TASK_EVAL_BINDING,
+    Eval_Term:    TASK_EVAL_TERM,
+} as const
+type Task_Kind = typeof Task_Kind[keyof typeof Task_Kind]
+
+const task_kind_string = (kind: Task_Kind): string => {
+    switch (kind) {
+    case TASK_NONE:         return "None"
+    case TASK_EVAL_OUTPUT:  return "Eval_Output"
+    case TASK_EVAL_BINDING: return "Eval_Binding"
+    case TASK_EVAL_TERM:    return "Eval_Term"
+    default:
+        kind satisfies never // exhaustive check
+        return "Unknown"
+    }
+}
+
+const
+    TASK_STATE_PENDING = 400 as const,
+    TASK_STATE_RUNNING = 401 as const,
+    TASK_STATE_DONE    = 402 as const
+
+const Task_State = {
+    Pending: TASK_STATE_PENDING,
+    Running: TASK_STATE_RUNNING,
+    Done:    TASK_STATE_DONE,
+} as const
+type Task_State = typeof Task_State[keyof typeof Task_State]
+
+const task_state_string = (state: Task_State): string => {
+    switch (state) {
+    case TASK_STATE_PENDING: return "Pending"
+    case TASK_STATE_RUNNING: return "Running"
+    case TASK_STATE_DONE:    return "Done"
+    default:
+        state satisfies never // exhaustive check
+        return "Unknown"
+    }
+}
+
+type Term =
     | Term_Any
     | Term_Never
     | Term_Nil
@@ -1094,62 +1149,62 @@ export type Term =
     | Term_Type_Bool
     | Term_Type_Int
 
-export class Term_Any {
+class Term_Any {
     kind = TERM_ANY
 }
-export class Term_Never {
+class Term_Never {
     kind = TERM_NEVER
 }
-export class Term_Nil {
+class Term_Nil {
     kind = TERM_NIL
 }
-export class Term_Neg {
+class Term_Neg {
     kind = TERM_NEG
     rhs:   Term_Id    = TERM_ID_NONE
 }
-export class Term_Binary {
+class Term_Binary {
     kind = TERM_BINARY
     op:    Token_Kind = TOKEN_INVALID
     lhs:   Term_Id    = TERM_ID_NONE
     rhs:   Term_Id    = TERM_ID_NONE
 }
-export class Term_Ternary {
+class Term_Ternary {
     kind = TERM_TERNARY
     cond:  Term_Id    = TERM_ID_NONE
     lhs:   Term_Id    = TERM_ID_NONE
     rhs:   Term_Id    = TERM_ID_NONE
 }
-export class Term_Var {
+class Term_Var {
     kind = TERM_VAR
     prefix: Token_Kind = TOKEN_NONE
     ident:  Ident_Id   = IDENT_ID_NONE // Field(.foo)
 }
-export class Term_Select {
+class Term_Select {
     kind = TERM_SELECT
     lhs:   Term_Id    = TERM_ID_NONE  // Select(foo) | Scope({...})
     rhs:   Ident_Id   = IDENT_ID_NONE // Field(.foo)
 }
-export class Term_Scope {
+class Term_Scope {
     kind = TERM_SCOPE
     id:    Scope_Id   = SCOPE_ID_BUILTIN
 }
-export class Term_World {
+class Term_World {
     kind = TERM_WORLD
     // body:  Term_Id    = TERM_ID_NONE
     // world: World      = new World
 }
-export class Term_Bool {
+class Term_Bool {
     kind = TERM_BOOL
     value: boolean    = false
 }
-export class Term_Int {
+class Term_Int {
     kind = TERM_INT
     value: number     = 0
 }
-export class Term_Type_Bool {
+class Term_Type_Bool {
     kind = TERM_TYPE_BOOL
 }
-export class Term_Type_Int {
+class Term_Type_Int {
     kind = TERM_TYPE_INT
 }
 
@@ -1164,6 +1219,16 @@ class Binding {
     value: Term_Id | null = null
 }
 
+class Task {
+    kind:   Task_Kind = TASK_NONE
+    scope:  Scope_Id  = SCOPE_ID_GLOBAL
+    ident:  Ident_Id  = IDENT_ID_NONE
+    term:   Term_Id   = TERM_ID_NONE
+    world:  World_Id  = WORLD_ID_EMPTY
+    state:  number    = TASK_STATE_PENDING
+    result: Term_Id   = TERM_ID_NEVER
+}
+
 class Context {
     scope_arr: Scope[]                = []
 
@@ -1172,6 +1237,11 @@ class Context {
 
     ident_src: string[]               = []
     ident_map: Map<string, Ident_Id>  = new Map
+
+    task_arr:   Task[]                  = []
+    task_map:   Map<Task_Key, Task_Id>  = new Map
+    task_queue: Task_Id[]               = []
+    task_wait:  Map<Task_Id, Task_Id[]> = new Map
 }
 
 export function context_make(): Context {
@@ -1180,6 +1250,7 @@ export function context_make(): Context {
 
     ctx.scope_arr[SCOPE_ID_BUILTIN] = new Scope
     ctx.scope_arr[SCOPE_ID_GLOBAL]  = new Scope
+    ctx.scope_arr[SCOPE_ID_GLOBAL].parent = SCOPE_ID_BUILTIN
 
     ctx.term_arr[TERM_ID_ANY]       = new Term_Any
     ctx.term_arr[TERM_ID_NEVER]     = new Term_Never
@@ -1219,83 +1290,86 @@ const ident_expr_id_or_error = (ctx: Context, expr: Expr, src: string): Ident_Id
     let ident  = ident_id(ctx, string)
     return ident
 }
-export const ident_string = (ctx: Context, ident: Ident_Id): string => {
+const ident_string = (ctx: Context, ident: Ident_Id): string => {
     let str = ctx.ident_src[ident]
     assert(str != null, "Ident Id out of range")
     return str
 }
 
-/**
- * Node Key for looking up nodes in maps/sets.
- * The key is constructed from the node structure to uniquely identify it.
- * The same structure will always produce the same key.
- *
- * Layout:
- *                                        [kind]
- *                               [rhs id] * TERM_ENUM_RANGE
- *                      [lhs/id] * MAX_ID * TERM_ENUM_RANGE
- *            [value/ident] * MAX_ID * MAX_ID * TERM_ENUM_RANGE
- *
- * For scalar payload terms (`TERM_BOOL`, `TERM_INT`) we use a compact layout:
- *   key = kind_offset + payload * TERM_ENUM_RANGE
- * This keeps integer payloads inside safe 53-bit integer range.
- */
-export type Term_Key = number & {__term_key: void}
+/*
+ Node Key for looking up nodes in maps/sets.
+ The key is constructed from the node structure to uniquely identify it.
+ The same structure will always produce the same key.
 
-export const term_bool_encode = (value: boolean): Term_Key => {
+ Layout:
+                                        [kind]
+                               [rhs id] * TERM_ENUM_RANGE
+                      [lhs/id] * MAX_ID * TERM_ENUM_RANGE
+            [value/ident] * MAX_ID * MAX_ID * TERM_ENUM_RANGE
+
+ For scalar payload terms (`TERM_BOOL`, `TERM_INT`) we use a compact layout:
+   key = kind_offset + payload * TERM_ENUM_RANGE
+
+ This keeps payloads inside safe 53-bit integer range.
+*/
+
+type Term_Key = number & {__term_key: void}
+type Task_Key = number & {__task_key: void}
+
+const term_bool_encode = (value: boolean): Term_Key => {
     let key = TERM_BOOL - TERM_ENUM_START
     key += (+value) * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_int_encode = (value: number): Term_Key => {
+const term_int_encode = (value: number): Term_Key => {
     let key = TERM_INT - TERM_ENUM_START
     let bits = ((value|0) >>> 0)
     key += bits * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_neg_encode = (rhs: Term_Id) => {
+const term_neg_encode = (rhs: Term_Id) => {
     let key = TERM_NEG - TERM_ENUM_START
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Key => {
+const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Key => {
     let key = TERM_BINARY - TERM_ENUM_START
     key += op * MAX_ID * MAX_ID * TERM_ENUM_RANGE
     key += lhs * MAX_ID * TERM_ENUM_RANGE
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
+const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
     let key = TERM_TERNARY - TERM_ENUM_START
     key += cond * MAX_ID * MAX_ID * TERM_ENUM_RANGE
     key += lhs * MAX_ID * TERM_ENUM_RANGE
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_select_encode = (lhs: Term_Id, rhs: Ident_Id): Term_Key => {
+const term_select_encode = (lhs: Term_Id, rhs: Ident_Id): Term_Key => {
     let key = TERM_SELECT - TERM_ENUM_START
     key += lhs * MAX_ID * TERM_ENUM_RANGE
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_var_encode = (prefix: Token_Kind, id: Ident_Id): Term_Key => {
+const term_var_encode = (prefix: Token_Kind, id: Ident_Id): Term_Key => {
     let key = TERM_VAR - TERM_ENUM_START
     key += prefix * MAX_ID * TERM_ENUM_RANGE
     key += id * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_scope_encode = (id: Scope_Id): Term_Key => {
+const term_scope_encode = (id: Scope_Id): Term_Key => {
     let key = TERM_SCOPE - TERM_ENUM_START
     key += id * TERM_ENUM_RANGE
     return key as Term_Key
 }
-export const term_world_encode = (body: Term_Id): Term_Key => {
+const term_world_encode = (body: Term_Id): Term_Key => {
     let key = TERM_WORLD - TERM_ENUM_START
     key += body * TERM_ENUM_RANGE
     return key as Term_Key
 }
 
-export const term_decode = (_key: Term_Key): Term => {
+const term_decode = (_key: Term_Key): Term => {
 
     let kind = ((_key % TERM_ENUM_RANGE) + TERM_ENUM_START) as Term_Kind
     let key = Math.floor(_key / TERM_ENUM_RANGE)
@@ -1802,7 +1876,8 @@ const index_scope_binary = (
 
             let binding = binding_ensure(ctx, lhs_ident, scope_id)
             if (binding.value != null) {
-                error_semantic(ctx, expr, src, `Duplicate value binding for '${lhs_ident}'`)
+                let name = ident_string(ctx, lhs_ident)
+                error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
             }
             binding.value = rhs_value
         }
@@ -1811,13 +1886,14 @@ const index_scope_binary = (
     }
     // lhs : rhs
     case TOKEN_COLON: {
-        let name = ident_expr_id_or_error(ctx, lhs, src)
-        if (name == null) return
+        let ident = ident_expr_id_or_error(ctx, lhs, src)
+        if (ident == null) return
 
         let rhs_value = lower_expr(ctx, rhs, src, scope_id)
 
-        let binding = binding_ensure(ctx, name, scope_id)
+        let binding = binding_ensure(ctx, ident, scope_id)
         if (binding.type != null) {
+            let name = ident_string(ctx, ident)
             error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
         }
         binding.type = rhs_value
