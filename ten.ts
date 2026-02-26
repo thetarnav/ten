@@ -998,10 +998,10 @@ const _parse_expr_atom = (p: Parser): Expr => {
 type Scope_Id = number & {__scope_id: void}
 type Ident_Id = number & {__ident_id: void}
 type Term_Id  = number & {__term_id:  void}
-type Task_Id  = number & {__task_id: void}
 type World_Id = number & {__world_id: void}
 
-const MAX_ID            = 4194304 // 2^22
+const MAX_HIGH_ID       = 2097152 // 2^21 — terms
+const MAX_LOW_ID        = 8192    // 2^13 — idents/scopes
 
 const WORLD_ID_EMPTY    = 0 as World_Id
 
@@ -1083,27 +1083,36 @@ const term_kind_string = (kind: Term_Kind): string => {
 
 const
     TASK_NONE         = 300 as const,
-    TASK_EVAL_OUTPUT  = 301 as const,
-    TASK_EVAL_BINDING = 302 as const,
-    TASK_EVAL_TERM    = 303 as const,
+    TASK_BIND_TYPE    = 301 as const,
+    TASK_BIND_VALUE   = 302 as const,
+    TASK_BIND_FIELD   = 303 as const,
+    TASK_MATCH_TYPE   = 304 as const,
+    TASK_LOOKUP_VAR   = 305 as const,
+    TASK_LOOKUP_FIELD = 306 as const,
     TASK_ENUM_START   = TASK_NONE,
-    TASK_ENUM_END     = TASK_EVAL_TERM,
+    TASK_ENUM_END     = TASK_LOOKUP_FIELD,
     TASK_ENUM_RANGE   = TASK_ENUM_END - TASK_ENUM_START + 1
 
 const Task_Kind = {
     None:         TASK_NONE,
-    Eval_Output:  TASK_EVAL_OUTPUT,
-    Eval_Binding: TASK_EVAL_BINDING,
-    Eval_Term:    TASK_EVAL_TERM,
+    Bind_Type:    TASK_BIND_TYPE,
+    Bind_Value:   TASK_BIND_VALUE,
+    Bind_Field:   TASK_BIND_FIELD,
+    Match_Type:   TASK_MATCH_TYPE,
+    Lookup_Var:   TASK_LOOKUP_VAR,
+    Lookup_Field: TASK_LOOKUP_FIELD,
 } as const
 type Task_Kind = typeof Task_Kind[keyof typeof Task_Kind]
 
 const task_kind_string = (kind: Task_Kind): string => {
     switch (kind) {
     case TASK_NONE:         return "None"
-    case TASK_EVAL_OUTPUT:  return "Eval_Output"
-    case TASK_EVAL_BINDING: return "Eval_Binding"
-    case TASK_EVAL_TERM:    return "Eval_Term"
+    case TASK_BIND_TYPE:    return "Bind_Type"
+    case TASK_BIND_VALUE:   return "Bind_Value"
+    case TASK_BIND_FIELD:   return "Bind_Field"
+    case TASK_MATCH_TYPE:   return "Match_Type"
+    case TASK_LOOKUP_VAR:   return "Lookup_Var"
+    case TASK_LOOKUP_FIELD: return "Lookup_Field"
     default:
         kind satisfies never // exhaustive check
         return "Unknown"
@@ -1238,10 +1247,9 @@ class Context {
     ident_src: string[]               = []
     ident_map: Map<string, Ident_Id>  = new Map
 
-    task_arr:   Task[]                  = []
-    task_map:   Map<Task_Key, Task_Id>  = new Map
-    task_queue: Task_Id[]               = []
-    task_wait:  Map<Task_Id, Task_Id[]> = new Map
+    task_map:   Map<Task_Key, Task>       = new Map
+    task_queue: Task_Key[]                = []
+    task_wait:  Map<Task_Key, Task_Key[]> = new Map
 }
 
 export function context_make(): Context {
@@ -1275,7 +1283,7 @@ const ident_id = (ctx: Context, name: string): Ident_Id => {
     let ident = ctx.ident_map.get(name)
     if (ident == null) {
         ident = ctx.ident_src.length as Ident_Id
-        assert(ident <= MAX_ID, "Exceeded maximum number of identifiers")
+        assert(ident <= MAX_HIGH_ID, "Exceeded maximum number of identifiers")
         ctx.ident_map.set(name, ident)
         ctx.ident_src[ident] = name
     }
@@ -1324,7 +1332,7 @@ const term_bool_encode = (value: boolean): Term_Key => {
 }
 const term_bool_decode = (key: number): Term_Bool => {
     let node = new Term_Bool
-    node.value = (key % MAX_ID) !== 0
+    node.value = (key % MAX_HIGH_ID) !== 0
     return node
 }
 
@@ -1349,68 +1357,71 @@ const term_neg_encode = (rhs: Term_Id): Term_Key => {
 }
 const term_neg_decode = (key: number): Term_Neg => {
     let node = new Term_Neg
-    node.rhs = (key % MAX_ID) as Term_Id
+    node.rhs = (key % MAX_HIGH_ID) as Term_Id
     return node
 }
 
-// key = op + lhs + rhs
+// key = [kind: TERM_ENUM] [op: TOKEN_ENUM] [lhs: HIGH_ID] [rhs: HIGH_ID]
 const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Key => {
-    let key = TERM_BINARY - TERM_ENUM_START
-    key += op * MAX_ID * MAX_ID * TERM_ENUM_RANGE
-    key += lhs * MAX_ID * TERM_ENUM_RANGE
-    key += rhs * TERM_ENUM_RANGE
-    return key as Term_Key
+    return (
+        (TERM_BINARY - TERM_ENUM_START) +
+        (op - TOKEN_ENUM_START        ) * TERM_ENUM_RANGE +
+        (lhs                          ) * TERM_ENUM_RANGE * TOKEN_ENUM_RANGE +
+        (rhs                          ) * TERM_ENUM_RANGE * TOKEN_ENUM_RANGE * MAX_HIGH_ID +
+    0) as Term_Key
 }
 const term_binary_decode = (key: number): Term_Binary => {
     let node = new Term_Binary
 
-    node.rhs = (key % MAX_ID) as Term_Id
-    key = Math.floor(key / MAX_ID)
+    node.op = (key % TOKEN_ENUM_RANGE + TERM_ENUM_START) as Token_Kind
+    key = Math.floor(key / TOKEN_ENUM_RANGE)
 
-    node.lhs = (key % MAX_ID) as Term_Id
-    key = Math.floor(key / MAX_ID)
+    node.lhs = (key % MAX_HIGH_ID) as Term_Id
+    key = Math.floor(key / MAX_HIGH_ID)
 
-    node.op = (key % MAX_ID) as Token_Kind
+    node.rhs = (key % MAX_HIGH_ID) as Term_Id
 
     return node
 }
 
+// TODO: ternary cannot be encoded in the current layout because it would exceed 53 bits
 // key = cond + lhs + rhs
 const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
     let key = TERM_TERNARY - TERM_ENUM_START
-    key += cond * MAX_ID * MAX_ID * TERM_ENUM_RANGE
-    key += lhs * MAX_ID * TERM_ENUM_RANGE
+    key += cond * MAX_HIGH_ID * MAX_HIGH_ID * TERM_ENUM_RANGE
+    key += lhs * MAX_HIGH_ID * TERM_ENUM_RANGE
     key += rhs * TERM_ENUM_RANGE
     return key as Term_Key
 }
 const term_ternary_decode = (key: number): Term_Ternary => {
     let node = new Term_Ternary
 
-    node.rhs = (key % MAX_ID) as Term_Id
-    key = Math.floor(key / MAX_ID)
+    node.rhs = (key % MAX_HIGH_ID) as Term_Id
+    key = Math.floor(key / MAX_HIGH_ID)
 
-    node.lhs = (key % MAX_ID) as Term_Id
-    key = Math.floor(key / MAX_ID)
+    node.lhs = (key % MAX_HIGH_ID) as Term_Id
+    key = Math.floor(key / MAX_HIGH_ID)
 
-    node.cond = (key % MAX_ID) as Term_Id
+    node.cond = (key % MAX_HIGH_ID) as Term_Id
 
     return node
 }
 
-// key = lhs + rhs
+// key = [kind: TERM_ENUM] [lhs: HIGH_ID] [rhs: LOW_ID]
 const term_select_encode = (lhs: Term_Id, rhs: Ident_Id): Term_Key => {
-    let key = TERM_SELECT - TERM_ENUM_START
-    key += lhs * MAX_ID * TERM_ENUM_RANGE
-    key += rhs * TERM_ENUM_RANGE
-    return key as Term_Key
+    return (
+        (TERM_SELECT - TERM_ENUM_START) +
+        (lhs                          ) * TERM_ENUM_RANGE +
+        (rhs                          ) * TERM_ENUM_RANGE * MAX_HIGH_ID +
+    0) as Term_Key
 }
 const term_select_decode = (key: number): Term_Select => {
     let node = new Term_Select
 
-    node.rhs = (key % MAX_ID) as Ident_Id
-    key = Math.floor(key / MAX_ID)
+    node.lhs = (key % MAX_HIGH_ID) as Term_Id
+    key = Math.floor(key / MAX_HIGH_ID)
 
-    node.lhs = (key % MAX_ID) as Term_Id
+    node.rhs = (key % MAX_LOW_ID) as Ident_Id
 
     return node
 }
@@ -1418,17 +1429,17 @@ const term_select_decode = (key: number): Term_Select => {
 // key = prefix + ident
 const term_var_encode = (prefix: Token_Kind, id: Ident_Id): Term_Key => {
     let key = TERM_VAR - TERM_ENUM_START
-    key += prefix * MAX_ID * TERM_ENUM_RANGE
+    key += prefix * MAX_HIGH_ID * TERM_ENUM_RANGE
     key += id * TERM_ENUM_RANGE
     return key as Term_Key
 }
 const term_var_decode = (key: number): Term_Var => {
     let node = new Term_Var
 
-    node.ident = (key % MAX_ID) as Ident_Id
-    key = Math.floor(key / MAX_ID)
+    node.ident = (key % MAX_HIGH_ID) as Ident_Id
+    key = Math.floor(key / MAX_HIGH_ID)
 
-    node.prefix = (key % MAX_ID) as Token_Kind
+    node.prefix = (key % MAX_HIGH_ID) as Token_Kind
 
     return node
 }
@@ -1441,7 +1452,7 @@ const term_scope_encode = (id: Scope_Id): Term_Key => {
 }
 const term_scope_decode = (key: number): Term_Scope => {
     let node = new Term_Scope
-    node.id = (key % MAX_ID) as Scope_Id
+    node.id = (key % MAX_HIGH_ID) as Scope_Id
     return node
 }
 
@@ -1486,7 +1497,7 @@ export const term_from_key = (ctx: Context, key: Term_Key): Term_Id => {
     let id = ctx.term_map.get(key)
     if (id == null) {
         id = ctx.term_arr.length as Term_Id
-        assert(id <= MAX_ID, "Exceeded maximum number of terms")
+        assert(id <= MAX_HIGH_ID, "Exceeded maximum number of terms")
         ctx.term_map.set(key, id)
         ctx.term_arr[id] = term_decode(key)
     }
@@ -1720,6 +1731,47 @@ const term_world = (ctx: Context, body_id: Term_Id): Term_Id => {
     return term_from_key(ctx, key)
 }
 
+const task_bind_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, value: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
+
+    // [kind: TASK_ENUM] [sel_lhs: LOW_ID] [lhs: sel_rhs: LOW_ID] [scope_id: LOW_ID]
+    let key = (
+        (TASK_BIND_FIELD - TASK_ENUM_START) +
+        (sel_lhs                          ) * TASK_ENUM_RANGE +
+        (sel_rhs                          ) * TASK_ENUM_RANGE * MAX_LOW_ID +
+        (scope_id                         ) * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
+    0) as Task_Key
+
+    let task = new Task
+    task.kind  = TASK_BIND_FIELD
+    task.ident = sel_rhs
+    task.term  = value
+    task.scope = scope_id
+
+    if (ctx.task_map.has(key)) {
+        let name = ident_string(ctx, sel_rhs)
+        error_semantic(ctx, expr, src, `Duplicate field binding for '${name}'`)
+    }
+    ctx.task_map.set(key, task)
+
+    ctx.task_queue.push(key)
+}
+const task_bind_value = (ctx: Context, ident: Ident_Id, value: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
+    let binding = binding_ensure(ctx, ident, scope_id)
+    if (binding.value != null) {
+        let name = ident_string(ctx, ident)
+        error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
+    }
+    binding.value = value
+}
+const task_bind_type = (ctx: Context, ident: Ident_Id, type: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
+    let binding = binding_ensure(ctx, ident, scope_id)
+    if (binding.type != null) {
+        let name = ident_string(ctx, ident)
+        error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
+    }
+    binding.type = type
+}
+
 const error_semantic = (ctx: Context, expr: Expr, src: string, message: string) => {
     console.error(`${message}: \`${expr_string(src, expr)}\``)
 }
@@ -1784,7 +1836,7 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
         case TOKEN_BRACE_L: {
 
             let new_scope_id = ctx.scope_arr.length as Scope_Id
-            assert(new_scope_id <= MAX_ID, "Exceeded maximum number of scopes")
+            assert(new_scope_id <= MAX_HIGH_ID, "Exceeded maximum number of scopes")
 
             let scope = new Scope
             ctx.scope_arr[new_scope_id] = scope
@@ -1852,46 +1904,52 @@ const index_scope_binary = (
             lhs = lhs.lhs
         }
 
-        let rhs_value = lower_expr(ctx, rhs, src, scope_id)
+        let value = lower_expr(ctx, rhs, src, scope_id)
 
         // foo.bar = rhs
         if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_DOT) {
 
+            // TODO: support nested selects (foo.bar.baz)
             let base_name  = ident_expr_id_or_error(ctx, lhs.lhs, src)
             let field_name = ident_expr_id_or_error(ctx, lhs.rhs, src)
-            if (base_name == null || field_name == null) return
+            if (base_name == null || field_name == null) {
+                error_semantic(ctx, lhs, src, 'Invalid field binding target')
+                return
+            }
 
-            let binding = binding_ensure(ctx, base_name, scope_id)
-            // binding.field_assignments.push({field_name, value: rhs_value})
+            task_bind_field(ctx, base_name, field_name, value, scope_id, expr, src)
         }
         // foo = rhs
         else {
-            let lhs_ident = ident_expr_id_or_error(ctx, lhs, src)
-            if (lhs_ident == null) return
+            let ident = ident_expr_id_or_error(ctx, lhs, src)
+            if (ident == null) {
+                error_semantic(ctx, lhs, src, 'Invalid value binding target')
+                return
+            }
 
-            let binding = binding_ensure(ctx, lhs_ident, scope_id)
+            let binding = binding_ensure(ctx, ident, scope_id)
             if (binding.value != null) {
-                let name = ident_string(ctx, lhs_ident)
+                let name = ident_string(ctx, ident)
                 error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
             }
-            binding.value = rhs_value
+            binding.value = value
+
+            task_bind_value(ctx, ident, value, scope_id, expr, src)
         }
 
         return
     }
     // lhs : rhs
     case TOKEN_COLON: {
+        let type = lower_expr(ctx, rhs, src, scope_id)
+
         let ident = ident_expr_id_or_error(ctx, lhs, src)
-        if (ident == null) return
-
-        let rhs_value = lower_expr(ctx, rhs, src, scope_id)
-
-        let binding = binding_ensure(ctx, ident, scope_id)
-        if (binding.type != null) {
-            let name = ident_string(ctx, ident)
-            error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
+        if (ident == null) {
+            error_semantic(ctx, lhs, src, 'Invalid type constraint target')
+            return
         }
-        binding.type = rhs_value
+
+        task_bind_type(ctx, ident, type, scope_id, expr, src)
 
         return
     }
