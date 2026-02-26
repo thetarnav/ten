@@ -1089,30 +1089,33 @@ const
     TASK_MATCH_TYPE   = 304 as const,
     TASK_LOOKUP_VAR   = 305 as const,
     TASK_LOOKUP_FIELD = 306 as const,
+    TASK_RESOLVE_OUTPUT = 307 as const,
     TASK_ENUM_START   = TASK_NONE,
-    TASK_ENUM_END     = TASK_LOOKUP_FIELD,
+    TASK_ENUM_END     = TASK_RESOLVE_OUTPUT,
     TASK_ENUM_RANGE   = TASK_ENUM_END - TASK_ENUM_START + 1
 
 const Task_Kind = {
-    None:         TASK_NONE,
-    Bind_Type:    TASK_BIND_TYPE,
-    Bind_Value:   TASK_BIND_VALUE,
-    Bind_Field:   TASK_BIND_FIELD,
-    Match_Type:   TASK_MATCH_TYPE,
-    Lookup_Var:   TASK_LOOKUP_VAR,
-    Lookup_Field: TASK_LOOKUP_FIELD,
+    None:           TASK_NONE,
+    Bind_Type:      TASK_BIND_TYPE,
+    Bind_Value:     TASK_BIND_VALUE,
+    Bind_Field:     TASK_BIND_FIELD,
+    Match_Type:     TASK_MATCH_TYPE,
+    Lookup_Var:     TASK_LOOKUP_VAR,
+    Lookup_Field:   TASK_LOOKUP_FIELD,
+    Resolve_Output: TASK_RESOLVE_OUTPUT,
 } as const
 type Task_Kind = typeof Task_Kind[keyof typeof Task_Kind]
 
 const task_kind_string = (kind: Task_Kind): string => {
     switch (kind) {
-    case TASK_NONE:         return "None"
-    case TASK_BIND_TYPE:    return "Bind_Type"
-    case TASK_BIND_VALUE:   return "Bind_Value"
-    case TASK_BIND_FIELD:   return "Bind_Field"
-    case TASK_MATCH_TYPE:   return "Match_Type"
-    case TASK_LOOKUP_VAR:   return "Lookup_Var"
-    case TASK_LOOKUP_FIELD: return "Lookup_Field"
+    case TASK_NONE:           return "None"
+    case TASK_BIND_TYPE:      return "Bind_Type"
+    case TASK_BIND_VALUE:     return "Bind_Value"
+    case TASK_BIND_FIELD:     return "Bind_Field"
+    case TASK_MATCH_TYPE:     return "Match_Type"
+    case TASK_LOOKUP_VAR:     return "Lookup_Var"
+    case TASK_LOOKUP_FIELD:   return "Lookup_Field"
+    case TASK_RESOLVE_OUTPUT: return "Resolve_Output"
     default:
         kind satisfies never // exhaustive check
         return "Unknown"
@@ -1250,6 +1253,8 @@ class Context {
     task_map:   Map<Task_Key, Task>       = new Map
     task_queue: Task_Key[]                = []
     task_wait:  Map<Task_Key, Task_Key[]> = new Map
+
+    output: Term_Id | null = null
 }
 
 export function context_make(): Context {
@@ -1735,10 +1740,10 @@ const task_bind_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, val
 
     // [kind: TASK_ENUM] [sel_lhs: LOW_ID] [lhs: sel_rhs: LOW_ID] [scope_id: LOW_ID]
     let key = (
-        (TASK_BIND_FIELD - TASK_ENUM_START) +
-        (sel_lhs                          ) * TASK_ENUM_RANGE +
-        (sel_rhs                          ) * TASK_ENUM_RANGE * MAX_LOW_ID +
-        (scope_id                         ) * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
+        TASK_BIND_FIELD - TASK_ENUM_START +
+        sel_lhs  * TASK_ENUM_RANGE +
+        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
     0) as Task_Key
 
     let task = new Task
@@ -1756,20 +1761,116 @@ const task_bind_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, val
     ctx.task_queue.push(key)
 }
 const task_bind_value = (ctx: Context, ident: Ident_Id, value: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
-    let binding = binding_ensure(ctx, ident, scope_id)
-    if (binding.value != null) {
-        let name = ident_string(ctx, ident)
-        error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
-    }
-    binding.value = value
+    // let binding = binding_ensure(ctx, ident, scope_id)
+    // if (binding.value != null) {
+    //     let name = ident_string(ctx, ident)
+    //     error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
+    // }
+    // binding.value = value
 }
 const task_bind_type = (ctx: Context, ident: Ident_Id, type: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
-    let binding = binding_ensure(ctx, ident, scope_id)
-    if (binding.type != null) {
+    // let binding = binding_ensure(ctx, ident, scope_id)
+    // if (binding.type != null) {
+    //     let name = ident_string(ctx, ident)
+    //     error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
+    // }
+    // binding.type = type
+}
+const task_lookup_var = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
+
+    // [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
+    let key = (
+        TASK_LOOKUP_VAR - TASK_ENUM_START +
+        ident    * TASK_ENUM_RANGE +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
+    0) as Task_Key
+
+    let task = new Task
+    task.kind  = TASK_LOOKUP_VAR
+    task.ident = ident
+    task.scope = scope_id
+
+    if (ctx.task_map.has(key)) {
         let name = ident_string(ctx, ident)
-        error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
+        error_semantic(ctx, expr, src, `Duplicate variable lookup for '${name}'`)
     }
-    binding.type = type
+    ctx.task_map.set(key, task)
+
+    ctx.task_queue.push(key)
+}
+const task_lookup_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: Scope_Id, expr: Expr, src: string): Task => {
+
+    // [kind: TASK_ENUM] [sel_lhs: LOW_ID] [sel_rhs: LOW_ID] [scope_id: LOW_ID]
+    let key = (
+        TASK_LOOKUP_FIELD - TASK_ENUM_START +
+        sel_lhs  * TASK_ENUM_RANGE +
+        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
+    0) as Task_Key
+
+    let task = ctx.task_map.get(key)
+
+    if (task == null) {
+        task = new Task
+        task.kind  = TASK_LOOKUP_FIELD
+        task.ident = sel_rhs
+        task.scope = scope_id
+
+        ctx.task_map.set(key, task)
+        ctx.task_queue.push(key)
+    }
+
+    return task
+}
+const task_resolve_output = (ctx: Context) => {
+
+    let key = TASK_RESOLVE_OUTPUT as Task_Key
+
+    let task = new Task
+    task.kind = TASK_RESOLVE_OUTPUT
+
+    if (ctx.task_map.has(key)) {
+        error_semantic(ctx, {kind: EXPR_INVALID, reason: 'Multiple output expressions'} as Expr, '', 'Multiple output expressions')
+    }
+    ctx.task_map.set(key, task)
+
+    ctx.task_queue.push(key)
+}
+
+const tasks_queue_run = (ctx: Context) => {
+    while (ctx.task_queue.length > 0) {
+        let key = ctx.task_queue.shift()! // TODO: optimize with circular buffer
+        let task = ctx.task_map.get(key)
+        assert(task != null, "Task not found for key in queue")
+
+        task.state = TASK_STATE_RUNNING
+
+        console.log(`Running task: ${task_kind_string(task.kind)} ${ident_string(ctx, task.ident)} in scope ${task.scope}`)
+
+        switch (task.kind) {
+        case TASK_BIND_FIELD:
+            task_bind_value(ctx, task.ident, task.term, task.scope, {kind: EXPR_INVALID, reason: 'Task context'} as Expr, '')
+            break
+        case TASK_BIND_VALUE:
+            break
+        case TASK_BIND_TYPE:
+            break
+        case TASK_RESOLVE_OUTPUT: {
+            let ident = ident_id(ctx, 'output')
+            let task = task_lookup_field(ctx, ident, ident, SCOPE_ID_GLOBAL, {kind: EXPR_INVALID, reason: 'Task context'} as Expr, '')
+            if (task.state !== TASK_STATE_DONE) {
+                task_resolve_output(ctx) // requeue
+                continue
+            }
+            // TODO: handle output
+            break
+        }
+        default:
+            unreachable()
+        }
+
+        task.state = TASK_STATE_DONE
+    }
 }
 
 const error_semantic = (ctx: Context, expr: Expr, src: string, message: string) => {
@@ -1981,6 +2082,8 @@ export function add_expr(ctx: Context, expr: Expr, src: string) {
 }
 
 export function reduce(ctx: Context) {
+    task_resolve_output(ctx)
+    tasks_queue_run(ctx)
 }
 
 export function display(ctx: Context): string {
