@@ -1090,8 +1090,9 @@ const
     TASK_LOOKUP_VAR     = 305 as const,
     TASK_LOOKUP_FIELD   = 306 as const,
     TASK_RESOLVE_OUTPUT = 307 as const,
+    TASK_REDUCE_TERM    = 308 as const,
     TASK_ENUM_START     = TASK_NONE,
-    TASK_ENUM_END       = TASK_RESOLVE_OUTPUT,
+    TASK_ENUM_END       = TASK_REDUCE_TERM,
     TASK_ENUM_RANGE     = TASK_ENUM_END - TASK_ENUM_START + 1
 
 const Task_Kind = {
@@ -1103,6 +1104,7 @@ const Task_Kind = {
     Lookup_Var:     TASK_LOOKUP_VAR,
     Lookup_Field:   TASK_LOOKUP_FIELD,
     Resolve_Output: TASK_RESOLVE_OUTPUT,
+    Reduce_Term:    TASK_REDUCE_TERM,
 } as const
 type Task_Kind = typeof Task_Kind[keyof typeof Task_Kind]
 
@@ -1116,6 +1118,7 @@ const task_kind_string = (kind: Task_Kind): string => {
     case TASK_LOOKUP_VAR:     return "Lookup_Var"
     case TASK_LOOKUP_FIELD:   return "Lookup_Field"
     case TASK_RESOLVE_OUTPUT: return "Resolve_Output"
+    case TASK_REDUCE_TERM:    return "Reduce_Term"
     default:
         kind satisfies never // exhaustive check
         return "Unknown"
@@ -1786,6 +1789,14 @@ const task_key_lookup_field = (sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: S
         scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
     0) as Task_Key
 }
+// [kind: TASK_ENUM] [term: HIGH_ID] [scope_id: LOW_ID]
+const task_key_reduce_term = (term: Term_Id, scope_id: Scope_Id): Task_Key => {
+    return (
+        TASK_REDUCE_TERM - TASK_ENUM_START +
+        term     * TASK_ENUM_RANGE +
+        scope_id * TASK_ENUM_RANGE * MAX_HIGH_ID +
+    0) as Task_Key
+}
 // [kind: TASK_ENUM]
 const task_key_resolve_output = (): Task_Key => {
     return (TASK_RESOLVE_OUTPUT - TASK_ENUM_START) as Task_Key
@@ -1880,6 +1891,15 @@ const task_resolve_output = (ctx: Context): Task => {
 
     return task
 }
+const task_reduce_term = (ctx: Context, term: Term_Id, scope: Scope_Id): Task => {
+    let key = task_key_reduce_term(term, scope)
+
+    let task = task_make(ctx, key)
+    task.term  = term
+    task.scope = scope
+
+    return task
+}
 
 const tasks_queue_run = (ctx: Context) => {
     while (ctx.task_queue.length > 0) {
@@ -1935,6 +1955,10 @@ const tasks_queue_run = (ctx: Context) => {
         }
         case TASK_MATCH_TYPE:
             break
+        case TASK_REDUCE_TERM: {
+            task.result = task.term
+            break
+        }
         case TASK_LOOKUP_VAR: {
             // let scope = scope_get(ctx, task.scope)
             // let binding = scope.fields.get(task.ident)
