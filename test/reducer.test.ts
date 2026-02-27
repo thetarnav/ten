@@ -29,6 +29,16 @@ function test_reducer(input: string, expected: string, expected_diagnostics: str
 }
 
 test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
+
+    test_reducer(`
+        output = 1
+    `, `1`)
+
+    test_reducer(`
+        a = 1
+        output = a
+    `, `1`)
+
     test_reducer(`
         a: int = 1
         output = a
