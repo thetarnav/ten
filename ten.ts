@@ -1236,6 +1236,8 @@ class Binding {
 
 class Task {
     kind:   Task_Kind  = TASK_NONE
+    key:    Task_Key   = 0 as Task_Key
+
     scope:  Scope_Id   = SCOPE_ID_GLOBAL
     ident:  Ident_Id   = IDENT_ID_NONE
     term:   Term_Id    = TERM_ID_NONE
@@ -1480,7 +1482,7 @@ const term_world_decode = (key: number): Term_World => {
 
 const term_decode = (_key: Term_Key): Term => {
 
-    let kind = ((_key % TERM_ENUM_RANGE) + TERM_ENUM_START) as Term_Kind
+    let kind = (_key % TERM_ENUM_RANGE + TERM_ENUM_START) as Term_Kind
     let key = Math.floor(_key / TERM_ENUM_RANGE)
 
     switch (kind) {
@@ -1742,35 +1744,83 @@ const term_world = (ctx: Context, body_id: Term_Id): Term_Id => {
     return term_from_key(ctx, key)
 }
 
-const task_enqueue = (ctx: Context, key: Task_Key): Task => {
+// [kind: TASK_ENUM] [sel_lhs: LOW_ID] [sel_rhs: LOW_ID] [scope_id: LOW_ID]
+const task_key_bind_field = (sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: Scope_Id): Task_Key => {
+    return (
+        TASK_BIND_FIELD - TASK_ENUM_START +
+        sel_lhs  * TASK_ENUM_RANGE +
+        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
+    0) as Task_Key
+}
+// [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
+const task_key_bind_value = (ident: Ident_Id, scope_id: Scope_Id): Task_Key => {
+    return (
+        TASK_BIND_VALUE - TASK_ENUM_START +
+        ident    * TASK_ENUM_RANGE +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
+    0) as Task_Key
+}
+// [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
+const task_key_bind_type = (ident: Ident_Id, scope_id: Scope_Id): Task_Key => {
+    return (
+        TASK_BIND_TYPE - TASK_ENUM_START +
+        ident    * TASK_ENUM_RANGE +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
+    0) as Task_Key
+}
+// [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
+const task_key_lookup_var = (ident: Ident_Id, scope_id: Scope_Id): Task_Key => {
+    return (
+        TASK_LOOKUP_VAR - TASK_ENUM_START +
+        ident    * TASK_ENUM_RANGE +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
+    0) as Task_Key
+}
+// [kind: TASK_ENUM] [sel_lhs: LOW_ID] [sel_rhs: LOW_ID] [scope_id: LOW_ID]
+const task_key_lookup_field = (sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: Scope_Id): Task_Key => {
+    return (
+        TASK_LOOKUP_FIELD - TASK_ENUM_START +
+        sel_lhs  * TASK_ENUM_RANGE +
+        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
+        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
+    0) as Task_Key
+}
+// [kind: TASK_ENUM]
+const task_key_resolve_output = (): Task_Key => {
+    return (TASK_RESOLVE_OUTPUT - TASK_ENUM_START) as Task_Key
+}
+
+const task_make = (ctx: Context, key: Task_Key): Task => {
 
     let task = ctx.task_map.get(key)
 
     if (task == null) {
         task = new Task
         ctx.task_map.set(key, task)
-    }
 
-    if (task.state !== TASK_STATE_QUEUE) {
+        task.kind  = (key % TASK_ENUM_RANGE + TASK_ENUM_START) as Task_Kind
+        task.key   = key
         task.state = TASK_STATE_QUEUE
         ctx.task_queue.push(key)
     }
 
     return task
 }
+const task_requeue = (ctx: Context, task: Task): Task => {
+
+    if (task.state !== TASK_STATE_QUEUE) {
+        task.state = TASK_STATE_QUEUE
+        ctx.task_queue.push(task.key)
+    }
+
+    return task
+}
 
 const task_bind_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, value: Term_Id, scope_id: Scope_Id, expr: Expr, src: string): Task => {
+    let key = task_key_bind_field(sel_lhs, sel_rhs, scope_id)
 
-    // [kind: TASK_ENUM] [sel_lhs: LOW_ID] [lhs: sel_rhs: LOW_ID] [scope_id: LOW_ID]
-    let key = (
-        TASK_BIND_FIELD - TASK_ENUM_START +
-        sel_lhs  * TASK_ENUM_RANGE +
-        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
-    0) as Task_Key
-
-    let task = task_enqueue(ctx, key)
-    task.kind  = TASK_BIND_FIELD
+    let task = task_make(ctx, key)
     task.ident = sel_rhs
     task.term  = value
     task.scope = scope_id
@@ -1778,16 +1828,9 @@ const task_bind_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, val
     return task
 }
 const task_bind_value = (ctx: Context, ident: Ident_Id, value: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
+    let key = task_key_bind_value(ident, scope_id)
 
-    // [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
-    let key = (
-        TASK_BIND_VALUE - TASK_ENUM_START +
-        ident    * TASK_ENUM_RANGE +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
-    0) as Task_Key
-
-    let task = task_enqueue(ctx, key)
-    task.kind  = TASK_BIND_VALUE
+    let task = task_make(ctx, key)
     task.ident = ident
     task.term  = value
     task.scope = scope_id
@@ -1797,16 +1840,9 @@ const task_bind_value = (ctx: Context, ident: Ident_Id, value: Term_Id, scope_id
     return task
 }
 const task_bind_type = (ctx: Context, ident: Ident_Id, type: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
+    let key = task_key_bind_type(ident, scope_id)
 
-    // [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
-    let key = (
-        TASK_BIND_TYPE - TASK_ENUM_START +
-        ident    * TASK_ENUM_RANGE +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
-    0) as Task_Key
-
-    let task = task_enqueue(ctx, key)
-    task.kind  = TASK_BIND_TYPE
+    let task = task_make(ctx, key)
     task.ident = ident
     task.term  = type
     task.scope = scope_id
@@ -1816,16 +1852,9 @@ const task_bind_type = (ctx: Context, ident: Ident_Id, type: Term_Id, scope_id: 
     return task
 }
 const task_lookup_var = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id, expr: Expr, src: string): Task => {
+    let key = task_key_lookup_var(ident, scope_id)
 
-    // [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
-    let key = (
-        TASK_LOOKUP_VAR - TASK_ENUM_START +
-        ident    * TASK_ENUM_RANGE +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
-    0) as Task_Key
-
-    let task = task_enqueue(ctx, key)
-    task.kind  = TASK_LOOKUP_VAR
+    let task = task_make(ctx, key)
     task.ident = ident
     task.scope = scope_id
     task.expr  = expr
@@ -1834,17 +1863,9 @@ const task_lookup_var = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id, expr
     return task
 }
 const task_lookup_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: Scope_Id, expr: Expr, src: string): Task => {
+    let key = task_key_lookup_field(sel_lhs, sel_rhs, scope_id)
 
-    // [kind: TASK_ENUM] [sel_lhs: LOW_ID] [sel_rhs: LOW_ID] [scope_id: LOW_ID]
-    let key = (
-        TASK_LOOKUP_FIELD - TASK_ENUM_START +
-        sel_lhs  * TASK_ENUM_RANGE +
-        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
-    0) as Task_Key
-
-    let task = task_enqueue(ctx, key)
-    task.kind  = TASK_LOOKUP_FIELD
+    let task = task_make(ctx, key)
     task.ident = sel_rhs
     task.scope = scope_id
     task.expr  = expr
@@ -1853,11 +1874,9 @@ const task_lookup_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, s
     return task
 }
 const task_resolve_output = (ctx: Context): Task => {
+    let key = task_key_resolve_output()
 
-    let key = TASK_RESOLVE_OUTPUT as Task_Key
-
-    let task = task_enqueue(ctx, key)
-    task.kind = TASK_RESOLVE_OUTPUT
+    let task = task_make(ctx, key)
 
     return task
 }
@@ -1890,6 +1909,7 @@ const tasks_queue_run = (ctx: Context) => {
                 error_semantic(ctx, task.expr, task.src, `Duplicate value binding for '${name}'`)
             }
             binding.value = task.term
+            task.result   = task.term
             break
         }
         case TASK_BIND_TYPE: {
@@ -1899,13 +1919,14 @@ const tasks_queue_run = (ctx: Context) => {
                 error_semantic(ctx, task.expr, task.src, `Duplicate type constraint for '${name}'`)
             }
             binding.type = task.term
+            task.result  = task.term
             break
         }
         case TASK_RESOLVE_OUTPUT: {
             let ident = ident_id(ctx, 'output')
             let lookup = task_lookup_var(ctx, ident, SCOPE_ID_GLOBAL, {kind: EXPR_INVALID, reason: 'Task context'} as Expr, '')
             if (lookup.state !== TASK_STATE_DONE) {
-                // task_resolve_output(ctx) // requeue
+                task_requeue(ctx, task)
                 continue
             }
 
@@ -2161,8 +2182,75 @@ export function reduce(ctx: Context) {
     tasks_queue_run(ctx)
 }
 
+const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_Id>()): string => {
+    switch (term_id) {
+    case TERM_ID_ANY:       return '()'
+    case TERM_ID_NEVER:     return '!()'
+    case TERM_ID_NIL:       return 'nil'
+    case TERM_ID_TYPE_INT:  return 'int'
+    case TERM_ID_TYPE_BOOL: return 'bool'
+    }
+
+    let term = term_by_id_assert(ctx, term_id)
+    switch (term.kind) {
+    case TERM_BOOL:
+        return term.value ? 'true' : 'false'
+    case TERM_INT:
+        return `${term.value}`
+    case TERM_VAR:
+        return ident_string(ctx, term.ident)
+    case TERM_NEG:
+        return `!${term_string(ctx, term.rhs, seen_scope)}`
+    case TERM_BINARY: {
+
+        let op = token_string('', {kind: term.op, pos: 0})
+        if (op === '') {
+            switch (term.op) {
+            case TOKEN_AND:        op = '&'  ;break
+            case TOKEN_OR:         op = '|'  ;break
+            case TOKEN_ADD:        op = '+'  ;break
+            case TOKEN_SUB:        op = '-'  ;break
+            case TOKEN_MUL:        op = '*'  ;break
+            case TOKEN_DIV:        op = '/'  ;break
+            case TOKEN_EQ:         op = '==' ;break
+            case TOKEN_NOT_EQ:     op = '!=' ;break
+            case TOKEN_LESS:       op = '<'  ;break
+            case TOKEN_LESS_EQ:    op = '<=' ;break
+            case TOKEN_GREATER:    op = '>'  ;break
+            case TOKEN_GREATER_EQ: op = '>=' ;break
+            default: op = token_kind_string(term.op)
+            }
+        }
+        return `${term_string(ctx, term.lhs, seen_scope)} ${op} ${term_string(ctx, term.rhs, seen_scope)}`
+    }
+    case TERM_TERNARY:
+        return `${term_string(ctx, term.cond, seen_scope)} ? ${term_string(ctx, term.lhs, seen_scope)} : ${term_string(ctx, term.rhs, seen_scope)}`
+    case TERM_SCOPE: {
+        return '{...}'
+    }
+    case TERM_SELECT:
+        return `${term_string(ctx, term.lhs, seen_scope)}.${ident_string(ctx, term.rhs)}`
+    case TERM_WORLD:
+        return '<world>'
+    case TERM_ANY:
+        return '()'
+    case TERM_NEVER:
+        return '!()'
+    case TERM_NIL:
+        return 'nil'
+    case TERM_TYPE_BOOL:
+        return 'bool'
+    case TERM_TYPE_INT:
+        return 'int'
+    default:
+        term satisfies never
+        return '!()'
+    }
+}
+
 export function display(ctx: Context): string {
-    return ''
+    let task = task_resolve_output(ctx)
+    return term_string(ctx, task.result)
 }
 
 export function diagnostics(ctx: Context): string[] {
