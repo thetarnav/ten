@@ -1950,13 +1950,22 @@ const tasks_queue_run = (ctx: Context) => {
                 continue
             }
 
-            task.result = lookup.result
+            let reduce = task_reduce_term(ctx, lookup.result, SCOPE_ID_GLOBAL)
+            if (reduce.state !== TASK_STATE_DONE) {
+                task_requeue(ctx, task)
+                continue
+            }
+
+            task.result = reduce.result
             break
         }
         case TASK_MATCH_TYPE:
             break
         case TASK_REDUCE_TERM: {
-            task.result = task.term
+            if (!task_exec_term(ctx, task)) {
+                task_requeue(ctx, task)
+                continue
+            }
             break
         }
         case TASK_LOOKUP_VAR: {
@@ -2110,6 +2119,41 @@ const binding_ensure = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     return field
 }
 
+const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding | null => {
+    let scope = scope_get(ctx, scope_id)
+    let binding = scope.fields.get(ident)
+    if (binding == null) return null
+    return binding
+}
+
+const binding_lookup_parent_chain = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding | null => {
+    let found: Binding | null = null
+    for (;;) {
+        let s = scope_get(ctx, scope_id).parent
+        if (s == null) break
+
+        found = binding_lookup_current(ctx, s, ident)
+        if (found != null) break
+
+        scope_id = s
+    }
+    return found
+}
+
+const resolve_read = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding | null => {
+    /* Lookup policy:
+    |   - `.foo` => current scope only
+    |   - `^foo` => parent chain only
+    |   - `foo`  => parent-first, then current
+    */
+    if (prefix !== TOKEN_DOT) {
+        let found = binding_lookup_parent_chain(ctx, scope_id, ident)
+        if (found != null || prefix === TOKEN_POW) return found
+    }
+
+    return binding_lookup_current(ctx, scope_id, ident)
+}
+
 const index_scope_binary = (
     ctx: Context,
     op: Token_Kind, lhs: Expr, rhs: Expr,
@@ -2199,6 +2243,214 @@ function index_scope_body(ctx: Context, expr: Expr, src: string, scope_id: Scope
 
 export function add_expr(ctx: Context, expr: Expr, src: string) {
     index_scope_body(ctx, expr, src, SCOPE_ID_GLOBAL)
+}
+
+const task_exec_term = (ctx: Context, task: Task): boolean => {
+    let term = term_by_id_assert(ctx, task.term)
+
+    switch (term.kind) {
+    case TERM_ANY:
+    case TERM_NEVER:
+    case TERM_NIL:
+    case TERM_BOOL:
+    case TERM_INT:
+    case TERM_TYPE_BOOL:
+    case TERM_TYPE_INT:
+    case TERM_SCOPE:
+    case TERM_WORLD:
+        task.result = task.term
+        return true
+
+    case TERM_VAR: {
+        let resolved = resolve_read(ctx, task.scope, term.ident, term.prefix)
+        if (resolved == null) {
+            let name = ident_string(ctx, term.ident)
+            if (term.prefix === TOKEN_DOT) {
+                error_semantic(ctx, task.expr, task.src, `Missing current-scope binding: .${name}`)
+            } else if (term.prefix === TOKEN_POW) {
+                error_semantic(ctx, task.expr, task.src, `Missing parent-scope binding: ^${name}`)
+            } else {
+                error_semantic(ctx, task.expr, task.src, `Undefined binding: ${name}`)
+            }
+            task.result = TERM_ID_NEVER
+            return true
+        }
+
+        if (resolved.value == null) {
+            panic('TODO')
+        }
+
+        task.result = resolved.value
+        return true
+    }
+
+    case TERM_NEG: {
+        let dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
+        if (!task_wait_on(ctx, task_id, dep)) return false
+        let rhs = ctx.task_arr[dep].result
+        task.result = rhs === TERM_ID_ANY ? TERM_ID_NEVER :
+                      rhs === TERM_ID_NEVER ? TERM_ID_ANY :
+                      term_neg(ctx, rhs)
+        return true
+    }
+
+    case TERM_BINARY: {
+        if (term.op === TOKEN_AND) {
+            let lhs_assume = world_assume_true(ctx, task.scope, term.lhs, task.world, task_id)
+            if (!lhs_assume.ready) return false
+            if (lhs_assume.world == null) {
+                task.result = TERM_ID_NEVER
+                return true
+            }
+            if (lhs_assume.used) {
+                let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, lhs_assume.world)
+                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, lhs_assume.world)
+                if (!task_wait_on(ctx, task_id, lhs_dep)) return false
+                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
+                task.result = term_eval_binary(ctx, TOKEN_AND,
+                    ctx.task_arr[lhs_dep].result,
+                    ctx.task_arr[rhs_dep].result,
+                )
+                return true
+            }
+
+            let rhs_assume = world_assume_true(ctx, task.scope, term.rhs, task.world, task_id)
+            if (!rhs_assume.ready) return false
+            if (rhs_assume.world == null) {
+                task.result = TERM_ID_NEVER
+                return true
+            }
+            if (rhs_assume.used) {
+                let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, rhs_assume.world)
+                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, rhs_assume.world)
+                if (!task_wait_on(ctx, task_id, lhs_dep)) return false
+                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
+                task.result = term_eval_binary(ctx, TOKEN_AND,
+                    ctx.task_arr[lhs_dep].result,
+                    ctx.task_arr[rhs_dep].result,
+                )
+                return true
+            }
+        }
+
+        let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, task.world)
+        if (!task_wait_on(ctx, task_id, lhs_dep)) return false
+        let lhs = ctx.task_arr[lhs_dep].result
+
+        if (term.op === TOKEN_AND) {
+            if (lhs === TERM_ID_NEVER) {
+                task.result = TERM_ID_NEVER
+                return true
+            }
+            if (lhs === TERM_ID_ANY) {
+                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
+                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
+                task.result = ctx.task_arr[rhs_dep].result
+                return true
+            }
+        }
+
+        if (term.op === TOKEN_OR) {
+            if (lhs === TERM_ID_ANY) {
+                task.result = TERM_ID_ANY
+                return true
+            }
+            if (lhs === TERM_ID_NEVER) {
+                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
+                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
+                task.result = ctx.task_arr[rhs_dep].result
+                return true
+            }
+        }
+
+        let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
+        if (!task_wait_on(ctx, task_id, rhs_dep)) return false
+        let rhs = ctx.task_arr[rhs_dep].result
+        task.result = term_eval_binary(ctx, term.op, lhs, rhs)
+        return true
+    }
+
+    case TERM_TERNARY: {
+        let assumed = world_assume_true(ctx, task.scope, term.cond, task.world, task_id)
+        if (!assumed.ready) return false
+        if (assumed.world == null) {
+            let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
+            if (!task_wait_on(ctx, task_id, rhs_dep)) return false
+            task.result = ctx.task_arr[rhs_dep].result
+            return true
+        }
+        if (assumed.used) {
+            let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, assumed.world)
+            if (!task_wait_on(ctx, task_id, lhs_dep)) return false
+            task.result = ctx.task_arr[lhs_dep].result
+            return true
+        }
+
+        let cond_dep = task_request_eval_term(ctx, task.scope, term.cond, task.world)
+        if (!task_wait_on(ctx, task_id, cond_dep)) return false
+        let cond = ctx.task_arr[cond_dep].result
+        if (cond === TERM_ID_ANY) {
+            let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, task.world)
+            if (!task_wait_on(ctx, task_id, lhs_dep)) return false
+            task.result = ctx.task_arr[lhs_dep].result
+            return true
+        }
+        if (cond === TERM_ID_NEVER) {
+            let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
+            if (!task_wait_on(ctx, task_id, rhs_dep)) return false
+            task.result = ctx.task_arr[rhs_dep].result
+            return true
+        }
+        task.result = term_ternary(ctx, cond, term.lhs, term.rhs)
+        return true
+    }
+
+    case TERM_SELECT: {
+        let base_dep = task_request_eval_term(ctx, task.scope, term.lhs, task.world)
+        if (!task_wait_on(ctx, task_id, base_dep)) return false
+        let base = ctx.task_arr[base_dep].result
+
+        if (term_is_chain(ctx, TOKEN_OR, base)) {
+            let parts: Term_Id[] = []
+            term_chain_collect(ctx, TOKEN_OR, base, parts)
+            let out = TERM_ID_NEVER
+            for (let part of parts) {
+                let dep = task_request_eval_term(ctx, task.scope, term_select(ctx, part, term.rhs), task.world)
+                if (!task_wait_on(ctx, task_id, dep)) return false
+                out = term_eval_binary(ctx, TOKEN_OR, out, ctx.task_arr[dep].result)
+            }
+            task.result = out
+            return true
+        }
+
+        let base_term = term_by_id_assert(ctx, base)
+        if (base_term.kind !== TERM_SCOPE) {
+            let field = ident_string(ctx, term.rhs)
+            diag(ctx, `Selector read on non-scope for .${field}`)
+            task.result = TERM_ID_NEVER
+            return true
+        }
+
+        if (!term_scope_materialize_type(ctx, base_term.id, task.world, task_id)) return false
+
+        if (!scope_get(ctx, base_term.id).fields.has(term.rhs)) {
+            let field = ident_string(ctx, term.rhs)
+            diag(ctx, `Missing field '${field}' on scope`)
+            task.result = TERM_ID_NEVER
+            return true
+        }
+
+        let dep = task_request_eval_binding(ctx, base_term.id, term.rhs, task.world)
+        if (!task_wait_on(ctx, task_id, dep)) return false
+        task.result = ctx.task_arr[dep].result
+        return true
+    }
+
+    default:
+        term satisfies never
+        task.result = TERM_ID_NEVER
+        return true
+    }
 }
 
 export function reduce(ctx: Context) {
