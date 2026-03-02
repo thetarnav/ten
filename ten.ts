@@ -1969,12 +1969,9 @@ const tasks_queue_run = (ctx: Context) => {
             break
         }
         case TASK_LOOKUP_VAR: {
-            // let scope = scope_get(ctx, task.scope)
-            // let binding = scope.fields.get(task.ident)
-
             let bind_task = task_bind_value(ctx, task.ident, TERM_ID_ANY, task.scope, task.expr!, task.src!)
             if (bind_task.state !== TASK_STATE_DONE) {
-                // task_lookup_var(ctx, task.ident, task.scope, task.expr!, task.src!) // requeue
+                task_requeue(ctx, task)
                 continue
             }
 
@@ -1982,13 +1979,40 @@ const tasks_queue_run = (ctx: Context) => {
             break
         }
         case TASK_LOOKUP_FIELD: {
-            let lookup_scope = task_lookup_var(ctx, task.ident, TERM_ID_ANY, task.scope, task.expr!, task.src!)
-            if (lookup_scope.state !== TASK_STATE_DONE) {
-                // task_lookup_var(ctx, task.ident, task.scope, task.expr!, task.src!) // requeue
+            let scope_lookup = task_lookup_var(ctx, task.ident, task.scope, task.expr!, task.src!)
+            if (scope_lookup.state !== TASK_STATE_DONE) {
+                task_requeue(ctx, task)
                 continue
             }
 
-            // TODO assert that lookup_scope.term is a scope term and extract its id
+            // ? Should reduce early?
+            let scope_reduce = task_reduce_term(ctx, scope_lookup.result, task.scope)
+            if (scope_reduce.state !== TASK_STATE_DONE) {
+                task_requeue(ctx, task)
+                continue
+            }
+
+            let scope_term_id = scope_reduce.result
+            let scope_term = term_by_id(ctx, scope_term_id)
+            if (scope_term == null || scope_term.kind !== TERM_SCOPE) {
+                let name = ident_string(ctx, task.ident)
+                error_semantic(ctx, task.expr, task.src, `Expected scope term for field lookup of '${name}'`)
+                break
+            }
+
+            let scope = scope_get(ctx, scope_term.id)
+            let field = scope.fields.get(task.ident)
+            if (field == null) {
+                let name = ident_string(ctx, task.ident)
+                error_semantic(ctx, task.expr, task.src, `Field '${name}' not found in scope`)
+                break
+            }
+
+            if (field.value == null) {
+                panic('TODO')
+            }
+
+            task.result = field.value
             break
         }
         case TASK_NONE:
