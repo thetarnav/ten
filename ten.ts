@@ -1337,7 +1337,7 @@ const term_binary_encode = (op: Token_Kind, lhs: Term_Id, rhs: Term_Id): Term_Ke
 const term_binary_decode = (key: number): Term_Binary => {
     let node = new Term_Binary
 
-    node.op = (key % TOKEN_ENUM_RANGE + TERM_ENUM_START) as Token_Kind
+    node.op = (key % TOKEN_ENUM_RANGE + TOKEN_ENUM_START) as Token_Kind
     key = Math.floor(key / TOKEN_ENUM_RANGE)
 
     node.lhs = (key % MAX_HIGH_ID) as Term_Id
@@ -2030,6 +2030,19 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
     }
 
     case TERM_BINARY: {
+
+        switch (term.op) {
+        // lhs = rhs
+        case TOKEN_EQ: {
+
+            // task_make(ctx, term.rhs, task.scope)
+
+            task.value = term.rhs
+
+            return true
+        }
+        }
+
         return true
     }
 
