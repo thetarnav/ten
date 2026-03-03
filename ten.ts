@@ -1082,60 +1082,14 @@ const term_kind_string = (kind: Term_Kind): string => {
 }
 
 const
-    TASK_NONE           = 300 as const,
-    TASK_BIND_TYPE      = 301 as const,
-    TASK_BIND_VALUE     = 302 as const,
-    TASK_BIND_FIELD     = 303 as const,
-    TASK_MATCH_TYPE     = 304 as const,
-    TASK_LOOKUP_VAR     = 305 as const,
-    TASK_LOOKUP_FIELD   = 306 as const,
-    TASK_RESOLVE_OUTPUT = 307 as const,
-    TASK_REDUCE_TERM    = 308 as const,
-    TASK_ENUM_START     = TASK_NONE,
-    TASK_ENUM_END       = TASK_REDUCE_TERM,
-    TASK_ENUM_RANGE     = TASK_ENUM_END - TASK_ENUM_START + 1
-
-const Task_Kind = {
-    None:           TASK_NONE,
-    Bind_Type:      TASK_BIND_TYPE,
-    Bind_Value:     TASK_BIND_VALUE,
-    Bind_Field:     TASK_BIND_FIELD,
-    Match_Type:     TASK_MATCH_TYPE,
-    Lookup_Var:     TASK_LOOKUP_VAR,
-    Lookup_Field:   TASK_LOOKUP_FIELD,
-    Resolve_Output: TASK_RESOLVE_OUTPUT,
-    Reduce_Term:    TASK_REDUCE_TERM,
-} as const
-type Task_Kind = typeof Task_Kind[keyof typeof Task_Kind]
-
-const task_kind_string = (kind: Task_Kind): string => {
-    switch (kind) {
-    case TASK_NONE:           return "None"
-    case TASK_BIND_TYPE:      return "Bind_Type"
-    case TASK_BIND_VALUE:     return "Bind_Value"
-    case TASK_BIND_FIELD:     return "Bind_Field"
-    case TASK_MATCH_TYPE:     return "Match_Type"
-    case TASK_LOOKUP_VAR:     return "Lookup_Var"
-    case TASK_LOOKUP_FIELD:   return "Lookup_Field"
-    case TASK_RESOLVE_OUTPUT: return "Resolve_Output"
-    case TASK_REDUCE_TERM:    return "Reduce_Term"
-    default:
-        kind satisfies never // exhaustive check
-        return "Unknown"
-    }
-}
-
-const
-    TASK_STATE_INIT    = 400 as const,
-    TASK_STATE_QUEUE   = 401 as const,
-    TASK_STATE_RUNNING = 402 as const,
-    TASK_STATE_DONE    = 403 as const
+    TASK_STATE_INIT    = (MAX_HIGH_ID + 0) as any as 'TASK_STATE_INIT',
+    TASK_STATE_QUEUE   = (MAX_HIGH_ID + 1) as any as 'TASK_STATE_QUEUE',
+    TASK_STATE_RUNNING = (MAX_HIGH_ID + 2) as any as 'TASK_STATE_RUNNING'
 
 const Task_State = {
     Init:    TASK_STATE_INIT,
     Queue:   TASK_STATE_QUEUE,
     Running: TASK_STATE_RUNNING,
-    Done:    TASK_STATE_DONE,
 } as const
 type Task_State = typeof Task_State[keyof typeof Task_State]
 
@@ -1144,7 +1098,6 @@ const task_state_string = (state: Task_State): string => {
     case TASK_STATE_INIT   : return "Init"
     case TASK_STATE_QUEUE  : return "Queue"
     case TASK_STATE_RUNNING: return "Running"
-    case TASK_STATE_DONE:    return "Done"
     default:
         state satisfies never // exhaustive check
         return "Unknown"
@@ -1238,15 +1191,10 @@ class Binding {
 }
 
 class Task {
-    kind:   Task_Kind  = TASK_NONE
-    key:    Task_Key   = 0 as Task_Key
-
-    scope:  Scope_Id   = SCOPE_ID_GLOBAL
-    ident:  Ident_Id   = IDENT_ID_NONE
-    term:   Term_Id    = TERM_ID_NONE
-    world:  World_Id   = WORLD_ID_EMPTY
-    state:  Task_State = TASK_STATE_INIT
-    result: Term_Id    = TERM_ID_NEVER
+    key:    Task_Key = 0 as Task_Key
+    term:   Term_Id  = TERM_ID_NONE
+    scope:  Scope_Id = SCOPE_ID_BUILTIN
+    value:  Term_Id | Task_State = TASK_STATE_INIT
 
     expr:   Expr   | null = null
     src:    string | null = null
@@ -1747,72 +1695,28 @@ const term_world = (ctx: Context, body_id: Term_Id): Term_Id => {
     return term_from_key(ctx, key)
 }
 
-// [kind: TASK_ENUM] [sel_lhs: LOW_ID] [sel_rhs: LOW_ID] [scope_id: LOW_ID]
-const task_key_bind_field = (sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: Scope_Id): Task_Key => {
+// [term: HIGH_ID] [scope_id: LOW_ID]
+const task_key = (term: Term_Id, scope_id: Scope_Id): Task_Key => {
     return (
-        TASK_BIND_FIELD - TASK_ENUM_START +
-        sel_lhs  * TASK_ENUM_RANGE +
-        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
+        term     +
+        scope_id * MAX_HIGH_ID +
     0) as Task_Key
 }
-// [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
-const task_key_bind_value = (ident: Ident_Id, scope_id: Scope_Id): Task_Key => {
-    return (
-        TASK_BIND_VALUE - TASK_ENUM_START +
-        ident    * TASK_ENUM_RANGE +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
-    0) as Task_Key
-}
-// [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
-const task_key_bind_type = (ident: Ident_Id, scope_id: Scope_Id): Task_Key => {
-    return (
-        TASK_BIND_TYPE - TASK_ENUM_START +
-        ident    * TASK_ENUM_RANGE +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
-    0) as Task_Key
-}
-// [kind: TASK_ENUM] [ident: LOW_ID] [scope_id: LOW_ID]
-const task_key_lookup_var = (ident: Ident_Id, scope_id: Scope_Id): Task_Key => {
-    return (
-        TASK_LOOKUP_VAR - TASK_ENUM_START +
-        ident    * TASK_ENUM_RANGE +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID +
-    0) as Task_Key
-}
-// [kind: TASK_ENUM] [sel_lhs: LOW_ID] [sel_rhs: LOW_ID] [scope_id: LOW_ID]
-const task_key_lookup_field = (sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: Scope_Id): Task_Key => {
-    return (
-        TASK_LOOKUP_FIELD - TASK_ENUM_START +
-        sel_lhs  * TASK_ENUM_RANGE +
-        sel_rhs  * TASK_ENUM_RANGE * MAX_LOW_ID +
-        scope_id * TASK_ENUM_RANGE * MAX_LOW_ID * MAX_LOW_ID +
-    0) as Task_Key
-}
-// [kind: TASK_ENUM] [term: HIGH_ID] [scope_id: LOW_ID]
-const task_key_reduce_term = (term: Term_Id, scope_id: Scope_Id): Task_Key => {
-    return (
-        TASK_REDUCE_TERM - TASK_ENUM_START +
-        term     * TASK_ENUM_RANGE +
-        scope_id * TASK_ENUM_RANGE * MAX_HIGH_ID +
-    0) as Task_Key
-}
-// [kind: TASK_ENUM]
-const task_key_resolve_output = (): Task_Key => {
-    return (TASK_RESOLVE_OUTPUT - TASK_ENUM_START) as Task_Key
-}
+const task_make = (ctx: Context, term: Term_Id, scope_id: Scope_Id, expr: Expr | null = null, src: string | null = null): Task => {
 
-const task_make = (ctx: Context, key: Task_Key): Task => {
-
+    let key = task_key(term, scope_id)
     let task = ctx.task_map.get(key)
 
     if (task == null) {
         task = new Task
         ctx.task_map.set(key, task)
 
-        task.kind  = (key % TASK_ENUM_RANGE + TASK_ENUM_START) as Task_Kind
         task.key   = key
-        task.state = TASK_STATE_QUEUE
+        task.value = TASK_STATE_QUEUE
+        task.term  = term
+        task.scope = scope_id
+        task.expr  = expr
+        task.src   = src
         ctx.task_queue.push(key)
     }
 
@@ -1820,83 +1724,10 @@ const task_make = (ctx: Context, key: Task_Key): Task => {
 }
 const task_requeue = (ctx: Context, task: Task): Task => {
 
-    if (task.state !== TASK_STATE_QUEUE) {
-        task.state = TASK_STATE_QUEUE
+    if (task.value !== TASK_STATE_QUEUE) {
+        task.value = TASK_STATE_QUEUE
         ctx.task_queue.push(task.key)
     }
-
-    return task
-}
-
-const task_bind_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, value: Term_Id, scope_id: Scope_Id, expr: Expr, src: string): Task => {
-    let key = task_key_bind_field(sel_lhs, sel_rhs, scope_id)
-
-    let task = task_make(ctx, key)
-    task.ident = sel_rhs
-    task.term  = value
-    task.scope = scope_id
-
-    return task
-}
-const task_bind_value = (ctx: Context, ident: Ident_Id, value: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
-    let key = task_key_bind_value(ident, scope_id)
-
-    let task = task_make(ctx, key)
-    task.ident = ident
-    task.term  = value
-    task.scope = scope_id
-    task.expr  = expr
-    task.src   = src
-
-    return task
-}
-const task_bind_type = (ctx: Context, ident: Ident_Id, type: Term_Id, scope_id: Scope_Id, expr: Expr, src: string) => {
-    let key = task_key_bind_type(ident, scope_id)
-
-    let task = task_make(ctx, key)
-    task.ident = ident
-    task.term  = type
-    task.scope = scope_id
-    task.expr  = expr
-    task.src   = src
-
-    return task
-}
-const task_lookup_var = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id, expr: Expr, src: string): Task => {
-    let key = task_key_lookup_var(ident, scope_id)
-
-    let task = task_make(ctx, key)
-    task.ident = ident
-    task.scope = scope_id
-    task.expr  = expr
-    task.src   = src
-
-    return task
-}
-const task_lookup_field = (ctx: Context, sel_lhs: Ident_Id, sel_rhs: Ident_Id, scope_id: Scope_Id, expr: Expr, src: string): Task => {
-    let key = task_key_lookup_field(sel_lhs, sel_rhs, scope_id)
-
-    let task = task_make(ctx, key)
-    task.ident = sel_rhs
-    task.scope = scope_id
-    task.expr  = expr
-    task.src   = src
-
-    return task
-}
-const task_resolve_output = (ctx: Context): Task => {
-    let key = task_key_resolve_output()
-
-    let task = task_make(ctx, key)
-
-    return task
-}
-const task_reduce_term = (ctx: Context, term: Term_Id, scope: Scope_Id): Task => {
-    let key = task_key_reduce_term(term, scope)
-
-    let task = task_make(ctx, key)
-    task.term  = term
-    task.scope = scope
 
     return task
 }
@@ -1907,122 +1738,19 @@ const tasks_queue_run = (ctx: Context) => {
         let task = ctx.task_map.get(key)
         assert(task != null, "Task not found for key in queue")
 
-        task.state = TASK_STATE_RUNNING
-
-        console.log(`Running task: ${task_kind_string(task.kind)} ${ident_string(ctx, task.ident)} in scope ${task.scope}`)
-
-        switch (task.kind) {
-        case TASK_BIND_FIELD: {
-            let lookup_scope = task_lookup_var(ctx, task.ident, TERM_ID_ANY, task.scope, task.expr!, task.src!)
-            if (lookup_scope.state !== TASK_STATE_DONE) {
-                // task_lookup_var(ctx, task.ident, task.scope, task.expr!, task.src!) // requeue
-                continue
-            }
-
-            // TODO assert that lookup_scope.term is a scope term and extract its id
-            break
+        if (task.value !== TASK_STATE_QUEUE) {
+            continue // Skip if task was already processed or requeued
         }
-        case TASK_BIND_VALUE: {
-            let binding = binding_ensure(ctx, task.ident, task.scope)
-            if (binding.value != null) {
-                let name = ident_string(ctx, task.ident)
-                error_semantic(ctx, task.expr, task.src, `Duplicate value binding for '${name}'`)
-            }
-            binding.value = task.term
-            task.result   = task.term
-            break
-        }
-        case TASK_BIND_TYPE: {
-            let binding = binding_ensure(ctx, task.ident, task.scope)
-            if (binding.type != null) {
-                let name = ident_string(ctx, task.ident)
-                error_semantic(ctx, task.expr, task.src, `Duplicate type constraint for '${name}'`)
-            }
-            binding.type = task.term
-            task.result  = task.term
-            break
-        }
-        case TASK_RESOLVE_OUTPUT: {
-            let ident = ident_id(ctx, 'output')
-            let lookup = task_lookup_var(ctx, ident, SCOPE_ID_GLOBAL, {kind: EXPR_INVALID, reason: 'Task context'} as Expr, '')
-            if (lookup.state !== TASK_STATE_DONE) {
-                task_requeue(ctx, task)
-                continue
-            }
+        task.value = TASK_STATE_RUNNING
 
-            let reduce = task_reduce_term(ctx, lookup.result, SCOPE_ID_GLOBAL)
-            if (reduce.state !== TASK_STATE_DONE) {
-                task_requeue(ctx, task)
-                continue
-            }
+        console.log(`Running task: ${task.key}`)
 
-            task.result = reduce.result
-            break
-        }
-        case TASK_MATCH_TYPE:
-            break
-        case TASK_REDUCE_TERM: {
-            if (!task_exec_term(ctx, task)) {
-                task_requeue(ctx, task)
-                continue
-            }
-            break
-        }
-        case TASK_LOOKUP_VAR: {
-            let bind_task = task_bind_value(ctx, task.ident, TERM_ID_ANY, task.scope, task.expr!, task.src!)
-            if (bind_task.state !== TASK_STATE_DONE) {
-                task_requeue(ctx, task)
-                continue
-            }
-
-            task.result = bind_task.result
-            break
-        }
-        case TASK_LOOKUP_FIELD: {
-            let scope_lookup = task_lookup_var(ctx, task.ident, task.scope, task.expr!, task.src!)
-            if (scope_lookup.state !== TASK_STATE_DONE) {
-                task_requeue(ctx, task)
-                continue
-            }
-
-            // ? Should reduce early?
-            let scope_reduce = task_reduce_term(ctx, scope_lookup.result, task.scope)
-            if (scope_reduce.state !== TASK_STATE_DONE) {
-                task_requeue(ctx, task)
-                continue
-            }
-
-            let scope_term_id = scope_reduce.result
-            let scope_term = term_by_id(ctx, scope_term_id)
-            if (scope_term == null || scope_term.kind !== TERM_SCOPE) {
-                let name = ident_string(ctx, task.ident)
-                error_semantic(ctx, task.expr, task.src, `Expected scope term for field lookup of '${name}'`)
-                break
-            }
-
-            let scope = scope_get(ctx, scope_term.id)
-            let field = scope.fields.get(task.ident)
-            if (field == null) {
-                let name = ident_string(ctx, task.ident)
-                error_semantic(ctx, task.expr, task.src, `Field '${name}' not found in scope`)
-                break
-            }
-
-            if (field.value == null) {
-                panic('TODO')
-            }
-
-            task.result = field.value
-            break
-        }
-        case TASK_NONE:
-            break
-        default:
-            task.kind satisfies never
-            unreachable()
+        if (!task_exec_term(ctx, task)) {
+            console.log(`Requeuing task: ${task.key}`)
+            task_requeue(ctx, task)
         }
 
-        task.state = TASK_STATE_DONE
+        assert(task.value !== TASK_STATE_RUNNING, 'Task did not complete but is still marked as running')
     }
 }
 
@@ -2193,52 +1921,42 @@ const index_scope_binary = (
             lhs = lhs.lhs
         }
 
-        let value = lower_expr(ctx, rhs, src, scope_id)
-
-        // foo.bar = rhs
-        if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_DOT) {
-
-            // TODO: support nested selects (foo.bar.baz)
-            let base_name  = ident_expr_id_or_error(ctx, lhs.lhs, src)
-            let field_name = ident_expr_id_or_error(ctx, lhs.rhs, src)
-            if (base_name == null || field_name == null) {
-                error_semantic(ctx, lhs, src, 'Invalid field binding target')
-                return
-            }
-
-            task_bind_field(ctx, base_name, field_name, value, scope_id, expr, src)
-        }
         // foo = rhs
-        else {
-            let ident = ident_expr_id_or_error(ctx, lhs, src)
-            if (ident == null) {
-                error_semantic(ctx, lhs, src, 'Invalid value binding target')
-                return
-            }
-
-            let binding = binding_ensure(ctx, ident, scope_id)
-            if (binding.value != null) {
-                let name = ident_string(ctx, ident)
-                error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
-            }
-            binding.value = value
-
-            task_bind_value(ctx, ident, value, scope_id, expr, src)
+        let ident = ident_expr_id_or_error(ctx, lhs, src)
+        if (ident == null) {
+            error_semantic(ctx, lhs, src, 'Invalid value binding target')
+            return
         }
+
+        let binding = binding_ensure(ctx, ident, scope_id)
+        if (binding.value != null) {
+            let name = ident_string(ctx, ident)
+            error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
+        }
+        binding.value = lower_expr(ctx, rhs, src, scope_id)
+
+        let term = term_binary(ctx, TOKEN_EQ, term_var(ctx, ident), binding.value)
+        task_make(ctx, term, scope_id, expr, src)
 
         return
     }
     // lhs : rhs
     case TOKEN_COLON: {
-        let type = lower_expr(ctx, rhs, src, scope_id)
-
         let ident = ident_expr_id_or_error(ctx, lhs, src)
         if (ident == null) {
             error_semantic(ctx, lhs, src, 'Invalid type constraint target')
             return
         }
 
-        task_bind_type(ctx, ident, type, scope_id, expr, src)
+        let binding = binding_ensure(ctx, ident, scope_id)
+        if (binding.type != null) {
+            let name = ident_string(ctx, ident)
+            error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
+        }
+        binding.type = lower_expr(ctx, rhs, src, scope_id)
+
+        let term = term_binary(ctx, TOKEN_COLON, term_var(ctx, ident), binding.type)
+        task_make(ctx, term, scope_id, expr, src)
 
         return
     }
@@ -2282,204 +2000,51 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
     case TERM_TYPE_INT:
     case TERM_SCOPE:
     case TERM_WORLD:
-        task.result = task.term
+        task.value = task.term
         return true
 
     case TERM_VAR: {
         let resolved = resolve_read(ctx, task.scope, term.ident, term.prefix)
         if (resolved == null) {
-            let name = ident_string(ctx, term.ident)
-            if (term.prefix === TOKEN_DOT) {
-                error_semantic(ctx, task.expr, task.src, `Missing current-scope binding: .${name}`)
-            } else if (term.prefix === TOKEN_POW) {
-                error_semantic(ctx, task.expr, task.src, `Missing parent-scope binding: ^${name}`)
-            } else {
-                error_semantic(ctx, task.expr, task.src, `Undefined binding: ${name}`)
+            if (task.expr != null && task.src != null) {
+                let name = ident_string(ctx, term.ident)
+                if (term.prefix === TOKEN_DOT) {
+                    error_semantic(ctx, task.expr, task.src, `Missing current-scope binding: .${name}`)
+                } else if (term.prefix === TOKEN_POW) {
+                    error_semantic(ctx, task.expr, task.src, `Missing parent-scope binding: ^${name}`)
+                } else {
+                    error_semantic(ctx, task.expr, task.src, `Undefined binding: ${name}`)
+                }
             }
-            task.result = TERM_ID_NEVER
-            return true
+            task.value = TERM_ID_NEVER
+        } else {
+            assert(resolved.value != null, 'Resolved binding has no value')
+            task.value = resolved.value
         }
 
-        if (resolved.value == null) {
-            panic('TODO')
-        }
-
-        task.result = resolved.value
         return true
     }
 
     case TERM_NEG: {
-        let dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
-        if (!task_wait_on(ctx, task_id, dep)) return false
-        let rhs = ctx.task_arr[dep].result
-        task.result = rhs === TERM_ID_ANY ? TERM_ID_NEVER :
-                      rhs === TERM_ID_NEVER ? TERM_ID_ANY :
-                      term_neg(ctx, rhs)
         return true
     }
 
     case TERM_BINARY: {
-        if (term.op === TOKEN_AND) {
-            let lhs_assume = world_assume_true(ctx, task.scope, term.lhs, task.world, task_id)
-            if (!lhs_assume.ready) return false
-            if (lhs_assume.world == null) {
-                task.result = TERM_ID_NEVER
-                return true
-            }
-            if (lhs_assume.used) {
-                let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, lhs_assume.world)
-                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, lhs_assume.world)
-                if (!task_wait_on(ctx, task_id, lhs_dep)) return false
-                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
-                task.result = term_eval_binary(ctx, TOKEN_AND,
-                    ctx.task_arr[lhs_dep].result,
-                    ctx.task_arr[rhs_dep].result,
-                )
-                return true
-            }
-
-            let rhs_assume = world_assume_true(ctx, task.scope, term.rhs, task.world, task_id)
-            if (!rhs_assume.ready) return false
-            if (rhs_assume.world == null) {
-                task.result = TERM_ID_NEVER
-                return true
-            }
-            if (rhs_assume.used) {
-                let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, rhs_assume.world)
-                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, rhs_assume.world)
-                if (!task_wait_on(ctx, task_id, lhs_dep)) return false
-                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
-                task.result = term_eval_binary(ctx, TOKEN_AND,
-                    ctx.task_arr[lhs_dep].result,
-                    ctx.task_arr[rhs_dep].result,
-                )
-                return true
-            }
-        }
-
-        let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, task.world)
-        if (!task_wait_on(ctx, task_id, lhs_dep)) return false
-        let lhs = ctx.task_arr[lhs_dep].result
-
-        if (term.op === TOKEN_AND) {
-            if (lhs === TERM_ID_NEVER) {
-                task.result = TERM_ID_NEVER
-                return true
-            }
-            if (lhs === TERM_ID_ANY) {
-                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
-                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
-                task.result = ctx.task_arr[rhs_dep].result
-                return true
-            }
-        }
-
-        if (term.op === TOKEN_OR) {
-            if (lhs === TERM_ID_ANY) {
-                task.result = TERM_ID_ANY
-                return true
-            }
-            if (lhs === TERM_ID_NEVER) {
-                let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
-                if (!task_wait_on(ctx, task_id, rhs_dep)) return false
-                task.result = ctx.task_arr[rhs_dep].result
-                return true
-            }
-        }
-
-        let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
-        if (!task_wait_on(ctx, task_id, rhs_dep)) return false
-        let rhs = ctx.task_arr[rhs_dep].result
-        task.result = term_eval_binary(ctx, term.op, lhs, rhs)
         return true
     }
 
     case TERM_TERNARY: {
-        let assumed = world_assume_true(ctx, task.scope, term.cond, task.world, task_id)
-        if (!assumed.ready) return false
-        if (assumed.world == null) {
-            let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
-            if (!task_wait_on(ctx, task_id, rhs_dep)) return false
-            task.result = ctx.task_arr[rhs_dep].result
-            return true
-        }
-        if (assumed.used) {
-            let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, assumed.world)
-            if (!task_wait_on(ctx, task_id, lhs_dep)) return false
-            task.result = ctx.task_arr[lhs_dep].result
-            return true
-        }
-
-        let cond_dep = task_request_eval_term(ctx, task.scope, term.cond, task.world)
-        if (!task_wait_on(ctx, task_id, cond_dep)) return false
-        let cond = ctx.task_arr[cond_dep].result
-        if (cond === TERM_ID_ANY) {
-            let lhs_dep = task_request_eval_term(ctx, task.scope, term.lhs, task.world)
-            if (!task_wait_on(ctx, task_id, lhs_dep)) return false
-            task.result = ctx.task_arr[lhs_dep].result
-            return true
-        }
-        if (cond === TERM_ID_NEVER) {
-            let rhs_dep = task_request_eval_term(ctx, task.scope, term.rhs, task.world)
-            if (!task_wait_on(ctx, task_id, rhs_dep)) return false
-            task.result = ctx.task_arr[rhs_dep].result
-            return true
-        }
-        task.result = term_ternary(ctx, cond, term.lhs, term.rhs)
         return true
     }
 
     case TERM_SELECT: {
-        let base_dep = task_request_eval_term(ctx, task.scope, term.lhs, task.world)
-        if (!task_wait_on(ctx, task_id, base_dep)) return false
-        let base = ctx.task_arr[base_dep].result
-
-        if (term_is_chain(ctx, TOKEN_OR, base)) {
-            let parts: Term_Id[] = []
-            term_chain_collect(ctx, TOKEN_OR, base, parts)
-            let out = TERM_ID_NEVER
-            for (let part of parts) {
-                let dep = task_request_eval_term(ctx, task.scope, term_select(ctx, part, term.rhs), task.world)
-                if (!task_wait_on(ctx, task_id, dep)) return false
-                out = term_eval_binary(ctx, TOKEN_OR, out, ctx.task_arr[dep].result)
-            }
-            task.result = out
-            return true
-        }
-
-        let base_term = term_by_id_assert(ctx, base)
-        if (base_term.kind !== TERM_SCOPE) {
-            let field = ident_string(ctx, term.rhs)
-            diag(ctx, `Selector read on non-scope for .${field}`)
-            task.result = TERM_ID_NEVER
-            return true
-        }
-
-        if (!term_scope_materialize_type(ctx, base_term.id, task.world, task_id)) return false
-
-        if (!scope_get(ctx, base_term.id).fields.has(term.rhs)) {
-            let field = ident_string(ctx, term.rhs)
-            diag(ctx, `Missing field '${field}' on scope`)
-            task.result = TERM_ID_NEVER
-            return true
-        }
-
-        let dep = task_request_eval_binding(ctx, base_term.id, term.rhs, task.world)
-        if (!task_wait_on(ctx, task_id, dep)) return false
-        task.result = ctx.task_arr[dep].result
         return true
     }
 
     default:
         term satisfies never
-        task.result = TERM_ID_NEVER
         return true
     }
-}
-
-export function reduce(ctx: Context) {
-    task_resolve_output(ctx)
-    tasks_queue_run(ctx)
 }
 
 const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_Id>()): string => {
@@ -2548,9 +2113,17 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
     }
 }
 
+export function reduce(ctx: Context) {
+    let term = term_var(ctx, ident_id(ctx, 'output'))
+    task_make(ctx, term, SCOPE_ID_GLOBAL)
+    tasks_queue_run(ctx)
+}
+
 export function display(ctx: Context): string {
-    let task = task_resolve_output(ctx)
-    return term_string(ctx, task.result)
+    let term = term_var(ctx, ident_id(ctx, 'output'))
+    let task = task_make(ctx, term, SCOPE_ID_GLOBAL)
+    assert(task.value !== TASK_STATE_QUEUE && task.value !== TASK_STATE_RUNNING && task.value !== TASK_STATE_INIT, 'Expected output task to have a resolved value after reduction')
+    return term_string(ctx, task.value)
 }
 
 export function diagnostics(ctx: Context): string[] {
