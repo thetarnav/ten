@@ -1719,9 +1719,17 @@ const task_make = (ctx: Context, key: Task_Key, expr: Expr | null = null, src: s
         task.value = TASK_STATE_QUEUE
         task.term  = key % MAX_HIGH_ID as Term_Id
         task.scope = Math.floor(key / MAX_HIGH_ID) as Scope_Id
-        task.expr  = expr
-        task.src   = src
         ctx.task_queue.push(key)
+    }
+
+    if (expr != null) {
+        assert(task.expr == null, "Task already has an expression")
+        task.expr = expr
+    }
+
+    if (src != null) {
+        assert(task.src == null, "Task already has a source string")
+        task.src = src
     }
 
     return task
@@ -1769,6 +1777,11 @@ const tasks_queue_run = (ctx: Context) => {
 
 const error_semantic = (ctx: Context, expr: Expr, src: string, message: string) => {
     console.error(`${message}: \`${expr_string(src, expr)}\``)
+}
+const task_error_semantic = (ctx: Context, task: Task, message: string) => {
+    if (task.expr != null && task.src != null) {
+        error_semantic(ctx, task.expr, task.src, message)
+    }
 }
 
 const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): Term_Id => {
@@ -2019,15 +2032,13 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
     case TERM_VAR: {
         let binding = resolve_read(ctx, task.scope, term.ident, term.prefix)
         if (binding == null) {
-            if (task.expr != null && task.src != null) {
-                let name = ident_string(ctx, term.ident)
-                if (term.prefix === TOKEN_DOT) {
-                    error_semantic(ctx, task.expr, task.src, `Missing current-scope binding: .${name}`)
-                } else if (term.prefix === TOKEN_POW) {
-                    error_semantic(ctx, task.expr, task.src, `Missing parent-scope binding: ^${name}`)
-                } else {
-                    error_semantic(ctx, task.expr, task.src, `Undefined binding: ${name}`)
-                }
+            let name = ident_string(ctx, term.ident)
+            if (term.prefix === TOKEN_DOT) {
+                task_error_semantic(ctx, task, `Missing current-scope binding: .${name}`)
+            } else if (term.prefix === TOKEN_POW) {
+                task_error_semantic(ctx, task, `Missing parent-scope binding: ^${name}`)
+            } else {
+                task_error_semantic(ctx, task, `Undefined binding: ${name}`)
             }
             task.value = TERM_ID_NEVER
         } else {
@@ -2035,7 +2046,6 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
             let result = task_wait_on(ctx, binding.value)
             if (result == null) return false
             task.value = result
-            return true
         }
 
         return true
@@ -2077,6 +2087,35 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
     }
 
     case TERM_SELECT: {
+
+        let scope_lookup = task_wait_on(ctx, task_key(term.lhs, task.scope))
+        if (scope_lookup == null) return false
+
+        // ? Should reduce early?
+        let scope_reduce = task_wait_on(ctx, task_key(scope_lookup, task.scope))
+        if (scope_reduce == null) return false
+
+        let scope_term = term_by_id(ctx, scope_reduce)
+        if (scope_term == null || scope_term.kind !== TERM_SCOPE) {
+            task_error_semantic(ctx, task, `${term_string(ctx, term.lhs)} isn't a scope`)
+            task.value = TERM_ID_NEVER
+            return true
+        }
+
+        let scope = scope_get(ctx, scope_term.id)
+        let field = scope.fields.get(term.rhs)
+        if (field == null) {
+            task_error_semantic(ctx, task, `Field not found in scope`)
+            task.value = TERM_ID_NEVER
+            return true
+        }
+
+        assert(field.value != null, 'Scope field has no value')
+
+        let value = task_wait_on(ctx, field.value)
+        if (value == null) return false
+
+        task.value = value
         return true
     }
 
