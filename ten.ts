@@ -1186,8 +1186,8 @@ class Scope {
 }
 
 class Binding {
-    type:  Term_Id | null = null
-    value: Term_Id | null = null
+    type:  Task_Key | null = null
+    value: Task_Key | null = null
 }
 
 class Task {
@@ -1702,9 +1702,13 @@ const task_key = (term: Term_Id, scope_id: Scope_Id): Task_Key => {
         scope_id * MAX_HIGH_ID +
     0) as Task_Key
 }
-const task_make = (ctx: Context, term: Term_Id, scope_id: Scope_Id, expr: Expr | null = null, src: string | null = null): Task => {
+const task_get_assert = (ctx: Context, key: Task_Key): Task => {
+    let task = ctx.task_map.get(key)
+    assert(task != null, "Task not found for key")
+    return task
+}
+const task_make = (ctx: Context, key: Task_Key, expr: Expr | null = null, src: string | null = null): Task => {
 
-    let key = task_key(term, scope_id)
     let task = ctx.task_map.get(key)
 
     if (task == null) {
@@ -1713,8 +1717,8 @@ const task_make = (ctx: Context, term: Term_Id, scope_id: Scope_Id, expr: Expr |
 
         task.key   = key
         task.value = TASK_STATE_QUEUE
-        task.term  = term
-        task.scope = scope_id
+        task.term  = key % MAX_HIGH_ID as Term_Id
+        task.scope = Math.floor(key / MAX_HIGH_ID) as Scope_Id
         task.expr  = expr
         task.src   = src
         ctx.task_queue.push(key)
@@ -1722,7 +1726,9 @@ const task_make = (ctx: Context, term: Term_Id, scope_id: Scope_Id, expr: Expr |
 
     return task
 }
-const task_requeue = (ctx: Context, task: Task): Task => {
+const task_requeue = (ctx: Context, key: Task_Key): Task => {
+
+    let task = task_get_assert(ctx, key)
 
     if (task.value !== TASK_STATE_QUEUE) {
         task.value = TASK_STATE_QUEUE
@@ -1730,6 +1736,13 @@ const task_requeue = (ctx: Context, task: Task): Task => {
     }
 
     return task
+}
+const task_wait_on = (ctx: Context, key: Task_Key): Term_Id | null => {
+    let task = task_make(ctx, key)
+    if (task.value === TASK_STATE_RUNNING || task.value === TASK_STATE_QUEUE || task.value === TASK_STATE_INIT) {
+        return null
+    }
+    return task.value
 }
 
 const tasks_queue_run = (ctx: Context) => {
@@ -1747,7 +1760,7 @@ const tasks_queue_run = (ctx: Context) => {
 
         if (!task_exec_term(ctx, task)) {
             console.log(`Requeuing task: ${task.key}`)
-            task_requeue(ctx, task)
+            task_requeue(ctx, key)
         }
 
         assert(task.value !== TASK_STATE_RUNNING, 'Task did not complete but is still marked as running')
@@ -1933,11 +1946,11 @@ const index_scope_binary = (
             let name = ident_string(ctx, ident)
             error_semantic(ctx, expr, src, `Duplicate value binding for '${name}'`)
         }
-        binding.value = lower_expr(ctx, rhs, src, scope_id)
 
-        let term = term_binary(ctx, TOKEN_EQ, term_var(ctx, ident), binding.value)
-        task_make(ctx, term, scope_id, expr, src)
-
+        let rhs_term = lower_expr(ctx, rhs, src, scope_id)
+        let bind_term = term_binary(ctx, TOKEN_EQ, term_var(ctx, ident), rhs_term)
+        binding.value = task_key(bind_term, scope_id)
+        task_make(ctx, binding.value, expr, src)
         return
     }
     // lhs : rhs
@@ -1953,11 +1966,11 @@ const index_scope_binary = (
             let name = ident_string(ctx, ident)
             error_semantic(ctx, expr, src, `Duplicate type constraint for '${name}'`)
         }
-        binding.type = lower_expr(ctx, rhs, src, scope_id)
 
-        let term = term_binary(ctx, TOKEN_COLON, term_var(ctx, ident), binding.type)
-        task_make(ctx, term, scope_id, expr, src)
-
+        let rhs_term = lower_expr(ctx, rhs, src, scope_id)
+        let bind_term = term_binary(ctx, TOKEN_COLON, term_var(ctx, ident), rhs_term)
+        binding.type = task_key(bind_term, scope_id)
+        task_make(ctx, binding.type, expr, src)
         return
     }
     }
@@ -2004,8 +2017,8 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
         return true
 
     case TERM_VAR: {
-        let resolved = resolve_read(ctx, task.scope, term.ident, term.prefix)
-        if (resolved == null) {
+        let binding = resolve_read(ctx, task.scope, term.ident, term.prefix)
+        if (binding == null) {
             if (task.expr != null && task.src != null) {
                 let name = ident_string(ctx, term.ident)
                 if (term.prefix === TOKEN_DOT) {
@@ -2018,8 +2031,11 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
             }
             task.value = TERM_ID_NEVER
         } else {
-            assert(resolved.value != null, 'Resolved binding has no value')
-            task.value = resolved.value
+            assert(binding.value != null, 'Resolved binding has no value')
+            let result = task_wait_on(ctx, binding.value)
+            if (result == null) return false
+            task.value = result
+            return true
         }
 
         return true
@@ -2034,11 +2050,10 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
         switch (term.op) {
         // lhs = rhs
         case TOKEN_EQ: {
+            let reduce = task_wait_on(ctx, task_key(term.rhs, task.scope))
+            if (reduce == null) return false
 
-            // task_make(ctx, term.rhs, task.scope)
-
-            task.value = term.rhs
-
+            task.value = reduce
             return true
         }
         }
@@ -2128,15 +2143,15 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
 
 export function reduce(ctx: Context) {
     let term = term_var(ctx, ident_id(ctx, 'output'))
-    task_make(ctx, term, SCOPE_ID_GLOBAL)
+    task_make(ctx, task_key(term, SCOPE_ID_GLOBAL))
     tasks_queue_run(ctx)
 }
 
 export function display(ctx: Context): string {
     let term = term_var(ctx, ident_id(ctx, 'output'))
-    let task = task_make(ctx, term, SCOPE_ID_GLOBAL)
-    assert(task.value !== TASK_STATE_QUEUE && task.value !== TASK_STATE_RUNNING && task.value !== TASK_STATE_INIT, 'Expected output task to have a resolved value after reduction')
-    return term_string(ctx, task.value)
+    let value = task_wait_on(ctx, task_key(term, SCOPE_ID_GLOBAL))
+    assert(value != null, 'Expected output task to have a resolved value after reduction')
+    return term_string(ctx, value)
 }
 
 export function diagnostics(ctx: Context): string[] {
