@@ -2050,10 +2050,21 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
         switch (term.op) {
         // lhs = rhs
         case TOKEN_EQ: {
+            // ? should reduce here?
             let reduce = task_wait_on(ctx, task_key(term.rhs, task.scope))
             if (reduce == null) return false
 
             task.value = reduce
+            return true
+        }
+        // lhs: rhs
+        case TOKEN_COLON: {
+            if (term_match_type(ctx, term.rhs, term.lhs)) {
+                task.value = TERM_ID_TRUE
+            } else {
+                task.value = TERM_ID_FALSE
+            }
+
             return true
         }
         }
@@ -2073,6 +2084,11 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
         term satisfies never
         return true
     }
+}
+
+const term_match_type = (ctx: Context, term_id: Term_Id, type_id: Term_Id): boolean => {
+    // TODO
+    return true
 }
 
 const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_Id>()): string => {
