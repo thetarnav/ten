@@ -40,6 +40,34 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
     `, `1`)
 
     test_reducer(`
+        output = ()
+    `, `()`)
+    test_reducer(`
+        output = !()
+    `, `!()`)
+    test_reducer(`
+        output = int
+    `, `int`)
+    test_reducer(`
+        output = nil
+    `, `nil`)
+    test_reducer(`
+        output = bool
+    `, `bool`)
+    test_reducer(`
+        output = true
+    `, `true`)
+    test_reducer(`
+        output = false
+    `, `false`)
+    test_reducer(`
+        output = any
+    `, `()`)
+    test_reducer(`
+        output = never
+    `, `!()`)
+
+    test_reducer(`
         a: int = 1
         output = a
     `, `1`)
