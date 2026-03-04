@@ -1212,6 +1212,8 @@ class Context {
     task_map:   Map<Task_Key, Task>       = new Map
     task_queue: Task_Key[]                = []
     task_wait:  Map<Task_Key, Task_Key[]> = new Map
+
+    errors:     string[]                  = []
 }
 
 export function context_make(): Context {
@@ -1799,7 +1801,7 @@ const tasks_queue_run = (ctx: Context) => {
 }
 
 const error_semantic = (ctx: Context, expr: Expr, src: string, message: string) => {
-    console.error(`${message}: \`${expr_string(src, expr)}\``)
+    ctx.errors.push(`${message}: \`${expr_string(src, expr)}\``)
 }
 const task_error_semantic = (ctx: Context, task: Task, message: string) => {
     if (task.expr != null && task.src != null) {
@@ -2256,5 +2258,5 @@ export function display(ctx: Context): string {
 }
 
 export function diagnostics(ctx: Context): string[] {
-    return []
+    return ctx.errors.slice()
 }
