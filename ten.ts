@@ -1234,9 +1234,34 @@ export function context_make(): Context {
     ctx.term_arr[TERM_ID_FALSE]     = new Term_Bool
     ctx.term_arr[TERM_ID_ZERO]      = new Term_Int
 
+    add_builtin(ctx, 'any',   TERM_ID_ANY)
+    add_builtin(ctx, 'never', TERM_ID_NEVER)
+    add_builtin(ctx, 'nil',   TERM_ID_NIL)
+    add_builtin(ctx, 'int',   TERM_ID_TYPE_INT)
+    add_builtin(ctx, 'bool',  TERM_ID_TYPE_BOOL)
+    add_builtin(ctx, 'true',  TERM_ID_TRUE)
+    add_builtin(ctx, 'false', TERM_ID_FALSE)
+
     ctx.ident_src[IDENT_ID_NONE] = ''
 
     return ctx
+}
+
+const add_builtin = (ctx: Context, name: string, term_id: Term_Id) => {
+
+    let ident = ident_id(ctx, name)
+
+    let task   = new Task
+    task.value = term_id
+    task.scope = SCOPE_ID_BUILTIN
+    task.term  = term_id
+    task.key   = task_key(term_id, SCOPE_ID_BUILTIN)
+
+    let bind   = new Binding
+    bind.value = task.key
+
+    ctx.task_map.set(task.key, task)
+    ctx.scope_arr[SCOPE_ID_BUILTIN].fields.set(ident, bind)
 }
 
 const scope_get = (ctx: Context, scope_id: Scope_Id): Scope => {
