@@ -1984,7 +1984,7 @@ const index_scope_binary = (
         }
 
         let rhs_term = lower_expr(ctx, rhs, src, scope_id)
-        let bind_term = term_binary(ctx, TOKEN_EQ, term_var(ctx, ident), rhs_term)
+        let bind_term = term_binary(ctx, TOKEN_BIND, term_var(ctx, ident), rhs_term)
         binding.value = task_key(bind_term, scope_id)
         task_make(ctx, binding.value, expr, src)
         return
@@ -2103,7 +2103,7 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
 
         switch (term.op) {
         // lhs = rhs
-        case TOKEN_EQ: {
+        case TOKEN_BIND: {
             // ? should reduce here?
             let reduce = task_wait_on(ctx, task_key(term.rhs, task.scope))
             if (reduce == null) return false
