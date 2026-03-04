@@ -1772,10 +1772,13 @@ const task_requeue = (ctx: Context, key: Task_Key): Task => {
 }
 const task_wait_on = (ctx: Context, key: Task_Key): Term_Id | null => {
     let task = task_make(ctx, key)
-    if (task.value === TASK_STATE_RUNNING || task.value === TASK_STATE_QUEUE || task.value === TASK_STATE_INIT) {
+    if (!task_value_is_done(task.value)) {
         return null
     }
     return task.value
+}
+const task_value_is_done = (value: Term_Id | Task_State): value is Term_Id => {
+    return value !== TASK_STATE_INIT && value !== TASK_STATE_QUEUE && value !== TASK_STATE_RUNNING
 }
 
 const tasks_queue_run = (ctx: Context) => {
@@ -2222,7 +2225,39 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
     case TERM_TERNARY:
         return `${term_string(ctx, term.cond, seen_scope)} ? ${term_string(ctx, term.lhs, seen_scope)} : ${term_string(ctx, term.rhs, seen_scope)}`
     case TERM_SCOPE: {
-        return '{...}'
+        if (seen_scope.has(term.id)) {
+            return '{...}'
+        }
+        seen_scope.add(term.id)
+
+        let scope = scope_get(ctx, term.id)
+
+        let out = '{'
+        let first = true
+        for (let [key, field] of scope.fields) {
+
+            if (!first) {out += ', '}
+            first = false
+
+            // key: type = value
+            out += ident_string(ctx, key)
+
+            if (field.type != null) {
+                let task = task_get_assert(ctx, field.type)
+                if (task_value_is_done(task.value)) {
+                    out += `: ${term_string(ctx, task.value, seen_scope)}`
+                }
+            }
+
+            if (field.value != null) {
+                let task = task_get_assert(ctx, field.value)
+                if (task_value_is_done(task.value)) {
+                    out += ` = ${term_string(ctx, task.value, seen_scope)}`
+                }
+            }
+        }
+        out += '}'
+        return out
     }
     case TERM_SELECT:
         return `${term_string(ctx, term.lhs, seen_scope)}.${ident_string(ctx, term.rhs)}`
