@@ -1943,9 +1943,9 @@ const binding_lookup_parent_chain = (ctx: Context, scope_id: Scope_Id, ident: Id
 
 const resolve_read = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding | null => {
     /* Lookup policy:
-    |   - `.foo` => current scope only
-    |   - `^foo` => parent chain only
-    |   - `foo`  => parent-first, then current
+    |   - .foo  —  current scope only
+    |   - ^foo  —  parent chain only
+    |   -  foo  —  parent-first, then current
     */
     if (prefix !== TOKEN_DOT) {
         let found = binding_lookup_parent_chain(ctx, scope_id, ident)
@@ -2064,13 +2064,15 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
                 task_error_semantic(ctx, task, `Undefined binding: ${name}`)
             }
             task.value = TERM_ID_NEVER
-        } else {
-            assert(binding.value != null, 'Resolved binding has no value')
-            let result = task_wait_on(ctx, binding.value)
-            if (result == null) return false
-            task.value = result
+            return true
         }
 
+        assert(binding.value != null, 'Resolved binding has no value')
+
+        let result = task_wait_on(ctx, binding.value)
+        if (result == null) return false
+
+        task.value = result
         return true
     }
 
