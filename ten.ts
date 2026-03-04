@@ -2075,6 +2075,23 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
     }
 
     case TERM_NEG: {
+        let rhs = task_wait_on(ctx, task_key(term.rhs, task.scope))
+        if (rhs == null) return false
+
+        /*
+        |   !true  ->  false
+        |   !false ->  true
+        |   !()    ->  !()
+        |   !!()   ->  ()
+        |   !x     ->  !()
+        */
+        switch (rhs) {
+        case TERM_ID_TRUE:  task.value = TERM_ID_FALSE ;break
+        case TERM_ID_FALSE: task.value = TERM_ID_TRUE  ;break
+        case TERM_ID_NEVER: task.value = TERM_ID_ANY   ;break
+        default:            task.value = TERM_ID_NEVER ;break
+        }
+
         return true
     }
 
