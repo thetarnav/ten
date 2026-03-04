@@ -2089,7 +2089,11 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
         case TERM_ID_TRUE:  task.value = TERM_ID_FALSE ;break
         case TERM_ID_FALSE: task.value = TERM_ID_TRUE  ;break
         case TERM_ID_NEVER: task.value = TERM_ID_ANY   ;break
-        default:            task.value = TERM_ID_NEVER ;break
+        case TERM_ID_ANY:   task.value = TERM_ID_NEVER ;break
+        default:
+            task_error_semantic(ctx, task, `Invalid negation operand: ${term_string(ctx, rhs)}`)
+            task.value = TERM_ID_NEVER
+            break
         }
 
         return true
