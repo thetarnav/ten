@@ -1191,29 +1191,27 @@ class Binding {
 }
 
 class Task {
-    key:    Task_Key = 0 as Task_Key
-    term:   Term_Id  = TERM_ID_NONE
-    scope:  Scope_Id = SCOPE_ID_BUILTIN
+    key:    Task_Key             = 0 as Task_Key
+    term:   Term_Id              = TERM_ID_NONE
+    scope:  Scope_Id             = SCOPE_ID_BUILTIN
     value:  Term_Id | Task_State = TASK_STATE_INIT
 
-    expr:   Expr   | null = null
-    src:    string | null = null
+    expr:   Expr   | null        = null
+    src:    string | null        = null
 }
 
 class Context {
-    scope_arr: Scope[]                = []
+    scope_arr:  Scope[]                   = []
 
-    term_arr:  Term[]                 = []
-    term_map:  Map<Term_Key, Term_Id> = new Map
+    term_arr:   Term[]                    = []
+    term_map:   Map<Term_Key, Term_Id>    = new Map
 
-    ident_src: string[]               = []
-    ident_map: Map<string, Ident_Id>  = new Map
+    ident_src:  string[]                  = []
+    ident_map:  Map<string, Ident_Id>     = new Map
 
     task_map:   Map<Task_Key, Task>       = new Map
     task_queue: Task_Key[]                = []
     task_wait:  Map<Task_Key, Task_Key[]> = new Map
-
-    output: Term_Id | null = null
 }
 
 export function context_make(): Context {
