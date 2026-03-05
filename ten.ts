@@ -2125,10 +2125,10 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         let rhs_id = task_wait_on(ctx, task_key(term.rhs, task.scope))
         if (rhs_id == null) return null
 
-        // Integer operations and comparisons
         let lhs = term_by_id_assert(ctx, lhs_id)
         let rhs = term_by_id_assert(ctx, rhs_id)
 
+        // Integer operations and comparisons
         if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
             let li = lhs.value
             let ri = rhs.value
@@ -2139,12 +2139,12 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             case TOKEN_MUL:        return term_int(ctx, Math.imul(li, ri))
             // ? How to handle division by zero?
             case TOKEN_DIV:        return ri === 0 ? TERM_ID_NEVER : term_int(ctx, (Math.trunc(li / ri)) | 0)
-            case TOKEN_EQ:         return term_any_or_never(li === ri)
-            case TOKEN_NOT_EQ:     return term_any_or_never(li !== ri)
-            case TOKEN_LESS:       return term_any_or_never(li < ri)
-            case TOKEN_LESS_EQ:    return term_any_or_never(li <= ri)
-            case TOKEN_GREATER:    return term_any_or_never(li > ri)
-            case TOKEN_GREATER_EQ: return term_any_or_never(li >= ri)
+            case TOKEN_EQ:         return term_bool(li === ri)
+            case TOKEN_NOT_EQ:     return term_bool(li !== ri)
+            case TOKEN_LESS:       return term_bool(li < ri)
+            case TOKEN_LESS_EQ:    return term_bool(li <= ri)
+            case TOKEN_GREATER:    return term_bool(li > ri)
+            case TOKEN_GREATER_EQ: return term_bool(li >= ri)
             }
         }
 
