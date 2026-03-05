@@ -73,6 +73,13 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
     `, `1`)
 
     test_reducer(`
+        output = {b = 1, a = 2}.b
+    `, `1`)
+    test_reducer(`
+        foo = {b = 1, a = 2}
+        output = foo.b
+    `, `1`)
+    test_reducer(`
         a = 1
         foo = {b = a, a = 2}
         output = foo.b
@@ -88,45 +95,10 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
         foo = {a = 2, x = .a, y = ^a}
         output = {x = foo.x, y = foo.y}
     `, `{x = 2, y = 1}`)
-
-    test_reducer(`
-        x = ({a = 2} | {b = 3}).a
-        output = x
-    `, `2`)
-
-    test_reducer(`
-        x = 2
-        x = 2
-        output = x
-    `, `2`)
-
-    test_reducer(`
-        x = 2
-        x = 3
-        output = x
-    `, `!()`)
-
-    test_reducer(`
-        foo: {a: int, b: int}
-        foo.a = 3
-        foo.b = 4
-        output = foo
-    `, `{a = 3, b = 4}`)
-
-    test_reducer(`
-        foo = {a = 3}
-        foo.b = 4
-        output = foo
-    `, `!()`)
-
-    test_reducer(`
-        foo = ()
-        foo.a = 3
-        output = foo
-    `, `!()`)
 })
 
 test.suite('reducer integer arithmetic', {concurrency: true}, () => {
+
     test_reducer(`
         output = 1 + 2
     `, `3`)
@@ -165,6 +137,7 @@ test.suite('reducer integer arithmetic', {concurrency: true}, () => {
 })
 
 test.suite('reducer union, intersection, and nil', {concurrency: true}, () => {
+
     test_reducer(`
         a: 1 | 2
         output = a + 1
@@ -173,6 +146,11 @@ test.suite('reducer union, intersection, and nil', {concurrency: true}, () => {
         a = 1 | 2
         output = a + 1
     `, `2 | 3`)
+
+    test_reducer(`
+        x = ({a = 2} | {b = 3}).a
+        output = x
+    `, `2`)
 
     test_reducer(`
         output = {a = int} & {a = 3 | 2} & {a = 3}
@@ -288,18 +266,29 @@ test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
 })
 
 test.suite('reducer diagnostics', {concurrency: true}, () => {
+
     test_reducer(`
         x = 2
         x = 2
         output = x
     `, `2`, [`Duplicate value binding for 'x'`])
+    test_reducer(`
+        x = 2
+        x = 3
+        output = x
+    `, `2`, [`Duplicate value binding for 'x'`])
 
     test_reducer(`
-        foo: {x: int}
-        foo.x = 2
-        foo.x = 2
-        output = foo.x
-    `, `2`, [`Duplicate field assignment for 'foo.x'`])
+        foo: {a: int, b: int}
+        foo.a = 3
+        foo.b = 4
+        output = foo
+    `, `!()`, [`Unsupported field write on scope value 'foo'`])
+    test_reducer(`
+        foo = {a = 3}
+        foo.b = 4
+        output = foo
+    `, `!()`, [`Unsupported field write on scope value 'foo'`])
 
     test_reducer(`
         x = ({a = 2} | {b = 3}).a
