@@ -2114,11 +2114,6 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return task.term
         }
 
-        if (term.op === TOKEN_AND) {
-            // Reducing here would require narrowing constraints in the current world
-            return task.term
-        }
-
         switch (term.op) {
         // lhs = rhs
         case TOKEN_BIND:
@@ -2140,11 +2135,31 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
 
         // Distribute over OR chains:  (a | b) + c  ->  (a + c) | (b + c)
         if (lhs.kind === TERM_BINARY && lhs.op === TOKEN_OR) {
-            let new_lhs = term_binary(ctx, term.op, lhs.lhs, term.rhs)
-            let new_rhs = term_binary(ctx, term.op, lhs.rhs, term.rhs)
+            let new_lhs  = term_binary(ctx, term.op, lhs.lhs, term.rhs)
+            let new_rhs  = term_binary(ctx, term.op, lhs.rhs, term.rhs)
             let new_term = term_or(ctx, new_lhs, new_rhs)
 
             return task_wait_on(ctx, task_key(new_term, task.scope))
+        }
+        if (rhs.kind === TERM_BINARY && rhs.op === TOKEN_OR) {
+            let new_lhs  = term_binary(ctx, term.op, term.lhs, rhs.lhs)
+            let new_rhs  = term_binary(ctx, term.op, term.lhs, rhs.rhs)
+            let new_term = term_or(ctx, new_lhs, new_rhs)
+
+            return task_wait_on(ctx, task_key(new_term, task.scope))
+        }
+
+        if (term.op === TOKEN_AND) {
+            // Reducing here would require narrowing constraints in the current world
+
+            /* !() & X => !() */
+            if (lhs_id === TERM_ID_NEVER || rhs_id === TERM_ID_NEVER) return TERM_ID_NEVER
+
+            /* () & X => X */
+            if (lhs_id === TERM_ID_ANY) return rhs_id
+            if (rhs_id === TERM_ID_ANY) return lhs_id
+
+            return task.term
         }
 
         // Integer operations and comparisons
