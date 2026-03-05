@@ -2109,6 +2109,16 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
 
     case TERM_BINARY: {
 
+        if (term.op === TOKEN_OR) {
+            // TODO
+            return task.term
+        }
+
+        if (term.op === TOKEN_AND) {
+            // Reducing here would require narrowing constraints in the current world
+            return task.term
+        }
+
         switch (term.op) {
         // lhs = rhs
         case TOKEN_BIND:
@@ -2127,6 +2137,15 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
 
         let lhs = term_by_id_assert(ctx, lhs_id)
         let rhs = term_by_id_assert(ctx, rhs_id)
+
+        // Distribute over OR chains:  (a | b) + c  ->  (a + c) | (b + c)
+        if (lhs.kind === TERM_BINARY && lhs.op === TOKEN_OR) {
+            let new_lhs = term_binary(ctx, term.op, lhs.lhs, term.rhs)
+            let new_rhs = term_binary(ctx, term.op, lhs.rhs, term.rhs)
+            let new_term = term_or(ctx, new_lhs, new_rhs)
+
+            return task_wait_on(ctx, task_key(new_term, task.scope))
+        }
 
         // Integer operations and comparisons
         if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
@@ -2147,7 +2166,6 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             case TOKEN_GREATER_EQ: return term_bool(li >= ri)
             }
         }
-
 
         return TERM_ID_NEVER
     }
