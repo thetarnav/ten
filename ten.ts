@@ -1782,7 +1782,14 @@ const task_value_is_done = (value: Term_Id | Task_State): value is Term_Id => {
 }
 
 const tasks_queue_run = (ctx: Context) => {
+
+    let iteration = 0
+
     while (ctx.task_queue.length > 0) {
+
+        iteration += 1
+        assert(iteration < 10000, "Too many iterations, possible infinite loop")
+
         let key = ctx.task_queue.shift()! // TODO: optimize with circular buffer
         let task = ctx.task_map.get(key)
         assert(task != null, "Task not found for key in queue")
@@ -1794,9 +1801,12 @@ const tasks_queue_run = (ctx: Context) => {
 
         console.log(`Running task: ${task.key}`)
 
-        if (!task_exec_term(ctx, task)) {
+        let result = task_exec_term(ctx, task)
+        if (result == null) {
             console.log(`Requeuing task: ${task.key}`)
             task_requeue(ctx, key)
+        } else {
+            task.value = result
         }
 
         assert(task.value !== TASK_STATE_RUNNING, 'Task did not complete but is still marked as running')
@@ -2041,7 +2051,7 @@ export function add_expr(ctx: Context, expr: Expr, src: string) {
     index_scope_body(ctx, expr, src, SCOPE_ID_GLOBAL)
 }
 
-const task_exec_term = (ctx: Context, task: Task): boolean => {
+const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
     let term = term_by_id_assert(ctx, task.term)
 
     switch (term.kind) {
@@ -2054,8 +2064,7 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
     case TERM_TYPE_INT:
     case TERM_SCOPE:
     case TERM_WORLD:
-        task.value = task.term
-        return true
+        return task.term
 
     case TERM_VAR: {
         let binding = resolve_read(ctx, task.scope, term.ident, term.prefix)
@@ -2068,22 +2077,17 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
             } else {
                 task_error_semantic(ctx, task, `Undefined binding: ${name}`)
             }
-            task.value = TERM_ID_NEVER
-            return true
+            return TERM_ID_NEVER
         }
 
         assert(binding.value != null, 'Resolved binding has no value')
 
-        let result = task_wait_on(ctx, binding.value)
-        if (result == null) return false
-
-        task.value = result
-        return true
+        return task_wait_on(ctx, binding.value)
     }
 
     case TERM_NEG: {
         let rhs = task_wait_on(ctx, task_key(term.rhs, task.scope))
-        if (rhs == null) return false
+        if (rhs == null) return null
 
         /*
         |   !true  ->  false
@@ -2093,86 +2097,95 @@ const task_exec_term = (ctx: Context, task: Task): boolean => {
         |   !x     ->  !()
         */
         switch (rhs) {
-        case TERM_ID_TRUE:  task.value = TERM_ID_FALSE ;break
-        case TERM_ID_FALSE: task.value = TERM_ID_TRUE  ;break
-        case TERM_ID_NEVER: task.value = TERM_ID_ANY   ;break
-        case TERM_ID_ANY:   task.value = TERM_ID_NEVER ;break
-        default:
-            task_error_semantic(ctx, task, `Invalid negation operand: ${term_string(ctx, rhs)}`)
-            task.value = TERM_ID_NEVER
-            break
+        case TERM_ID_TRUE:  return TERM_ID_FALSE
+        case TERM_ID_FALSE: return TERM_ID_TRUE
+        case TERM_ID_NEVER: return TERM_ID_ANY
+        case TERM_ID_ANY:   return TERM_ID_NEVER
         }
 
-        return true
+        task_error_semantic(ctx, task, `Invalid negation operand: ${term_string(ctx, rhs)}`)
+        return TERM_ID_NEVER
     }
 
     case TERM_BINARY: {
 
         switch (term.op) {
         // lhs = rhs
-        case TOKEN_BIND: {
+        case TOKEN_BIND:
             // ? should reduce here?
-            let reduce = task_wait_on(ctx, task_key(term.rhs, task.scope))
-            if (reduce == null) return false
-
-            task.value = reduce
-            return true
-        }
+            return task_wait_on(ctx, task_key(term.rhs, task.scope))
         // lhs: rhs
-        case TOKEN_COLON: {
-            if (term_match_type(ctx, term.rhs, term.lhs)) {
-                task.value = TERM_ID_TRUE
-            } else {
-                task.value = TERM_ID_FALSE
+        case TOKEN_COLON:
+            return term_bool(term_match_type(ctx, term.rhs, term.lhs))
+        }
+
+        let lhs_id = task_wait_on(ctx, task_key(term.lhs, task.scope))
+        if (lhs_id == null) return null
+
+        let rhs_id = task_wait_on(ctx, task_key(term.rhs, task.scope))
+        if (rhs_id == null) return null
+
+        // Integer operations and comparisons
+        let lhs = term_by_id_assert(ctx, lhs_id)
+        let rhs = term_by_id_assert(ctx, rhs_id)
+
+        if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
+            let li = lhs.value
+            let ri = rhs.value
+
+            switch (term.op) {
+            case TOKEN_ADD:        return term_int(ctx, (li + ri) | 0)
+            case TOKEN_SUB:        return term_int(ctx, (li - ri) | 0)
+            case TOKEN_MUL:        return term_int(ctx, Math.imul(li, ri))
+            // ? How to handle division by zero?
+            case TOKEN_DIV:        return ri === 0 ? TERM_ID_NEVER : term_int(ctx, (Math.trunc(li / ri)) | 0)
+            case TOKEN_EQ:         return term_any_or_never(li === ri)
+            case TOKEN_NOT_EQ:     return term_any_or_never(li !== ri)
+            case TOKEN_LESS:       return term_any_or_never(li < ri)
+            case TOKEN_LESS_EQ:    return term_any_or_never(li <= ri)
+            case TOKEN_GREATER:    return term_any_or_never(li > ri)
+            case TOKEN_GREATER_EQ: return term_any_or_never(li >= ri)
             }
-
-            return true
-        }
         }
 
-        return true
+
+        return TERM_ID_NEVER
     }
 
     case TERM_TERNARY: {
-        return true
+        return TERM_ID_NEVER
     }
 
     case TERM_SELECT: {
 
         let scope_lookup = task_wait_on(ctx, task_key(term.lhs, task.scope))
-        if (scope_lookup == null) return false
+        if (scope_lookup == null) return null
 
         // ? Should reduce early?
         let scope_reduce = task_wait_on(ctx, task_key(scope_lookup, task.scope))
-        if (scope_reduce == null) return false
+        if (scope_reduce == null) return null
 
         let scope_term = term_by_id(ctx, scope_reduce)
         if (scope_term == null || scope_term.kind !== TERM_SCOPE) {
             task_error_semantic(ctx, task, `${term_string(ctx, term.lhs)} isn't a scope`)
-            task.value = TERM_ID_NEVER
-            return true
+            return TERM_ID_NEVER
         }
 
         let scope = scope_get(ctx, scope_term.id)
         let field = scope.fields.get(term.rhs)
         if (field == null) {
             task_error_semantic(ctx, task, `Field not found in scope`)
-            task.value = TERM_ID_NEVER
-            return true
+            return TERM_ID_NEVER
         }
 
         assert(field.value != null, 'Scope field has no value')
 
-        let value = task_wait_on(ctx, field.value)
-        if (value == null) return false
-
-        task.value = value
-        return true
+        return task_wait_on(ctx, field.value)
     }
 
     default:
         term satisfies never
-        return true
+        return TERM_ID_NEVER
     }
 }
 
