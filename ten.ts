@@ -2152,12 +2152,40 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         if (term.op === TOKEN_AND) {
             // Reducing here would require narrowing constraints in the current world
 
-            /* !() & X => !() */
+            /* !() & X  ->  !() */
             if (lhs_id === TERM_ID_NEVER || rhs_id === TERM_ID_NEVER) return TERM_ID_NEVER
 
-            /* () & X => X */
+            /* () & X  ->  X */
             if (lhs_id === TERM_ID_ANY) return rhs_id
             if (rhs_id === TERM_ID_ANY) return lhs_id
+
+            // TODO: proper equivalence checking for more complex terms (id equality is handled by canonical treap representation)
+            // /* X & X  ->  X */
+            // if (lhs_id === rhs_id) return lhs_id
+
+            // 1 & 1  ->  1
+            // 1 & 0  ->  !()
+            if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
+                return lhs.value === rhs.value ? lhs_id : TERM_ID_NEVER
+            }
+
+            // int & 1  ->  1
+            if ((lhs.kind === TERM_INT && rhs.kind === TERM_TYPE_INT) ||
+                (lhs.kind === TERM_TYPE_INT && rhs.kind === TERM_INT)) {
+                return lhs.kind === TERM_INT ? lhs_id : rhs_id
+            }
+
+            // true & true   ->  true
+            // true & false  ->  !()
+            if (lhs.kind === TERM_BOOL && rhs.kind === TERM_BOOL) {
+                return lhs.value === rhs.value ? lhs_id : TERM_ID_NEVER
+            }
+
+            // bool & true  ->  true
+            if ((lhs.kind === TERM_BOOL && rhs.kind === TERM_TYPE_BOOL) ||
+                (lhs.kind === TERM_TYPE_BOOL && rhs.kind === TERM_BOOL)) {
+                return lhs.kind === TERM_BOOL ? lhs_id : rhs_id
+            }
 
             return task.term
         }
