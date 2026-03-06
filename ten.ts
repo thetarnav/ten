@@ -265,7 +265,16 @@ export const token_kind_string = (kind: Token_Kind): string | null => {
     case TOKEN_PAREN_R:    return `)`
     case TOKEN_BRACE_L:    return `{`
     case TOKEN_BRACE_R:    return `}`
+
+    case TOKEN_EOF:
+    case TOKEN_INVALID:
+    case TOKEN_STRING:
+    case TOKEN_IDENT:
+    case TOKEN_INT:
+    case TOKEN_FLOAT:
+        return null
     }
+    kind satisfies never // exhaustive check
     return null
 }
 
@@ -1096,15 +1105,14 @@ const
     TERM_NIL        = 202 as const,
     TERM_NEG        = 203 as const,
     TERM_BINARY     = 204 as const,
-    TERM_TERNARY    = 205 as const,
-    TERM_VAR        = 206 as const,
-    TERM_SELECT     = 207 as const,
-    TERM_SCOPE      = 208 as const,
-    TERM_WORLD      = 209 as const,
-    TERM_BOOL       = 210 as const,
-    TERM_INT        = 211 as const,
-    TERM_TYPE_BOOL  = 212 as const,
-    TERM_TYPE_INT   = 213 as const,
+    TERM_VAR        = 205 as const,
+    TERM_SELECT     = 206 as const,
+    TERM_SCOPE      = 207 as const,
+    TERM_WORLD      = 208 as const,
+    TERM_BOOL       = 209 as const,
+    TERM_INT        = 210 as const,
+    TERM_TYPE_BOOL  = 211 as const,
+    TERM_TYPE_INT   = 212 as const,
     TERM_TOP        = TERM_ANY,
     TERM_BOTTOM     = TERM_NEVER,
     TERM_ENUM_START = TERM_ANY,
@@ -1117,7 +1125,6 @@ const Term_Kind = {
     Nil:       TERM_NIL,
     Neg:       TERM_NEG,
     Binary:    TERM_BINARY,
-    Ternary:   TERM_TERNARY,
     Var:       TERM_VAR,
     Select:    TERM_SELECT,
     Scope:     TERM_SCOPE,
@@ -1136,7 +1143,6 @@ const term_kind_name = (kind: Term_Kind): string => {
     case TERM_NIL:       return "Nil"
     case TERM_NEG:       return "Neg"
     case TERM_BINARY:    return "Binary"
-    case TERM_TERNARY:   return "Ternary"
     case TERM_VAR:       return "Var"
     case TERM_SELECT:    return "Select"
     case TERM_SCOPE:     return "Scope"
@@ -1181,7 +1187,6 @@ type Term =
     | Term_Nil
     | Term_Neg
     | Term_Binary
-    | Term_Ternary
     | Term_Var
     | Term_Select
     | Term_Scope
@@ -1207,12 +1212,6 @@ class Term_Neg {
 class Term_Binary {
     kind = TERM_BINARY
     op:    Token_Kind = TOKEN_INVALID
-    lhs:   Term_Id    = TERM_ID_NONE
-    rhs:   Term_Id    = TERM_ID_NONE
-}
-class Term_Ternary {
-    kind = TERM_TERNARY
-    cond:  Term_Id    = TERM_ID_NONE
     lhs:   Term_Id    = TERM_ID_NONE
     rhs:   Term_Id    = TERM_ID_NONE
 }
@@ -1458,29 +1457,6 @@ const term_binary_decode = (key: number): Term_Binary => {
     return node
 }
 
-// TODO: ternary cannot be encoded in the current layout because it would exceed 53 bits
-// key = cond + lhs + rhs
-const term_ternary_encode = (cond: Term_Id, lhs: Term_Id, rhs: Term_Id): Term_Key => {
-    let key = TERM_TERNARY - TERM_ENUM_START
-    key += cond * MAX_HIGH_ID * MAX_HIGH_ID * TERM_ENUM_RANGE
-    key += lhs * MAX_HIGH_ID * TERM_ENUM_RANGE
-    key += rhs * TERM_ENUM_RANGE
-    return key as Term_Key
-}
-const term_ternary_decode = (key: number): Term_Ternary => {
-    let node = new Term_Ternary
-
-    node.rhs = (key % MAX_HIGH_ID) as Term_Id
-    key = Math.floor(key / MAX_HIGH_ID)
-
-    node.lhs = (key % MAX_HIGH_ID) as Term_Id
-    key = Math.floor(key / MAX_HIGH_ID)
-
-    node.cond = (key % MAX_HIGH_ID) as Term_Id
-
-    return node
-}
-
 // key = [kind: TERM_ENUM] [lhs: HIGH_ID] [rhs: LOW_ID]
 const term_select_encode = (lhs: Term_Id, rhs: Ident_Id): Term_Key => {
     return (
@@ -1552,7 +1528,6 @@ const term_decode = (_key: Term_Key): Term => {
     case TERM_NIL:       return new Term_Nil
     case TERM_NEG:       return term_neg_decode(key)
     case TERM_BINARY:    return term_binary_decode(key)
-    case TERM_TERNARY:   return term_ternary_decode(key)
     case TERM_VAR:       return term_var_decode(key)
     case TERM_SELECT:    return term_select_decode(key)
     case TERM_SCOPE:     return term_scope_decode(key)
@@ -1770,8 +1745,11 @@ const term_or = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
 }
 
 const term_ternary = (ctx: Context, cond: Term_Id, lhs: Term_Id, rhs: Term_Id) => {
-    let key = term_ternary_encode(cond, lhs, rhs)
-    return term_from_key(ctx, key)
+    // cond ? lhs : rhs  ->  (cond && lhs) || (!cond && rhs)
+    return term_or(ctx,
+        term_and(ctx, cond, lhs),
+        term_and(ctx, term_neg(ctx, cond), rhs),
+    )
 }
 
 const term_select = (ctx: Context, lhs: Term_Id, rhs: Ident_Id): Term_Id => {
@@ -1985,6 +1963,7 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
         return TERM_ID_NEVER
 
     case EXPR_TERNARY:
+        // TODO: error for non-bool condition
         return term_ternary(ctx,
             lower_expr(ctx, expr.cond, src, scope_id),
             lower_expr(ctx, expr.lhs,  src, scope_id),
@@ -2362,10 +2341,6 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         return TERM_ID_NEVER
     }
 
-    case TERM_TERNARY: {
-        return TERM_ID_NEVER
-    }
-
     case TERM_SELECT: {
 
         let scope_lookup = task_wait_on(ctx, task_key(term.lhs, task.scope))
@@ -2426,12 +2401,6 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
         return (
             term_string(ctx, term.lhs, seen_scope) +
             ' ' + (token_kind_string(term.op) ?? token_kind_name(term.op)) + ' ' +
-            term_string(ctx, term.rhs, seen_scope)
-        )
-    case TERM_TERNARY:
-        return (
-            term_string(ctx, term.cond, seen_scope) + ' ? ' +
-            term_string(ctx, term.lhs, seen_scope) + ' : ' +
             term_string(ctx, term.rhs, seen_scope)
         )
     case TERM_SCOPE: {
