@@ -1746,9 +1746,9 @@ const term_or = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
 
 const term_ternary = (ctx: Context, cond: Term_Id, lhs: Term_Id, rhs: Term_Id) => {
     // cond ? lhs : rhs  ->  (cond && lhs) || (!cond && rhs)
-    return term_or(ctx,
-        term_and(ctx, cond, lhs),
-        term_and(ctx, term_neg(ctx, cond), rhs),
+    return term_binary(ctx, TOKEN_BOOL_OR,
+        term_binary(ctx, TOKEN_BOOL_AND, cond, lhs),
+        term_binary(ctx, TOKEN_BOOL_AND, term_neg(ctx, cond), rhs),
     )
 }
 
