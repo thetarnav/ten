@@ -1180,6 +1180,7 @@ class Term_Type_Int {
 }
 
 class Scope {
+    id:     Scope_Id               = SCOPE_ID_BUILTIN
     parent: Scope_Id | null        = null
     type:   Term_Id | null         = null
     fields: Map<Ident_Id, Binding> = new Map
@@ -1264,6 +1265,19 @@ const add_builtin = (ctx: Context, name: string, term_id: Term_Id) => {
     ctx.scope_arr[SCOPE_ID_BUILTIN].fields.set(ident, bind)
 }
 
+const scope_make = (ctx: Context, parent: Scope_Id | null): Scope => {
+
+    let new_scope_id = ctx.scope_arr.length as Scope_Id
+    assert(new_scope_id <= MAX_HIGH_ID, "Exceeded maximum number of scopes")
+
+    let scope = new Scope
+    ctx.scope_arr[new_scope_id] = scope
+
+    scope.parent = parent
+    scope.id     = new_scope_id
+
+    return scope
+}
 const scope_get = (ctx: Context, scope_id: Scope_Id): Scope => {
     return ctx.scope_arr[scope_id]
 }
@@ -1881,26 +1895,18 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
         // {...}
         case TOKEN_BRACE_L: {
 
-            let new_scope_id = ctx.scope_arr.length as Scope_Id
-            assert(new_scope_id <= MAX_HIGH_ID, "Exceeded maximum number of scopes")
-
-            let scope = new Scope
-            ctx.scope_arr[new_scope_id] = scope
-
-            scope.parent = scope_id
-
-            let scope_term = term_scope(ctx, new_scope_id)
+            let new_scope = scope_make(ctx, scope_id)
 
             // type{...}
             if (expr.type != null) {
-                scope.type = lower_expr(ctx, expr.type, src, scope_id)
+                new_scope.type = lower_expr(ctx, expr.type, src, scope_id)
             }
 
             if (expr.body != null) {
-                index_scope_body(ctx, expr.body, src, new_scope_id)
+                index_scope_body(ctx, expr.body, src, new_scope.id)
             }
 
-            return scope_term
+            return term_scope(ctx, new_scope.id)
         }
         }
 
@@ -2047,8 +2053,102 @@ function index_scope_body(ctx: Context, expr: Expr, src: string, scope_id: Scope
     index_scope_binary(ctx, expr.op.kind, expr.lhs, expr.rhs, expr, src, scope_id)
 }
 
-export function add_expr(ctx: Context, expr: Expr, src: string) {
-    index_scope_body(ctx, expr, src, SCOPE_ID_GLOBAL)
+const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Scope_Id): Term_Id | null => {
+
+    let a = term_by_id_assert(ctx, a_id)
+    let b = term_by_id_assert(ctx, b_id)
+
+    // Reducing here would require narrowing constraints in the current world
+
+    /* !() & X  ->  !() */
+    if (a_id === TERM_ID_NEVER || b_id === TERM_ID_NEVER) return TERM_ID_NEVER
+
+    /* () & X  ->  X */
+    if (a_id === TERM_ID_ANY) return b_id
+    if (b_id === TERM_ID_ANY) return a_id
+
+    // TODO: proper equivalence checking for more complex terms (id equality is handled by canonical treap representation)
+    // /* X & X  ->  X */
+    // if (a_id === b_id) return a_id
+
+    // 1 & 1  ->  1
+    // 1 & 0  ->  !()
+    if (a.kind === TERM_INT && b.kind === TERM_INT) {
+        return a.value === b.value ? a_id : TERM_ID_NEVER
+    }
+
+    // int & 1  ->  1
+    if ((a.kind === TERM_INT && b.kind === TERM_TYPE_INT) ||
+        (a.kind === TERM_TYPE_INT && b.kind === TERM_INT)) {
+        return a.kind === TERM_INT ? a_id : b_id
+    }
+
+    // true & true   ->  true
+    // true & false  ->  !()
+    if (a.kind === TERM_BOOL && b.kind === TERM_BOOL) {
+        return a.value === b.value ? a_id : TERM_ID_NEVER
+    }
+
+    // bool & true  ->  true
+    if ((a.kind === TERM_BOOL && b.kind === TERM_TYPE_BOOL) ||
+        (a.kind === TERM_TYPE_BOOL && b.kind === TERM_BOOL)) {
+        return a.kind === TERM_BOOL ? a_id : b_id
+    }
+
+    // Merge scopes
+    if (a.kind === TERM_SCOPE && b.kind === TERM_SCOPE) {
+        let new_scope = scope_make(ctx, scope_id)
+        let a_scope   = scope_get(ctx, a.id)
+        let b_scope   = scope_get(ctx, b.id)
+
+        for (let [ident, a_field] of a_scope.fields) {
+
+            let b_field = b_scope.fields.get(ident)
+            if (b_field == null) continue
+
+            let new_field = new Binding
+
+            /* Merge values */
+            new_field.value = a_field.value ?? b_field.value
+
+            if (a_field.value != null && b_field.value != null) {
+
+                let a_value = task_wait_on(ctx, a_field.value)
+                if (a_value == null) return null
+
+                let b_value = task_wait_on(ctx, b_field.value)
+                if (b_value == null) return null
+
+                let value = term_intersect(ctx, a_value, b_value, scope_id)
+                if (value == null) return null
+
+                new_field.value = task_key(value, scope_id)
+            }
+
+            /* Merge types */
+            new_field.type = a_field.type ?? b_field.type
+
+            if (a_field.type != null && b_field.type != null) {
+
+                let a_type = task_wait_on(ctx, a_field.type)
+                if (a_type == null) return null
+
+                let b_type = task_wait_on(ctx, b_field.type)
+                if (b_type == null) return null
+
+                let type = term_intersect(ctx, a_type, b_type, scope_id)
+                if (type == null) return null
+
+                new_field.type = task_key(type, scope_id)
+            }
+
+            new_scope.fields.set(ident, new_field)
+        }
+
+        return term_scope(ctx, new_scope.id)
+    }
+
+    return TERM_ID_NEVER
 }
 
 const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
@@ -2150,44 +2250,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         }
 
         if (term.op === TOKEN_AND) {
-            // Reducing here would require narrowing constraints in the current world
-
-            /* !() & X  ->  !() */
-            if (lhs_id === TERM_ID_NEVER || rhs_id === TERM_ID_NEVER) return TERM_ID_NEVER
-
-            /* () & X  ->  X */
-            if (lhs_id === TERM_ID_ANY) return rhs_id
-            if (rhs_id === TERM_ID_ANY) return lhs_id
-
-            // TODO: proper equivalence checking for more complex terms (id equality is handled by canonical treap representation)
-            // /* X & X  ->  X */
-            // if (lhs_id === rhs_id) return lhs_id
-
-            // 1 & 1  ->  1
-            // 1 & 0  ->  !()
-            if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
-                return lhs.value === rhs.value ? lhs_id : TERM_ID_NEVER
-            }
-
-            // int & 1  ->  1
-            if ((lhs.kind === TERM_INT && rhs.kind === TERM_TYPE_INT) ||
-                (lhs.kind === TERM_TYPE_INT && rhs.kind === TERM_INT)) {
-                return lhs.kind === TERM_INT ? lhs_id : rhs_id
-            }
-
-            // true & true   ->  true
-            // true & false  ->  !()
-            if (lhs.kind === TERM_BOOL && rhs.kind === TERM_BOOL) {
-                return lhs.value === rhs.value ? lhs_id : TERM_ID_NEVER
-            }
-
-            // bool & true  ->  true
-            if ((lhs.kind === TERM_BOOL && rhs.kind === TERM_TYPE_BOOL) ||
-                (lhs.kind === TERM_TYPE_BOOL && rhs.kind === TERM_BOOL)) {
-                return lhs.kind === TERM_BOOL ? lhs_id : rhs_id
-            }
-
-            return task.term
+            return term_intersect(ctx, lhs_id, rhs_id, task.scope)
         }
 
         // Integer operations and comparisons
@@ -2351,6 +2414,10 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
         term satisfies never
         return '!()'
     }
+}
+
+export function add_expr(ctx: Context, expr: Expr, src: string) {
+    index_scope_body(ctx, expr, src, SCOPE_ID_GLOBAL)
 }
 
 export function reduce(ctx: Context) {

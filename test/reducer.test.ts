@@ -158,7 +158,7 @@ test.suite('reducer union, intersection, and nil', {concurrency: true}, () => {
 
     test_reducer(`
         output = {a = 2} & {b = 3}
-    `, `!()`)
+    `, `{}`)
 
     test_reducer(`
         output = nil
