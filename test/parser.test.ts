@@ -113,6 +113,18 @@ test.suite('parser precedence and associativity', {concurrency: true}, () => {
         `  Binary: And(&)\n`+
         `    Token: Ident(b)\n`+
         `    Token: Ident(c)`)
+    test_parser('a || b && c',
+        `Binary: Bool_Or(||)\n`+
+        `  Token: Ident(a)\n`+
+        `  Binary: Bool_And(&&)\n`+
+        `    Token: Ident(b)\n`+
+        `    Token: Ident(c)`)
+    test_parser('a && b || c',
+        `Binary: Bool_Or(||)\n`+
+        `  Binary: Bool_And(&&)\n`+
+        `    Token: Ident(a)\n`+
+        `    Token: Ident(b)\n`+
+        `  Token: Ident(c)`)
     test_parser('a: b = c',
         `Binary: Bind(=)\n`+
         `  Binary: Colon(:)\n`+

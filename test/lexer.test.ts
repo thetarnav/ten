@@ -49,6 +49,8 @@ test.suite('lexer operators', {concurrency: true}, () => {
         `Ident(x) Pow(^) Ident(true) Comma(,) Ident(y) Bind(=) Ident(false)`)
     test_tokenizer(`x == y ? a : b`,
         `Ident(x) Eq(==) Ident(y) Question(?) Ident(a) Colon(:) Ident(b)`)
+    test_tokenizer(`x && y || z`,
+        `Ident(x) Bool_And(&&) Ident(y) Bool_Or(||) Ident(z)`)
 })
 
 test.suite('lexer identifiers and keywords', {concurrency: true}, () => {
