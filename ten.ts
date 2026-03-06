@@ -2318,6 +2318,18 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return term_intersect(ctx, lhs_id, rhs_id, task.scope)
         }
 
+        // TODO: rhs shouldn't be reduced early
+        // A && B  ->  A if A is false, else B
+        if (term.op === TOKEN_BOOL_AND) {
+            if (lhs_id === TERM_ID_FALSE) return lhs_id
+            return rhs_id
+        }
+        // A || B  ->  A if A isn't false, else B
+        if (term.op === TOKEN_BOOL_OR) {
+            if (lhs_id !== TERM_ID_FALSE) return lhs_id
+            return rhs_id
+        }
+
         // Integer operations and comparisons
         if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
             let li = lhs.value
