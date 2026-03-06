@@ -31,32 +31,34 @@ export const
     TOKEN_NOT_EQ     = 10 as const, // `!=`
     TOKEN_OR         = 11 as const, // `|`
     TOKEN_AND        = 12 as const, // `&`
-    TOKEN_BIND       = 13 as const, // `=`
-    TOKEN_EQ         = 14 as const, // `==`
-    TOKEN_ADD        = 15 as const, // `+`
-    TOKEN_SUB        = 16 as const, // `-`
-    TOKEN_ADD_EQ     = 17 as const, // `+=`
-    TOKEN_SUB_EQ     = 18 as const, // `-=`
-    TOKEN_MUL        = 19 as const, // `*`
-    TOKEN_DIV        = 20 as const, // `/`
-    TOKEN_POW        = 21 as const, // `^`
-    TOKEN_AT         = 22 as const, // `@`
-    TOKEN_COMMA      = 23 as const, // `,`
-    TOKEN_DOT        = 24 as const, // `.`
+    TOKEN_BOOL_OR    = 13 as const, // `||`
+    TOKEN_BOOL_AND   = 14 as const, // `&&`
+    TOKEN_BIND       = 15 as const, // `=`
+    TOKEN_EQ         = 17 as const, // `==`
+    TOKEN_ADD        = 18 as const, // `+`
+    TOKEN_SUB        = 19 as const, // `-`
+    TOKEN_ADD_EQ     = 20 as const, // `+=`
+    TOKEN_SUB_EQ     = 21 as const, // `-=`
+    TOKEN_MUL        = 22 as const, // `*`
+    TOKEN_DIV        = 23 as const, // `/`
+    TOKEN_POW        = 24 as const, // `^`
+    TOKEN_AT         = 25 as const, // `@`
+    TOKEN_COMMA      = 26 as const, // `,`
+    TOKEN_DOT        = 27 as const, // `.`
     /* Punctuation */
-    TOKEN_QUOTE      = 25 as const, // `"`
-    TOKEN_PAREN_L    = 26 as const, // `(`
-    TOKEN_PAREN_R    = 27 as const, // `)`
-    TOKEN_BRACE_L    = 28 as const, // `{`
-    TOKEN_BRACE_R    = 29 as const, // `}`
+    TOKEN_QUOTE      = 28 as const, // `"`
+    TOKEN_PAREN_L    = 29 as const, // `(`
+    TOKEN_PAREN_R    = 30 as const, // `)`
+    TOKEN_BRACE_L    = 31 as const, // `{`
+    TOKEN_BRACE_R    = 32 as const, // `}`
     /* Keywords */
-    TOKEN_TRUE       = 30 as const, // `true`
-    TOKEN_FALSE      = 31 as const, // `false`
+    TOKEN_TRUE       = 33 as const, // `true`
+    TOKEN_FALSE      = 34 as const, // `false`
     /* Literals */
-    TOKEN_STRING     = 32 as const, // string literal `"foo"`
-    TOKEN_IDENT      = 33 as const, // identifier `foo`
-    TOKEN_INT        = 34 as const, // integer literal `123`
-    TOKEN_FLOAT      = 35 as const, // floating-point literal `123.456`
+    TOKEN_STRING     = 35 as const, // string literal `"foo"`
+    TOKEN_IDENT      = 36 as const, // identifier `foo`
+    TOKEN_INT        = 37 as const, // integer literal `123`
+    TOKEN_FLOAT      = 38 as const, // floating-point literal `123.456`
     TOKEN_NONE       = TOKEN_INVALID,
     TOKEN_ENUM_START = TOKEN_INVALID,
     TOKEN_ENUM_END   = TOKEN_FLOAT,
@@ -76,6 +78,8 @@ export const Token_Kind = {
     Not_Eq:     TOKEN_NOT_EQ,
     Or:         TOKEN_OR,
     And:        TOKEN_AND,
+    Bool_Or:    TOKEN_BOOL_OR,
+    Bool_And:   TOKEN_BOOL_AND,
     Bind:       TOKEN_BIND,
     Eq:         TOKEN_EQ,
     Add:        TOKEN_ADD,
@@ -116,6 +120,8 @@ export const token_kind_string = (kind: Token_Kind): string => {
     case TOKEN_NOT_EQ:     return "Not_Eq"
     case TOKEN_OR:         return "Or"
     case TOKEN_AND:        return "And"
+    case TOKEN_BOOL_OR:    return "Bool_Or"
+    case TOKEN_BOOL_AND:   return "Bool_And"
     case TOKEN_BIND:       return "Bind"
     case TOKEN_EQ:         return "Eq"
     case TOKEN_ADD:        return "Add"
@@ -286,8 +292,18 @@ export const token_next = (t: Tokenizer): Token => {
     case 42 /* '*' */: return _token_make_move(t, TOKEN_MUL)
     case 47 /* '/' */: return _token_make_move(t, TOKEN_DIV)
     case 94 /* '^' */: return _token_make_move(t, TOKEN_POW)
-    case 38 /* '&' */: return _token_make_move(t, TOKEN_AND)
-    case 124/* '|' */: return _token_make_move(t, TOKEN_OR)
+    case 38 /* '&' */: {
+        if (next_char_code(t) === 38 /* '&' */) {
+            return _token_make_move(t, TOKEN_BOOL_AND)
+        }
+        return _token_make_move_back(t, TOKEN_AND)
+    }
+    case 124/* '|' */: {
+        if (next_char_code(t) === 124 /* '|' */) {
+            return _token_make_move(t, TOKEN_BOOL_OR)
+        }
+        return _token_make_move_back(t, TOKEN_OR)
+    }
     case 63 /* '?' */: return _token_make_move(t, TOKEN_QUESTION)
     case 58 /* ':' */: return _token_make_move(t, TOKEN_COLON)
     case 64 /* '@' */: return _token_make_move(t, TOKEN_AT)
@@ -406,6 +422,8 @@ export const token_len = (src: string, tok: Token): number => {
     case TOKEN_SUB_EQ:
     case TOKEN_EQ:
     case TOKEN_NOT_EQ:
+    case TOKEN_BOOL_OR:
+    case TOKEN_BOOL_AND:
         return 2
 
     // Multi-character tokens
@@ -723,8 +741,11 @@ export const token_kind_precedence = (kind: Token_Kind): number => {
     case TOKEN_LESS:
     case TOKEN_LESS_EQ:    return 3
 
-    case TOKEN_AND:
+    case TOKEN_BOOL_OR:
     case TOKEN_OR:         return 4
+
+    case TOKEN_AND:
+    case TOKEN_BOOL_AND:   return 5
 
     case TOKEN_ADD:
     case TOKEN_SUB:        return 6
