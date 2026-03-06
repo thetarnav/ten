@@ -2231,8 +2231,23 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
     case TERM_BINARY: {
 
         if (term.op === TOKEN_OR) {
-            // TODO
-            return task.term
+            // Try reducing lhs and rhs
+            // ? Should reduce early here?
+
+            let lhs_id = task_wait_on(ctx, task_key(term.lhs, task.scope))
+            if (lhs_id == null) return null
+
+            let rhs_id = task_wait_on(ctx, task_key(term.rhs, task.scope))
+            if (rhs_id == null) return null
+
+            /* () | X  ->  () */
+            if (rhs_id === TERM_ID_ANY || lhs_id === TERM_ID_ANY) return TERM_ID_ANY
+
+            /* !() | X  ->  X */
+            if (rhs_id === TERM_ID_NEVER) return lhs_id
+            if (lhs_id === TERM_ID_NEVER) return rhs_id
+
+            return term_or(ctx, lhs_id, rhs_id)
         }
 
         switch (term.op) {
