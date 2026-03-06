@@ -51,9 +51,6 @@ export const
     TOKEN_PAREN_R    = 30 as const, // `)`
     TOKEN_BRACE_L    = 31 as const, // `{`
     TOKEN_BRACE_R    = 32 as const, // `}`
-    /* Keywords */
-    TOKEN_TRUE       = 33 as const, // `true`
-    TOKEN_FALSE      = 34 as const, // `false`
     /* Literals */
     TOKEN_STRING     = 35 as const, // string literal `"foo"`
     TOKEN_IDENT      = 36 as const, // identifier `foo`
@@ -105,7 +102,7 @@ export const Token_Kind = {
 
 export type Token_Kind = typeof Token_Kind[keyof typeof Token_Kind]
 
-export const token_kind_string = (kind: Token_Kind): string => {
+export const token_kind_name = (kind: Token_Kind): string => {
     switch (kind) {
     case TOKEN_INVALID:    return "Invalid"
     case TOKEN_EOF:        return "EOF"
@@ -148,6 +145,7 @@ export const token_kind_string = (kind: Token_Kind): string => {
         return "Unknown"
     }
 }
+export {token_kind_name as token_kind_display}
 
 const CLOSE_TOKEN_TABLE = {
     [TOKEN_PAREN_L]: TOKEN_PAREN_R,
@@ -220,6 +218,105 @@ export const is_alpha = (ch: string): boolean => is_alpha_code(ch.charCodeAt(0))
 export const is_alnum = (ch: string): boolean => is_alnum_code(ch.charCodeAt(0))
 export const is_ident = (ch: string): boolean => is_ident_code(ch.charCodeAt(0))
 export const is_white = (ch: string): boolean => is_white_code(ch.charCodeAt(0))
+
+export const token_kind_is_literal = (kind: Token_Kind): boolean => {
+    switch (kind) {
+    case TOKEN_STRING:
+    case TOKEN_IDENT:
+    case TOKEN_INT:
+    case TOKEN_FLOAT:
+        return true
+    }
+    return false
+}
+export const token_is_literal = (tok: Token): boolean => {
+    return token_kind_is_literal(tok.kind)
+}
+
+export const token_kind_string = (kind: Token_Kind): string | null => {
+    switch (kind) {
+    case TOKEN_EOL:        return `\n`
+    case TOKEN_QUESTION:   return `?`
+    case TOKEN_COLON:      return `:`
+    case TOKEN_GREATER:    return `>`
+    case TOKEN_LESS:       return `<`
+    case TOKEN_GREATER_EQ: return `>=`
+    case TOKEN_LESS_EQ:    return `<=`
+    case TOKEN_NEG:        return `!`
+    case TOKEN_NOT_EQ:     return `!=`
+    case TOKEN_OR:         return `|`
+    case TOKEN_AND:        return `&`
+    case TOKEN_BOOL_OR:    return `||`
+    case TOKEN_BOOL_AND:   return `&&`
+    case TOKEN_BIND:       return `=`
+    case TOKEN_EQ:         return `==`
+    case TOKEN_ADD:        return `+`
+    case TOKEN_SUB:        return `-`
+    case TOKEN_ADD_EQ:     return `+=`
+    case TOKEN_SUB_EQ:     return `-=`
+    case TOKEN_MUL:        return `*`
+    case TOKEN_DIV:        return `/`
+    case TOKEN_POW:        return `^`
+    case TOKEN_AT:         return `@`
+    case TOKEN_COMMA:      return `,`
+    case TOKEN_DOT:        return `.`
+    case TOKEN_QUOTE:      return `"`
+    case TOKEN_PAREN_L:    return `(`
+    case TOKEN_PAREN_R:    return `)`
+    case TOKEN_BRACE_L:    return `{`
+    case TOKEN_BRACE_R:    return `}`
+    }
+    return null
+}
+
+export const token_end = (src: string, tok: Token): number => {
+    return tok.pos + token_len(src, tok)
+}
+
+export const token_span = (src: string, tok: Token): Source_Span => {
+    return {
+        pos: tok.pos,
+        len: token_len(src, tok),
+    }
+}
+
+export const span_string = (src: string, range: Source_Span): string => {
+    return src.substring(range.pos, range.pos + range.len)
+}
+
+export const token_string = (src: string, tok: Token): string => {
+    let end = token_end(src, tok)
+    return src.substring(tok.pos, end)
+}
+
+export const token_display = (src: string, tok: Token): string => {
+    switch (tok.kind) {
+    case TOKEN_EOF:
+    case TOKEN_EOL:
+        return token_kind_name(tok.kind)
+    default:
+        return `${token_kind_name(tok.kind)}(${token_string(src, tok)})`
+    }
+}
+
+export const tokens_display = (src: string, tokens: Token[]): string => {
+    let result = ''
+    let first = true
+    for (let i = 0; i < tokens.length; i++) {
+        let tok = tokens[i]
+        if (tok.kind === TOKEN_EOL) {
+            result += '\n'
+            first = true
+        } else {
+            if (!first) {
+                result += ' '
+            }
+            first = false
+            result += token_display(src, tok)
+        }
+    }
+    return result
+}
 
 export const token_make = (t: Tokenizer, kind: Token_Kind): Token => {
     return {
@@ -485,55 +582,6 @@ export const token_len = (src: string, tok: Token): number => {
     }
 }
 
-export const token_end = (src: string, tok: Token): number => {
-    return tok.pos + token_len(src, tok)
-}
-
-export const token_span = (src: string, tok: Token): Source_Span => {
-    return {
-        pos: tok.pos,
-        len: token_len(src, tok),
-    }
-}
-
-export const span_string = (src: string, range: Source_Span): string => {
-    return src.substring(range.pos, range.pos + range.len)
-}
-
-export const token_string = (src: string, tok: Token): string => {
-    let end = token_end(src, tok)
-    return src.substring(tok.pos, end)
-}
-
-export const token_display = (src: string, tok: Token): string => {
-    switch (tok.kind) {
-    case TOKEN_EOF:
-    case TOKEN_EOL:
-        return token_kind_string(tok.kind)
-    default:
-        return `${token_kind_string(tok.kind)}(${token_string(src, tok)})`
-    }
-}
-
-export const tokens_display = (src: string, tokens: Token[]): string => {
-    let result = ''
-    let first = true
-    for (let i = 0; i < tokens.length; i++) {
-        let tok = tokens[i]
-        if (tok.kind === TOKEN_EOL) {
-            result += '\n'
-            first = true
-        } else {
-            if (!first) {
-                result += ' '
-            }
-            first = false
-            result += token_display(src, tok)
-        }
-    }
-    return result
-}
-
 /*--------------------------------------------------------------*
 
     PARSER
@@ -558,7 +606,7 @@ export const Expr_Kind = {
 
 export type Expr_Kind = typeof Expr_Kind[keyof typeof Expr_Kind]
 
-export const expr_kind_string = (kind: Expr_Kind): string => {
+export const expr_kind_name = (kind: Expr_Kind): string => {
     switch (kind) {
     case EXPR_TOKEN:    return "Token"
     case EXPR_UNARY:    return "Unary"
@@ -571,6 +619,7 @@ export const expr_kind_string = (kind: Expr_Kind): string => {
         return "Unknown"
     }
 }
+export {expr_kind_name as expr_kind_display}
 
 export type Expr =
     | Expr_Token
@@ -1080,7 +1129,7 @@ const Term_Kind = {
 } as const
 type Term_Kind = typeof Term_Kind[keyof typeof Term_Kind]
 
-const term_kind_string = (kind: Term_Kind): string => {
+const term_kind_name = (kind: Term_Kind): string => {
     switch (kind) {
     case TERM_ANY:       return "Any"
     case TERM_NEVER:     return "Never"
@@ -1101,6 +1150,7 @@ const term_kind_string = (kind: Term_Kind): string => {
         return "Unknown"
     }
 }
+export {term_kind_name as term_kind_display}
 
 const
     TASK_STATE_INIT    = (MAX_HIGH_ID + 0) as any as 'TASK_STATE_INIT',
@@ -1779,7 +1829,7 @@ const task_make = (ctx: Context, key: Task_Key, expr: Expr | null = null, src: s
         task.value = TASK_STATE_QUEUE
         task.term  = key % MAX_HIGH_ID as Term_Id
         task.scope = Math.floor(key / MAX_HIGH_ID) as Scope_Id
-        ctx.task_queue.push(key)
+        ctx.task_queue.push(key) // TODO: try running immediately
     }
 
     if (expr != null) {
@@ -2355,48 +2405,35 @@ const term_match_type = (ctx: Context, term_id: Term_Id, type_id: Term_Id): bool
 }
 
 const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_Id>()): string => {
-    switch (term_id) {
-    case TERM_ID_ANY:       return '()'
-    case TERM_ID_NEVER:     return '!()'
-    case TERM_ID_NIL:       return 'nil'
-    case TERM_ID_TYPE_INT:  return 'int'
-    case TERM_ID_TYPE_BOOL: return 'bool'
-    }
 
     let term = term_by_id_assert(ctx, term_id)
     switch (term.kind) {
+    case TERM_WORLD:     return '<world>'
+    case TERM_ANY:       return '()'
+    case TERM_NEVER:     return '!()'
+    case TERM_NIL:       return 'nil'
+    case TERM_TYPE_BOOL: return 'bool'
+    case TERM_TYPE_INT:  return 'int'
     case TERM_BOOL:
         return term.value ? 'true' : 'false'
     case TERM_INT:
-        return `${term.value}`
+        return String(term.value)
     case TERM_VAR:
         return ident_string(ctx, term.ident)
     case TERM_NEG:
-        return `!${term_string(ctx, term.rhs, seen_scope)}`
-    case TERM_BINARY: {
-
-        let op = token_string('', {kind: term.op, pos: 0})
-        if (op === '') {
-            switch (term.op) {
-            case TOKEN_AND:        op = '&'  ;break
-            case TOKEN_OR:         op = '|'  ;break
-            case TOKEN_ADD:        op = '+'  ;break
-            case TOKEN_SUB:        op = '-'  ;break
-            case TOKEN_MUL:        op = '*'  ;break
-            case TOKEN_DIV:        op = '/'  ;break
-            case TOKEN_EQ:         op = '==' ;break
-            case TOKEN_NOT_EQ:     op = '!=' ;break
-            case TOKEN_LESS:       op = '<'  ;break
-            case TOKEN_LESS_EQ:    op = '<=' ;break
-            case TOKEN_GREATER:    op = '>'  ;break
-            case TOKEN_GREATER_EQ: op = '>=' ;break
-            default: op = token_kind_string(term.op)
-            }
-        }
-        return `${term_string(ctx, term.lhs, seen_scope)} ${op} ${term_string(ctx, term.rhs, seen_scope)}`
-    }
+        return '!' + term_string(ctx, term.rhs, seen_scope)
+    case TERM_BINARY:
+        return (
+            term_string(ctx, term.lhs, seen_scope) +
+            ' ' + (token_kind_string(term.op) ?? token_kind_name(term.op)) + ' ' +
+            term_string(ctx, term.rhs, seen_scope)
+        )
     case TERM_TERNARY:
-        return `${term_string(ctx, term.cond, seen_scope)} ? ${term_string(ctx, term.lhs, seen_scope)} : ${term_string(ctx, term.rhs, seen_scope)}`
+        return (
+            term_string(ctx, term.cond, seen_scope) + ' ? ' +
+            term_string(ctx, term.lhs, seen_scope) + ' : ' +
+            term_string(ctx, term.rhs, seen_scope)
+        )
     case TERM_SCOPE: {
         if (seen_scope.has(term.id)) {
             return '{...}'
@@ -2434,18 +2471,6 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
     }
     case TERM_SELECT:
         return `${term_string(ctx, term.lhs, seen_scope)}.${ident_string(ctx, term.rhs)}`
-    case TERM_WORLD:
-        return '<world>'
-    case TERM_ANY:
-        return '()'
-    case TERM_NEVER:
-        return '!()'
-    case TERM_NIL:
-        return 'nil'
-    case TERM_TYPE_BOOL:
-        return 'bool'
-    case TERM_TYPE_INT:
-        return 'int'
     default:
         term satisfies never
         return '!()'
