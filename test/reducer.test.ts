@@ -315,7 +315,7 @@ test.suite('reducer diagnostics', {concurrency: true}, () => {
         a = foo{num = 2}
         b = foo{num = 3}
         output = a.num + b.num
-    `, `5`, [`Unsupported statement in scope body`])
+    `, `5`, ["Unsupported expression in scope body: `a + b`"])
 
     test_reducer(`
         loop = loop + 1
