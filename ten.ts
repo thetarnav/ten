@@ -1727,16 +1727,24 @@ const term_eq = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
     let key = term_binary_encode(TOKEN_EQ, lhs, rhs)
     return term_from_key(ctx, key)
 }
-const term_and = (ctx: Context, lhs_id: Term_Id, rhs_id: Term_Id): Term_Id => {
-    if (lhs_id === TERM_ID_NONE) return rhs_id
-    if (rhs_id === TERM_ID_NONE) return lhs_id
+const term_and = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
+    if (lhs === rhs) return lhs
+    if (lhs === TERM_ID_NEVER) return TERM_ID_NEVER
+    if (rhs === TERM_ID_NEVER) return TERM_ID_NEVER
+    if (lhs === TERM_ID_ANY) return rhs
+    if (rhs === TERM_ID_ANY) return lhs
     // Canonical treap merge for AND chains
     // `lhs` and `rhs` should already be normalized
-    let merged = term_chain_join(ctx, TOKEN_AND, lhs_id, rhs_id)
+    let merged = term_chain_join(ctx, TOKEN_AND, lhs, rhs)
     assert(merged != null, 'Expected AND chain result')
     return merged
 }
 const term_or = (ctx: Context, lhs: Term_Id, rhs: Term_Id): Term_Id => {
+    if (lhs === rhs) return lhs
+    if (lhs === TERM_ID_ANY) return TERM_ID_ANY
+    if (rhs === TERM_ID_ANY) return TERM_ID_ANY
+    if (lhs === TERM_ID_NEVER) return rhs
+    if (rhs === TERM_ID_NEVER) return lhs
     // Canonical treap merge for OR chains
     // `lhs` and `rhs` should already be normalized
     let merged = term_chain_join(ctx, TOKEN_OR, lhs, rhs)
