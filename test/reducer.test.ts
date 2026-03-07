@@ -3,17 +3,19 @@ import * as ten  from '../ten.ts'
 import {expect, fail} from './setup.ts'
 
 function test_reducer(input: string, expected: string, expected_diagnostics: string[] | null = null) {
-    test.test('`'+input+'`', () => {
-        let src = input.trim()
 
-        let [expr, errors] = ten.parse_src(src)
+    input = input.trim()
+
+    test.test('`'+input+'`', () => {
+
+        let [expr, errors] = ten.parse_src(input)
         if (errors.length !== 0) {
             fail(`Parse errors: ${JSON.stringify(errors)}`)
         }
 
         let ctx = ten.context_make()
 
-        ten.add_expr(ctx, expr, src)
+        ten.add_expr(ctx, expr, input)
         ten.reduce(ctx)
 
         let result_str = ten.display(ctx)
