@@ -2362,8 +2362,17 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         let scope_reduce = task_wait_on(ctx, task_key(scope_lookup, task.scope))
         if (scope_reduce == null) return null
 
-        let scope_term = term_by_id(ctx, scope_reduce)
-        if (scope_term == null || scope_term.kind !== TERM_SCOPE) {
+        let scope_term = term_by_id_assert(ctx, scope_reduce)
+
+        // ({a=1} | {a=2}).a  ->  1 | 2
+        if (scope_term.kind === TERM_BINARY && scope_term.op === TOKEN_OR) {
+            let new_lhs  = term_select(ctx, scope_term.lhs, term.rhs)
+            let new_rhs  = term_select(ctx, scope_term.rhs, term.rhs)
+            let new_term = term_or(ctx, new_lhs, new_rhs)
+            return task_wait_on(ctx, task_key(new_term, task.scope))
+        }
+
+        if (scope_term.kind !== TERM_SCOPE) {
             task_error_semantic(ctx, task, `${term_string(ctx, term.lhs)} isn't a scope`)
             return TERM_ID_NEVER
         }
