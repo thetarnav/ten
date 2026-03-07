@@ -2117,9 +2117,9 @@ const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Sc
     if (a_id === TERM_ID_ANY) return b_id
     if (b_id === TERM_ID_ANY) return a_id
 
-    // TODO: proper equivalence checking for more complex terms (id equality is handled by canonical treap representation)
-    // /* X & X  ->  X */
-    // if (a_id === b_id) return a_id
+    // TODO: proper equivalence checking for more complex terms
+    /* X & X  ->  X */
+    if (a_id === b_id) return a_id
 
     // 1 & 1  ->  1
     // 1 & 0  ->  !()
@@ -2275,6 +2275,10 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             /* !() | X  ->  X */
             if (rhs_id === TERM_ID_NEVER) return lhs_id
             if (lhs_id === TERM_ID_NEVER) return rhs_id
+
+            // TODO: proper equivalence checking for more complex terms
+            /* X & X  ->  X */
+            if (lhs_id === rhs_id) return lhs_id
 
             return term_or(ctx, lhs_id, rhs_id)
         }
