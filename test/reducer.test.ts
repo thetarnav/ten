@@ -248,10 +248,6 @@ test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
     test_reducer(`
         output = 1 == 2 ? 5 : 7
     `, `7`)
-    test_reducer(`
-        loop = loop + 1
-        output = 1 == 1 ? 5 : loop
-    `, `5`)
 
     test_reducer(`
         output = ((1 == 1) && 5) || (!(1 == 1) && 7)
@@ -259,10 +255,6 @@ test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
     test_reducer(`
         output = ((1 == 2) && 5) || (!(1 == 2) && 7)
     `, `7`)
-    test_reducer(`
-        loop = loop + 1
-        output = ((1 == 1) && 5) || (!(1 == 1) && loop)
-    `, `5`)
 })
 
 test.suite('reducer diagnostics', {concurrency: true}, () => {
@@ -322,6 +314,11 @@ test.suite('reducer diagnostics', {concurrency: true}, () => {
         b = foo{num = 3}
         output = a.num + b.num
     `, `5`, [`Unsupported statement in scope body`])
+
+    test_reducer(`
+        loop = loop + 1
+        output = loop
+    `, `5`, ['Self-recursive binding for \'loop\''])
 })
 
 test.suite('reducer recursion', {concurrency: true}, () => {
