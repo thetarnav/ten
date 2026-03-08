@@ -1812,10 +1812,9 @@ const task_make = (ctx: Context, key: Task_Key, expr: Expr | null = null, src: s
         ctx.task_map.set(key, task)
 
         task.key   = key
-        task.value = TASK_STATE_QUEUE
+        task.value = TASK_STATE_INIT
         task.term  = key % MAX_HIGH_ID as Term_Id
         task.scope = Math.floor(key / MAX_HIGH_ID) as Scope_Id
-        ctx.task_queue.push(key) // TODO: try running immediately
     }
 
     if (expr != null) {
@@ -1830,9 +1829,29 @@ const task_make = (ctx: Context, key: Task_Key, expr: Expr | null = null, src: s
 
     return task
 }
+const task_enqueue = (ctx: Context, key: Task_Key, expr: Expr | null = null, src: string | null = null) => {
+    let task = task_make(ctx, key, expr, src)
+    if (task.value === TASK_STATE_INIT) {
+        task.value = TASK_STATE_QUEUE
+        ctx.task_queue.push(key)
+    }
+    return task
+}
 const task_wait_on = (ctx: Context, key: Task_Key): Term_Id | null => {
     let task = task_make(ctx, key)
     if (!task_value_is_done(task.value)) {
+        // Try running first
+        if (task.value !== TASK_STATE_RUNNING) {
+            task.value = TASK_STATE_RUNNING
+
+            let result = task_exec_term(ctx, task)
+            if (result == null) {
+                task.value = TASK_STATE_QUEUE
+            } else {
+                task.value = result
+                return result
+            }
+        }
         return null
     }
     return task.value
@@ -1857,6 +1876,7 @@ const tasks_queue_run = (ctx: Context) => {
             let task = task_get_assert(ctx, ctx.task_queue[i])
 
             if (task.value !== TASK_STATE_QUEUE) {
+                ctx.task_queue.splice(i, 1)
                 continue // Skip if task was already processed or requeued
             }
             task.value = TASK_STATE_RUNNING
@@ -2051,7 +2071,7 @@ const index_scope_binary = (
         let rhs_term = lower_expr(ctx, rhs, src, scope_id)
         let bind_term = term_binary(ctx, TOKEN_BIND, term_var(ctx, ident), rhs_term)
         binding.value = task_key(bind_term, scope_id)
-        task_make(ctx, binding.value, expr, src)
+        task_enqueue(ctx, binding.value, expr, src)
         return
     }
     // lhs : rhs
@@ -2068,7 +2088,7 @@ const index_scope_binary = (
         let rhs_term = lower_expr(ctx, rhs, src, scope_id)
         let bind_term = term_binary(ctx, TOKEN_COLON, term_var(ctx, ident), rhs_term)
         binding.type = task_key(bind_term, scope_id)
-        task_make(ctx, binding.type, expr, src)
+        task_enqueue(ctx, binding.type, expr, src)
         return
     }
     }
@@ -2468,7 +2488,7 @@ export function add_expr(ctx: Context, expr: Expr, src: string) {
 
 export function reduce(ctx: Context) {
     let term = term_var(ctx, ident_id(ctx, 'output'))
-    task_make(ctx, task_key(term, SCOPE_ID_GLOBAL))
+    task_enqueue(ctx, task_key(term, SCOPE_ID_GLOBAL))
     tasks_queue_run(ctx)
 }
 
