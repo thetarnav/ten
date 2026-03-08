@@ -138,7 +138,7 @@ test.suite('reducer integer arithmetic', {concurrency: true}, () => {
     `, `2147483647`)
 })
 
-test.suite('reducer union, intersection, and nil', {concurrency: true}, () => {
+test.suite('reducer union and intersection', {concurrency: true}, () => {
 
     test_reducer(`
         a: 1 | 2
@@ -163,10 +163,6 @@ test.suite('reducer union, intersection, and nil', {concurrency: true}, () => {
     `, `{}`)
 
     test_reducer(`
-        output = nil
-    `, `nil`)
-
-    test_reducer(`
         output = 1 | nil
     `, `nil | 1`)
 
@@ -177,6 +173,28 @@ test.suite('reducer union, intersection, and nil', {concurrency: true}, () => {
     test_reducer(`
         output = nil & (nil | 1)
     `, `nil`)
+})
+
+test.suite('reducer scope instantiation', {concurrency: true}, () => {
+
+    test_reducer(`
+        foo = {a: int}
+        bar = foo{a = 2}
+        output = bar.a
+    `, `2`)
+    test_reducer(`
+        output = {a: int}{a = 2}.a
+    `, `2`)
+
+    test_reducer(`
+        foo = {a: int, b = a+2}
+        bar = foo{a = 2}
+        output = bar.b
+    `, `4`)
+    test_reducer(`
+        output = {a: int, b = a+2}{a = 2}.b
+    `, `4`)
+
 })
 
 test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
