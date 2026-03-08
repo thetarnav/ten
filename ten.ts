@@ -1848,6 +1848,9 @@ const task_wait_on = (ctx: Context, key: Task_Key): Term_Id | null => {
     }
     return task.value
 }
+const task_wait_on_term = (ctx: Context, term: Term_Id, scope: Scope_Id): Term_Id | null => {
+    return task_wait_on(ctx, task_key(term, scope))
+}
 const task_value_is_done = (value: Term_Id | Task_State): value is Term_Id => {
     return value !== TASK_STATE_INIT && value !== TASK_STATE_QUEUE && value !== TASK_STATE_RUNNING
 }
@@ -2168,7 +2171,7 @@ const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Sc
                 let b_value = task_wait_on(ctx, b_field.value)
                 if (b_value == null) return null
 
-                let value = task_wait_on(ctx, task_key(term_and(ctx, a_value, b_value), scope_id))
+                let value = task_wait_on_term(ctx, term_and(ctx, a_value, b_value), scope_id)
                 if (value == null) return null
 
                 new_field.value = task_key(value, scope_id)
@@ -2185,7 +2188,7 @@ const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Sc
                 let b_type = task_wait_on(ctx, b_field.type)
                 if (b_type == null) return null
 
-                let type = task_wait_on(ctx, task_key(term_and(ctx, a_type, b_type), scope_id))
+                let type = task_wait_on_term(ctx, term_and(ctx, a_type, b_type), scope_id)
                 if (type == null) return null
 
                 new_field.type = task_key(type, scope_id)
@@ -2235,7 +2238,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
     }
 
     case TERM_NEG: {
-        let rhs = task_wait_on(ctx, task_key(term.rhs, task.scope))
+        let rhs = task_wait_on_term(ctx, term.rhs, task.scope)
         if (rhs == null) return null
 
         /*
@@ -2262,10 +2265,10 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             // Try reducing lhs and rhs
             // ? Should reduce early here?
 
-            let lhs_id = task_wait_on(ctx, task_key(term.lhs, task.scope))
+            let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
             if (lhs_id == null) return null
 
-            let rhs_id = task_wait_on(ctx, task_key(term.rhs, task.scope))
+            let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
             if (rhs_id == null) return null
 
             /* () | X  ->  () */
@@ -2286,16 +2289,16 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         // lhs = rhs
         case TOKEN_BIND:
             // ? should reduce here?
-            return task_wait_on(ctx, task_key(term.rhs, task.scope))
+            return task_wait_on_term(ctx, term.rhs, task.scope)
         // lhs: rhs
         case TOKEN_COLON:
             return term_bool(term_match_type(ctx, term.rhs, term.lhs))
         }
 
-        let lhs_id = task_wait_on(ctx, task_key(term.lhs, task.scope))
+        let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
         if (lhs_id == null) return null
 
-        let rhs_id = task_wait_on(ctx, task_key(term.rhs, task.scope))
+        let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
         if (rhs_id == null) return null
 
         let lhs = term_by_id_assert(ctx, lhs_id)
@@ -2307,14 +2310,14 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             let new_rhs  = term_binary(ctx, term.op, lhs.rhs, term.rhs)
             let new_term = term_or(ctx, new_lhs, new_rhs)
 
-            return task_wait_on(ctx, task_key(new_term, task.scope))
+            return task_wait_on_term(ctx, new_term, task.scope)
         }
         if (rhs.kind === TERM_BINARY && rhs.op === TOKEN_OR) {
             let new_lhs  = term_binary(ctx, term.op, term.lhs, rhs.lhs)
             let new_rhs  = term_binary(ctx, term.op, term.lhs, rhs.rhs)
             let new_term = term_or(ctx, new_lhs, new_rhs)
 
-            return task_wait_on(ctx, task_key(new_term, task.scope))
+            return task_wait_on_term(ctx, new_term, task.scope)
         }
 
         if (term.op === TOKEN_AND) {
@@ -2358,11 +2361,11 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
 
     case TERM_SELECT: {
 
-        let scope_lookup = task_wait_on(ctx, task_key(term.lhs, task.scope))
+        let scope_lookup = task_wait_on_term(ctx, term.lhs, task.scope)
         if (scope_lookup == null) return null
 
         // ? Should reduce early?
-        let scope_reduce = task_wait_on(ctx, task_key(scope_lookup, task.scope))
+        let scope_reduce = task_wait_on_term(ctx, scope_lookup, task.scope)
         if (scope_reduce == null) return null
 
         let scope_term = term_by_id_assert(ctx, scope_reduce)
@@ -2372,7 +2375,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             let new_lhs  = term_select(ctx, scope_term.lhs, term.rhs)
             let new_rhs  = term_select(ctx, scope_term.rhs, term.rhs)
             let new_term = term_or(ctx, new_lhs, new_rhs)
-            return task_wait_on(ctx, task_key(new_term, task.scope))
+            return task_wait_on_term(ctx, new_term, task.scope)
         }
 
         if (scope_term.kind !== TERM_SCOPE) {
@@ -2482,7 +2485,7 @@ export function reduce(ctx: Context) {
 
 export function display(ctx: Context): string {
     let term = term_var(ctx, ident_id(ctx, 'output'))
-    let value = task_wait_on(ctx, task_key(term, SCOPE_ID_GLOBAL))
+    let value = task_wait_on_term(ctx, term, SCOPE_ID_GLOBAL)
     assert(value != null, 'Expected output task to have a resolved value after reduction')
     return term_string(ctx, value)
 }
