@@ -1830,17 +1830,6 @@ const task_make = (ctx: Context, key: Task_Key, expr: Expr | null = null, src: s
 
     return task
 }
-const task_requeue = (ctx: Context, key: Task_Key): Task => {
-
-    let task = task_get_assert(ctx, key)
-
-    if (task.value !== TASK_STATE_QUEUE) {
-        task.value = TASK_STATE_QUEUE
-        ctx.task_queue.push(task.key)
-    }
-
-    return task
-}
 const task_wait_on = (ctx: Context, key: Task_Key): Term_Id | null => {
     let task = task_make(ctx, key)
     if (!task_value_is_done(task.value)) {
@@ -1860,27 +1849,27 @@ const tasks_queue_run = (ctx: Context) => {
     let iteration = 0
 
     while (ctx.task_queue.length > 0) {
+        for (let i = ctx.task_queue.length-1; i >= 0; i -= 1) {
 
-        iteration += 1
-        assert(iteration < 10000, "Too many iterations, possible infinite loop")
+            iteration += 1
+            assert(iteration < 10000, "Too many iterations, possible infinite loop")
 
-        let key = ctx.task_queue.shift()! // TODO: optimize with circular buffer
-        let task = ctx.task_map.get(key)
-        assert(task != null, "Task not found for key in queue")
+            let task = task_get_assert(ctx, ctx.task_queue[i])
 
-        if (task.value !== TASK_STATE_QUEUE) {
-            continue // Skip if task was already processed or requeued
+            if (task.value !== TASK_STATE_QUEUE) {
+                continue // Skip if task was already processed or requeued
+            }
+            task.value = TASK_STATE_RUNNING
+
+            let result = task_exec_term(ctx, task)
+            if (result == null) {
+                task.value = TASK_STATE_QUEUE
+            } else {
+                task.value = result
+                ctx.task_queue.splice(i, 1)
+                break // Start from the right again
+            }
         }
-        task.value = TASK_STATE_RUNNING
-
-        let result = task_exec_term(ctx, task)
-        if (result == null) {
-            task_requeue(ctx, key)
-        } else {
-            task.value = result
-        }
-
-        assert(task.value !== TASK_STATE_RUNNING, 'Task did not complete but is still marked as running')
     }
 }
 
