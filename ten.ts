@@ -1870,11 +1870,8 @@ const tasks_queue_run = (ctx: Context) => {
         }
         task.value = TASK_STATE_RUNNING
 
-        console.log(`Running task: ${task.key}`)
-
         let result = task_exec_term(ctx, task)
         if (result == null) {
-            console.log(`Requeuing task: ${task.key}`)
             task_requeue(ctx, key)
         } else {
             task.value = result
