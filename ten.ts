@@ -2048,10 +2048,7 @@ const index_scope_binary = (
 
         // foo = rhs
         let ident = ident_expr_id_or_error(ctx, lhs, src)
-        if (ident == null) {
-            error_semantic(ctx, lhs, src, 'Invalid value binding target')
-            return
-        }
+        if (ident == null) return
 
         let binding = binding_ensure(ctx, ident, scope_id)
         if (binding.value != null) {
@@ -2068,10 +2065,7 @@ const index_scope_binary = (
     // lhs : rhs
     case TOKEN_COLON: {
         let ident = ident_expr_id_or_error(ctx, lhs, src)
-        if (ident == null) {
-            error_semantic(ctx, lhs, src, 'Invalid type constraint target')
-            return
-        }
+        if (ident == null) return
 
         let binding = binding_ensure(ctx, ident, scope_id)
         if (binding.type != null) {

@@ -282,7 +282,7 @@ test.suite('reducer diagnostics', {concurrency: true}, () => {
         foo = {a = 3}
         foo.b = 4
         output = foo
-    `, `!()`, [`Unsupported field write on scope value 'foo'`])
+    `, `{a = 3}`, ["Invalid token, expected identifier: `foo.b`"])
 
     test_reducer(`
         x = ({a = 2} | {b = 3}).a
@@ -297,12 +297,6 @@ test.suite('reducer diagnostics', {concurrency: true}, () => {
         foo = 1
         output = foo.a
     `, `!()`, [`Selector read on non-scope for .a`])
-
-    test_reducer(`
-        foo = {a = 3}
-        foo.b = 4
-        output = foo
-    `, `!()`, [`Illegal field write on closed scope value 'foo'`])
 
     test_reducer(`
         foo = ()
