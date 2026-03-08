@@ -2174,7 +2174,7 @@ const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Sc
                 let b_value = task_wait_on(ctx, b_field.value)
                 if (b_value == null) return null
 
-                let value = term_intersect(ctx, a_value, b_value, scope_id)
+                let value = task_wait_on(ctx, task_key(term_and(ctx, a_value, b_value), scope_id))
                 if (value == null) return null
 
                 new_field.value = task_key(value, scope_id)
@@ -2191,7 +2191,7 @@ const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Sc
                 let b_type = task_wait_on(ctx, b_field.type)
                 if (b_type == null) return null
 
-                let type = term_intersect(ctx, a_type, b_type, scope_id)
+                let type = task_wait_on(ctx, task_key(term_and(ctx, a_type, b_type), scope_id))
                 if (type == null) return null
 
                 new_field.type = task_key(type, scope_id)
