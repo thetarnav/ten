@@ -2246,6 +2246,41 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         return task_wait_on(ctx, binding.value)
     }
 
+    case TERM_SELECT: {
+
+        let scope_lookup = task_wait_on_term(ctx, term.lhs, task.scope)
+        if (scope_lookup == null) return null
+
+        // ? Should reduce early?
+        let scope_reduce = task_wait_on_term(ctx, scope_lookup, task.scope)
+        if (scope_reduce == null) return null
+
+        let scope_term = term_by_id_assert(ctx, scope_reduce)
+
+        // ({a=1} | {a=2}).a  ->  1 | 2
+        if (scope_term.kind === TERM_BINARY && scope_term.op === TOKEN_OR) {
+            let new_lhs  = term_select(ctx, scope_term.lhs, term.rhs)
+            let new_rhs  = term_select(ctx, scope_term.rhs, term.rhs)
+            let new_term = term_or(ctx, new_lhs, new_rhs)
+            return task_wait_on_term(ctx, new_term, task.scope)
+        }
+
+        if (scope_term.kind !== TERM_SCOPE) {
+            task_error_semantic(ctx, task, `${term_string(ctx, term.lhs)} isn't a scope`)
+            return TERM_ID_NEVER
+        }
+
+        let field = binding_lookup_current(ctx, scope_term.id, term.rhs)
+        if (field == null) {
+            task_error_semantic(ctx, task, `Field not found in scope`)
+            return TERM_ID_NEVER
+        }
+
+        assert(field.value != null, 'Scope field has no value')
+
+        return task_wait_on(ctx, field.value)
+    }
+
     case TERM_NEG: {
         let rhs = task_wait_on_term(ctx, term.rhs, task.scope)
         if (rhs == null) return null
@@ -2366,42 +2401,6 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         }
 
         return TERM_ID_NEVER
-    }
-
-    case TERM_SELECT: {
-
-        let scope_lookup = task_wait_on_term(ctx, term.lhs, task.scope)
-        if (scope_lookup == null) return null
-
-        // ? Should reduce early?
-        let scope_reduce = task_wait_on_term(ctx, scope_lookup, task.scope)
-        if (scope_reduce == null) return null
-
-        let scope_term = term_by_id_assert(ctx, scope_reduce)
-
-        // ({a=1} | {a=2}).a  ->  1 | 2
-        if (scope_term.kind === TERM_BINARY && scope_term.op === TOKEN_OR) {
-            let new_lhs  = term_select(ctx, scope_term.lhs, term.rhs)
-            let new_rhs  = term_select(ctx, scope_term.rhs, term.rhs)
-            let new_term = term_or(ctx, new_lhs, new_rhs)
-            return task_wait_on_term(ctx, new_term, task.scope)
-        }
-
-        if (scope_term.kind !== TERM_SCOPE) {
-            task_error_semantic(ctx, task, `${term_string(ctx, term.lhs)} isn't a scope`)
-            return TERM_ID_NEVER
-        }
-
-        let scope = scope_get(ctx, scope_term.id)
-        let field = scope.fields.get(term.rhs)
-        if (field == null) {
-            task_error_semantic(ctx, task, `Field not found in scope`)
-            return TERM_ID_NEVER
-        }
-
-        assert(field.value != null, 'Scope field has no value')
-
-        return task_wait_on(ctx, field.value)
     }
 
     default:
