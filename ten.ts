@@ -2014,30 +2014,21 @@ const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_I
     if (binding == null) return null
     return binding
 }
-
-const binding_lookup_parent_chain = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding | null => {
-    let found: Binding | null = null
-    for (;;) {
-        let s = scope_get(ctx, scope_id).parent
-        if (s == null) break
-
-        found = binding_lookup_current(ctx, s, ident)
-        if (found != null) break
-
-        scope_id = s
-    }
-    return found
-}
-
-const resolve_read = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding | null => {
+const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding | null => {
     /* Lookup policy:
     |   - .foo  —  current scope only
     |   - ^foo  —  parent chain only
     |   -  foo  —  parent-first, then current
     */
     if (prefix !== TOKEN_DOT) {
-        let found = binding_lookup_parent_chain(ctx, scope_id, ident)
-        if (found != null || prefix === TOKEN_POW) return found
+        for (let s: Scope_Id | null = scope_id;;) {
+            s = scope_get(ctx, s).parent
+            if (s == null) break
+
+            let found = binding_lookup_current(ctx, s, ident)
+            if (found != null) return found
+        }
+        if (prefix === TOKEN_POW) return null
     }
 
     return binding_lookup_current(ctx, scope_id, ident)
@@ -2228,7 +2219,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         return task.term
 
     case TERM_VAR: {
-        let binding = resolve_read(ctx, task.scope, term.ident, term.prefix)
+        let binding = binding_lookup(ctx, task.scope, term.ident, term.prefix)
         if (binding == null) {
             let name = ident_string(ctx, term.ident)
             if (term.prefix === TOKEN_DOT) {
