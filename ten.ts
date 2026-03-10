@@ -2235,6 +2235,9 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
 
     case TERM_VAR: {
         let binding = binding_lookup(ctx, task.scope, term.ident, term.prefix)
+        if (binding == null) return null // wait on binding lookup
+
+        // no binding for this var
         if (binding === false) {
             let name = ident_string(ctx, term.ident)
             if (term.prefix === TOKEN_DOT) {
@@ -2247,11 +2250,15 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return TERM_ID_NEVER
         }
 
-        if (binding == null) return null // wait on binding
+        // var has no value (foo: bar)
+        if (binding.value == null) return task.term
 
-        assert(binding.value != null, 'Resolved binding has no value')
+        // wait on binding
+        let bind = task_wait_on(ctx, binding.value)
+        if (bind == null) return null
 
-        return task_wait_on(ctx, binding.value)
+        // wait on value reduce
+        return task_wait_on_term(ctx, bind, task.scope)
     }
 
     case TERM_SELECT: {
@@ -2400,7 +2407,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             }
         }
 
-        return TERM_ID_NEVER
+        return task.term // unresolved
     }
 
     default:
