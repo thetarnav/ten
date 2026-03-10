@@ -213,6 +213,16 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
         output = {a: int, b = 2}{a = b+2}.a
     `, `4`)
 
+    test_reducer(`
+        foo = {a: int, b: int, c = a + b}
+        bar = foo{a = 1}
+        baz = bar{b = 2}
+        output = baz.c
+    `, `3`)
+    test_reducer(`
+        output = {a: int, b: int, c = a + b}{a = 1}{b = 2}.c
+    `, `3`)
+
 })
 
 test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
