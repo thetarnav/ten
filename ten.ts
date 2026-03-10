@@ -2008,13 +2008,28 @@ const binding_ensure = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     return field
 }
 
-const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding | null => {
+const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding | false | null => {
+
     let scope = scope_get(ctx, scope_id)
+
+    // {foo = …}.foo
     let binding = scope.fields.get(ident)
-    if (binding == null) return null
-    return binding
+    if (binding != null) return binding
+
+    // {foo = …}{…}.foo
+    if (scope.type != null && scope.parent != null) {
+        let type_id = task_wait_on_term(ctx, scope.type, scope.parent)
+        if (type_id == null) return null
+
+        let type = term_by_id_assert(ctx, type_id)
+        if (type.kind === TERM_SCOPE) {
+            return binding_lookup_current(ctx, type.id, ident)
+        }
+    }
+
+    return false
 }
-const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding | null => {
+const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding | false | null => {
     /* Lookup policy:
     |   - .foo  —  current scope only
     |   - ^foo  —  parent chain only
@@ -2026,7 +2041,7 @@ const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefi
             if (s == null) break
 
             let found = binding_lookup_current(ctx, s, ident)
-            if (found != null) return found
+            if (found !== false) return found
         }
         if (prefix === TOKEN_POW) return null
     }
@@ -2220,7 +2235,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
 
     case TERM_VAR: {
         let binding = binding_lookup(ctx, task.scope, term.ident, term.prefix)
-        if (binding == null) {
+        if (binding === false) {
             let name = ident_string(ctx, term.ident)
             if (term.prefix === TOKEN_DOT) {
                 task_error_semantic(ctx, task, `Missing current-scope binding: .${name}`)
@@ -2231,6 +2246,8 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             }
             return TERM_ID_NEVER
         }
+
+        if (binding == null) return null // wait on binding
 
         assert(binding.value != null, 'Resolved binding has no value')
 
@@ -2261,15 +2278,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return TERM_ID_NEVER
         }
 
-        let field = binding_lookup_current(ctx, scope_term.id, term.rhs)
-        if (field == null) {
-            task_error_semantic(ctx, task, `Field not found in scope`)
-            return TERM_ID_NEVER
-        }
-
-        assert(field.value != null, 'Scope field has no value')
-
-        return task_wait_on(ctx, field.value)
+        return task_wait_on_term(ctx, term_var(ctx, term.rhs, TOKEN_DOT), scope_term.id)
     }
 
     case TERM_NEG: {
