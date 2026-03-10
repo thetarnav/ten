@@ -187,12 +187,30 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
     `, `2`)
 
     test_reducer(`
+        foo = {a: int, b = 4}
+        bar = foo{a = 2}
+        output = bar.b
+    `, `4`)
+    test_reducer(`
+        output = {a: int, b = 4}{a = 2}.b
+    `, `4`)
+
+    test_reducer(`
         foo = {a: int, b = a+2}
         bar = foo{a = 2}
         output = bar.b
     `, `4`)
     test_reducer(`
         output = {a: int, b = a+2}{a = 2}.b
+    `, `4`)
+
+    test_reducer(`
+        foo = {a: int, b = 2}
+        bar = foo{a = b+2}
+        output = bar.a
+    `, `4`)
+    test_reducer(`
+        output = {a: int, b = 2}{a = b+2}.a
     `, `4`)
 
 })
