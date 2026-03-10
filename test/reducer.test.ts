@@ -99,6 +99,74 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
     `, `{x = 2, y = 1}`)
 })
 
+test.suite('reducer boolean arithmetic', {concurrency: true}, () => {
+
+    test_reducer(`
+        output = !true
+    `, `false`)
+    test_reducer(`
+        output = !false
+    `, `true`)
+    test_reducer(`
+        output = !!true
+    `, `true`)
+    test_reducer(`
+        output = !!false
+    `, `false`)
+
+    test_reducer(`
+        output = true && true
+    `, `true`)
+    test_reducer(`
+        output = true && false
+    `, `false`)
+    test_reducer(`
+        output = false && true
+    `, `false`)
+    test_reducer(`
+        output = false && false
+    `, `false`)
+
+    test_reducer(`
+        output = true || true
+    `, `true`)
+    test_reducer(`
+        output = true || false
+    `, `true`)
+    test_reducer(`
+        output = false || true
+    `, `true`)
+    test_reducer(`
+        output = false || false
+    `, `false`)
+
+    test_reducer(`
+        output = true && 1
+    `, `1`)
+    test_reducer(`
+        output = false && 1
+    `, `false`)
+    test_reducer(`
+        output = 1 && true
+    `, `true`)
+    test_reducer(`
+        output = 1 && false
+    `, `false`)
+
+    test_reducer(`
+        output = true || 1
+    `, `true`)
+    test_reducer(`
+        output = false || 1
+    `, `1`)
+    test_reducer(`
+        output = 1 || true
+    `, `1`)
+    test_reducer(`
+        output = 1 || false
+    `, `1`)
+})
+
 test.suite('reducer integer arithmetic', {concurrency: true}, () => {
 
     test_reducer(`
