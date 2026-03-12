@@ -2030,23 +2030,13 @@ const binding_ensure = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     return field
 }
 
-type Binding_Lookup = {
-    scope: Scope_Id,
-    binding: Binding,
-}
-
-const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding_Lookup | false | null => {
+const binding_lookup = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Binding | false | null => {
 
     let scope = scope_get(ctx, scope_id)
 
     // {foo = …}.foo
     let binding = scope.fields.get(ident)
-    if (binding != null) {
-        return {
-            scope: scope_id,
-            binding,
-        }
-    }
+    if (binding != null) return binding
 
     // {foo = …}{…}.foo
     if (scope.type != null && scope.parent != null) {
@@ -2055,7 +2045,7 @@ const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_I
 
         let type = term_by_id_assert(ctx, type_id)
         if (type.kind === TERM_SCOPE) {
-            return binding_lookup_current(ctx, type.id, ident)
+            return binding_lookup(ctx, ident, type.id)
         }
     }
 
@@ -2324,7 +2314,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         if (in_instance == null) return null
         if (in_instance) lookup_scope = task.scope
 
-        let binding = binding_lookup_current(ctx, lookup_scope, term.ident)
+        let binding = binding_lookup(ctx, term.ident, lookup_scope)
         if (binding == null) return null // wait on binding lookup
 
         // no binding for this var
@@ -2335,10 +2325,10 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         }
 
         // var has no value (foo: bar)
-        if (binding.binding.value == null) return task.term
+        if (binding.value == null) return task.term
 
         // wait on binding
-        let bind = task_wait_on(ctx, binding.binding.value)
+        let bind = task_wait_on(ctx, binding.value)
         if (bind == null) return null
 
         // wait on value reduce
