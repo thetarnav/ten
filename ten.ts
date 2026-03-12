@@ -2049,7 +2049,40 @@ const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefi
     return binding_lookup_current(ctx, scope_id, ident)
 }
 
-const index_scope_binary = (
+const index_scope_binary_collect = (
+    ctx: Context,
+    op: Token_Kind, lhs: Expr, rhs: Expr,
+    scope_id: Scope_Id, src: string,
+) => {
+    switch (op) {
+    // lhs = rhs
+    case TOKEN_BIND: {
+
+        // lhs.lhs : lhs.rhs = rhs
+        if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_COLON) {
+            index_scope_binary_collect(ctx, TOKEN_COLON, lhs.lhs, lhs.rhs, scope_id, src)
+            lhs = lhs.lhs
+        }
+
+        // foo = rhs
+        if (lhs.kind !== EXPR_TOKEN || lhs.tok.kind !== TOKEN_IDENT) return
+
+        let ident = ident_id(ctx, token_string(src, lhs.tok))
+        binding_ensure(ctx, ident, scope_id)
+        return
+    }
+    // lhs : rhs
+    case TOKEN_COLON: {
+        if (lhs.kind !== EXPR_TOKEN || lhs.tok.kind !== TOKEN_IDENT) return
+
+        let ident = ident_id(ctx, token_string(src, lhs.tok))
+        binding_ensure(ctx, ident, scope_id)
+        return
+    }
+    }
+}
+
+const index_scope_binary_lower = (
     ctx: Context,
     op: Token_Kind, lhs: Expr, rhs: Expr,
     expr: Expr, src: string, scope_id: Scope_Id,
@@ -2060,7 +2093,7 @@ const index_scope_binary = (
 
         // lhs.lhs : lhs.rhs = rhs
         if (lhs.kind === EXPR_BINARY && lhs.op.kind === TOKEN_COLON) {
-            index_scope_binary(ctx, TOKEN_COLON, lhs.lhs, lhs.rhs, expr, src, scope_id)
+            index_scope_binary_lower(ctx, TOKEN_COLON, lhs.lhs, lhs.rhs, expr, src, scope_id)
             lhs = lhs.lhs
         }
 
@@ -2104,6 +2137,27 @@ const index_scope_binary = (
 
 function index_scope_body(ctx: Context, expr: Expr, src: string, scope_id: Scope_Id) {
 
+    index_scope_body_collect(ctx, expr, src, scope_id)
+    index_scope_body_lower(ctx, expr, src, scope_id)
+}
+
+function index_scope_body_collect(ctx: Context, expr: Expr, src: string, scope_id: Scope_Id) {
+
+    if (expr.kind !== EXPR_BINARY) return
+
+    switch (expr.op.kind) {
+    case TOKEN_COMMA:
+    case TOKEN_EOL:
+        index_scope_body_collect(ctx, expr.lhs, src, scope_id)
+        index_scope_body_collect(ctx, expr.rhs, src, scope_id)
+        return
+    }
+
+    index_scope_binary_collect(ctx, expr.op.kind, expr.lhs, expr.rhs, scope_id, src)
+}
+
+function index_scope_body_lower(ctx: Context, expr: Expr, src: string, scope_id: Scope_Id) {
+
     if (expr.kind !== EXPR_BINARY) {
         error_semantic(ctx, expr, src, 'Unsupported expression in scope body')
         return
@@ -2112,12 +2166,12 @@ function index_scope_body(ctx: Context, expr: Expr, src: string, scope_id: Scope
     switch (expr.op.kind) {
     case TOKEN_COMMA:
     case TOKEN_EOL:
-        index_scope_body(ctx, expr.lhs, src, scope_id)
-        index_scope_body(ctx, expr.rhs, src, scope_id)
+        index_scope_body_lower(ctx, expr.lhs, src, scope_id)
+        index_scope_body_lower(ctx, expr.rhs, src, scope_id)
         return
     }
 
-    index_scope_binary(ctx, expr.op.kind, expr.lhs, expr.rhs, expr, src, scope_id)
+    index_scope_binary_lower(ctx, expr.op.kind, expr.lhs, expr.rhs, expr, src, scope_id)
 }
 
 const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Scope_Id): Term_Id | null => {
