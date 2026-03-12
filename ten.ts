@@ -1217,8 +1217,8 @@ class Term_Binary {
 }
 class Term_Var {
     kind = TERM_VAR
-    prefix: Token_Kind = TOKEN_NONE
-    ident:  Ident_Id   = IDENT_ID_NONE // Field(.foo)
+    scope: Scope_Id = SCOPE_ID_BUILTIN
+    ident: Ident_Id = IDENT_ID_NONE
 }
 class Term_Select {
     kind = TERM_SELECT
@@ -1476,10 +1476,10 @@ const term_select_decode = (key: number): Term_Select => {
     return node
 }
 
-// key = prefix + ident
-const term_var_encode = (prefix: Token_Kind, id: Ident_Id): Term_Key => {
+// key = scope + ident
+const term_var_encode = (scope: Scope_Id, id: Ident_Id): Term_Key => {
     let key = TERM_VAR - TERM_ENUM_START
-    key += prefix * MAX_HIGH_ID * TERM_ENUM_RANGE
+    key += scope * MAX_HIGH_ID * TERM_ENUM_RANGE
     key += id * TERM_ENUM_RANGE
     return key as Term_Key
 }
@@ -1489,7 +1489,7 @@ const term_var_decode = (key: number): Term_Var => {
     node.ident = (key % MAX_HIGH_ID) as Ident_Id
     key = Math.floor(key / MAX_HIGH_ID)
 
-    node.prefix = (key % MAX_HIGH_ID) as Token_Kind
+    node.scope = (key % MAX_HIGH_ID) as Scope_Id
 
     return node
 }
@@ -1764,8 +1764,8 @@ const term_select = (ctx: Context, lhs: Term_Id, rhs: Ident_Id): Term_Id => {
     let key = term_select_encode(lhs, rhs)
     return term_from_key(ctx, key)
 }
-const term_var = (ctx: Context, id: Ident_Id, prefix: Token_Kind = TOKEN_NONE): Term_Id => {
-    let key = term_var_encode(prefix, id)
+const term_var = (ctx: Context, scope: Scope_Id, id: Ident_Id): Term_Id => {
+    let key = term_var_encode(scope, id)
     return term_from_key(ctx, key)
 }
 
@@ -1902,11 +1902,31 @@ const task_error_semantic = (ctx: Context, task: Task, message: string) => {
     }
 }
 
+const lower_var = (ctx: Context, ident_expr: Expr, prefix: Token_Kind, expr: Expr, src: string, scope_id: Scope_Id): Term_Id => {
+
+    let ident = ident_expr_id_or_error(ctx, ident_expr, src)
+    if (ident == null) return TERM_ID_NEVER
+
+    let found = binding_lookup(ctx, scope_id, ident, prefix)
+
+    if (found == null) {
+        error_semantic(ctx, expr, src, "Failed to resolve binding")
+        return TERM_ID_NEVER
+    }
+
+    if (found === false) {
+        error_semantic(ctx, expr, src, "Failed to resolve binding")
+        return TERM_ID_NEVER
+    }
+
+    return term_var(ctx, found.scope, ident)
+}
+
 const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): Term_Id => {
     switch (expr.kind) {
     case EXPR_TOKEN:
-        // 123
-        if (expr.tok.kind === TOKEN_INT) {
+        switch (expr.tok.kind) {
+        case TOKEN_INT: /* 123 */ {
             let string = token_string(src, expr.tok)
             let parsed = Number.parseInt(string, 10)
             if (!Number.isFinite(parsed)) {
@@ -1915,28 +1935,23 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
             }
             return term_int(ctx, parsed)
         }
-        // foo
-        let ident = ident_expr_id_or_error(ctx, expr, src)
-        if (ident == null) return TERM_ID_NEVER
-
-        return term_var(ctx, ident)
+        case TOKEN_IDENT: /* foo */
+            return lower_var(ctx, expr, TOKEN_NONE, expr, src, scope_id)
+        }
+        break
 
     case EXPR_UNARY:
         switch (expr.op.kind) {
-        case TOKEN_DOT: // .foo  ->  var
-        case TOKEN_POW: // ^foo  ->  var
-            let ident = ident_expr_id_or_error(ctx, expr.rhs, src)
-            if (ident == null) return TERM_ID_NEVER
-            return term_var(ctx, ident, expr.op.kind)
-        case TOKEN_ADD: // +foo  ->  0 + foo
-        case TOKEN_SUB: // -foo  ->  0 - foo
+        case TOKEN_DOT: /* .foo  ->  var */
+        case TOKEN_POW: /* ^foo  ->  var */
+            return lower_var(ctx, expr.rhs, expr.op.kind, expr, src, scope_id)
+        case TOKEN_ADD: /* +foo  ->  0 + foo */
+        case TOKEN_SUB: /* -foo  ->  0 - foo */
             return term_binary(ctx, expr.op.kind, TERM_ID_ZERO, lower_expr(ctx, expr.rhs, src, scope_id))
         case TOKEN_NEG: /* !foo */
             return term_neg(ctx, lower_expr(ctx, expr.rhs, src, scope_id))
         }
-
-        error_semantic(ctx, expr, src, "Unsupported unary expression in reducer")
-        return TERM_ID_NEVER
+        break
 
     case EXPR_BINARY:
         // foo.bar
@@ -1975,9 +1990,7 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
             return term_scope(ctx, new_scope.id)
         }
         }
-
-        error_semantic(ctx, expr, src, 'Invalid paren expression in reducer')
-        return TERM_ID_NEVER
+        break
 
     case EXPR_TERNARY:
         // TODO: error for non-bool condition
@@ -1990,11 +2003,10 @@ const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): 
     case EXPR_INVALID:
         error_semantic(ctx, expr, src, expr.reason)
         return TERM_ID_NEVER
-
-    default:
-        expr satisfies never
-        return TERM_ID_NEVER
     }
+
+    error_semantic(ctx, expr, src, "Unsupported expression when lowering")
+    return TERM_ID_NEVER
 }
 const term_from_expr = lower_expr
 
@@ -2008,13 +2020,23 @@ const binding_ensure = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     return field
 }
 
-const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding | false | null => {
+type Binding_Lookup = {
+    scope: Scope_Id,
+    binding: Binding,
+}
+
+const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id): Binding_Lookup | false | null => {
 
     let scope = scope_get(ctx, scope_id)
 
     // {foo = …}.foo
     let binding = scope.fields.get(ident)
-    if (binding != null) return binding
+    if (binding != null) {
+        return {
+            scope: scope_id,
+            binding,
+        }
+    }
 
     // {foo = …}{…}.foo
     if (scope.type != null && scope.parent != null) {
@@ -2029,7 +2051,7 @@ const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_I
 
     return false
 }
-const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding | false | null => {
+const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding_Lookup | false | null => {
     /* Lookup policy:
     |   - .foo  —  current scope only
     |   - ^foo  —  parent chain only
@@ -2043,10 +2065,28 @@ const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefi
             let found = binding_lookup_current(ctx, s, ident)
             if (found !== false) return found
         }
-        if (prefix === TOKEN_POW) return null
+        if (prefix === TOKEN_POW) return false
     }
 
     return binding_lookup_current(ctx, scope_id, ident)
+}
+
+const scope_is_instance_of = (ctx: Context, scope_id: Scope_Id, base_scope_id: Scope_Id): boolean | null => {
+    if (scope_id === base_scope_id) return true
+
+    while (true) {
+        let scope = scope_get(ctx, scope_id)
+        if (scope.type == null || scope.parent == null) return false
+
+        let type = task_wait_on_term(ctx, scope.type, scope.parent)
+        if (type == null) return null
+
+        let type_term = term_by_id_assert(ctx, type)
+        if (type_term.kind !== TERM_SCOPE) return false
+        if (type_term.id === base_scope_id) return true
+
+        scope_id = type_term.id
+    }
 }
 
 const index_scope_binary_collect = (
@@ -2108,7 +2148,7 @@ const index_scope_binary_lower = (
         }
 
         let rhs_term = lower_expr(ctx, rhs, src, scope_id)
-        let bind_term = term_binary(ctx, TOKEN_BIND, term_var(ctx, ident), rhs_term)
+        let bind_term = term_binary(ctx, TOKEN_BIND, term_var(ctx, scope_id, ident), rhs_term)
         binding.value = task_key(bind_term, scope_id)
         task_enqueue(ctx, binding.value, expr, src)
         return
@@ -2125,7 +2165,7 @@ const index_scope_binary_lower = (
         }
 
         let rhs_term = lower_expr(ctx, rhs, src, scope_id)
-        let bind_term = term_binary(ctx, TOKEN_COLON, term_var(ctx, ident), rhs_term)
+        let bind_term = term_binary(ctx, TOKEN_COLON, term_var(ctx, scope_id, ident), rhs_term)
         binding.type = task_key(bind_term, scope_id)
         task_enqueue(ctx, binding.type, expr, src)
         return
@@ -2288,27 +2328,26 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         return task.term
 
     case TERM_VAR: {
-        let binding = binding_lookup(ctx, task.scope, term.ident, term.prefix)
+        let lookup_scope = term.scope
+        let in_instance = scope_is_instance_of(ctx, task.scope, term.scope)
+        if (in_instance == null) return null
+        if (in_instance) lookup_scope = task.scope
+
+        let binding = binding_lookup_current(ctx, lookup_scope, term.ident)
         if (binding == null) return null // wait on binding lookup
 
         // no binding for this var
         if (binding === false) {
             let name = ident_string(ctx, term.ident)
-            if (term.prefix === TOKEN_DOT) {
-                task_error_semantic(ctx, task, `Missing current-scope binding: .${name}`)
-            } else if (term.prefix === TOKEN_POW) {
-                task_error_semantic(ctx, task, `Missing parent-scope binding: ^${name}`)
-            } else {
-                task_error_semantic(ctx, task, `Undefined binding: ${name}`)
-            }
+            task_error_semantic(ctx, task, `Undefined binding: ${name}`)
             return TERM_ID_NEVER
         }
 
         // var has no value (foo: bar)
-        if (binding.value == null) return task.term
+        if (binding.binding.value == null) return task.term
 
         // wait on binding
-        let bind = task_wait_on(ctx, binding.value)
+        let bind = task_wait_on(ctx, binding.binding.value)
         if (bind == null) return null
 
         // wait on value reduce
@@ -2339,7 +2378,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return TERM_ID_NEVER
         }
 
-        return task_wait_on_term(ctx, term_var(ctx, term.rhs, TOKEN_DOT), scope_term.id)
+        return task_wait_on_term(ctx, term_var(ctx, scope_term.id, term.rhs), scope_term.id)
     }
 
     case TERM_NEG: {
@@ -2557,7 +2596,7 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
             if (field.value != null) {
                 let task = task_get_assert(ctx, field.value)
                 if (task_value_is_done(task.value)) {
-                    field_term = term_binary(ctx, TOKEN_BIND, term_var(ctx, key), task.value)
+                    field_term = term_binary(ctx, TOKEN_BIND, term_var(ctx, term.id, key), task.value)
                 } else {
                     field_term = task.term
                 }
@@ -2566,7 +2605,7 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
             else if (field.type != null) {
                 let task = task_get_assert(ctx, field.type)
                 if (task_value_is_done(task.value)) {
-                    field_term = term_binary(ctx, TOKEN_COLON, term_var(ctx, key), task.value)
+                    field_term = term_binary(ctx, TOKEN_COLON, term_var(ctx, term.id, key), task.value)
                 } else {
                     field_term = task.term
                 }
@@ -2592,13 +2631,13 @@ export function add_expr(ctx: Context, expr: Expr, src: string) {
 }
 
 export function reduce(ctx: Context) {
-    let term = term_var(ctx, ident_id(ctx, 'output'))
+    let term = term_var(ctx, SCOPE_ID_GLOBAL, ident_id(ctx, 'output'))
     task_enqueue(ctx, task_key(term, SCOPE_ID_GLOBAL))
     tasks_queue_run(ctx)
 }
 
 export function display(ctx: Context): string {
-    let term = term_var(ctx, ident_id(ctx, 'output'))
+    let term = term_var(ctx, SCOPE_ID_GLOBAL, ident_id(ctx, 'output'))
     let value = task_wait_on_term(ctx, term, SCOPE_ID_GLOBAL)
     assert(value != null, 'Expected output task to have a resolved value after reduction')
     return term_string(ctx, value)
