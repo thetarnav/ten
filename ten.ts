@@ -2292,6 +2292,12 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         let rhs = task_wait_on_term(ctx, term.rhs, task.scope)
         if (rhs == null) return null
 
+        {
+            // TODO: what if lhs is not resolved? (depends on a type var)
+            let term = term_by_id_assert(ctx, rhs)
+            if (term.kind === TERM_BINARY || term.kind === TERM_VAR || term.kind === TERM_SELECT) return task.term
+        }
+
         /*
         |   !true  ->  false
         |   !false ->  true
@@ -2340,20 +2346,21 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         // lhs = rhs
         case TOKEN_BIND:
             // ? should reduce here?
-            return task_wait_on_term(ctx, term.rhs, task.scope)
+            // return task_wait_on_term(ctx, term.rhs, task.scope)
+            return term.rhs
         // lhs: rhs
         case TOKEN_COLON:
             return term_bool(term_match_type(ctx, term.rhs, term.lhs))
         }
 
-        let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
-        if (lhs_id == null) return null
+        // let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
+        // if (lhs_id == null) return null
 
-        let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
-        if (rhs_id == null) return null
+        // let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
+        // if (rhs_id == null) return null
 
-        let lhs = term_by_id_assert(ctx, lhs_id)
-        let rhs = term_by_id_assert(ctx, rhs_id)
+        let lhs = term_by_id_assert(ctx, term.lhs)
+        let rhs = term_by_id_assert(ctx, term.rhs)
 
         // Distribute over OR chains:  (a | b) + c  ->  (a + c) | (b + c)
         if (lhs.kind === TERM_BINARY && lhs.op === TOKEN_OR) {
@@ -2372,20 +2379,43 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         }
 
         if (term.op === TOKEN_AND) {
+
+            let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
+            if (lhs_id == null) return null
+
+            let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
+            if (rhs_id == null) return null
+
             return term_intersect(ctx, lhs_id, rhs_id, task.scope)
         }
+
+        let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
+        if (lhs_id == null) return null
+
+        lhs = term_by_id_assert(ctx, lhs_id)
 
         // TODO: rhs shouldn't be reduced early
         // A && B  ->  A if A is false, else B
         if (term.op === TOKEN_BOOL_AND) {
+            // TODO: what if lhs is not resolved? (depends on a type var)
+            if (lhs.kind === TERM_BINARY || lhs.kind === TERM_VAR || lhs.kind === TERM_SELECT) return term_binary(ctx, TOKEN_BOOL_AND, lhs_id, term.rhs)
+
             if (lhs_id === TERM_ID_FALSE) return lhs_id
-            return rhs_id
+            return task_wait_on_term(ctx, term.rhs, task.scope)
         }
         // A || B  ->  A if A isn't false, else B
         if (term.op === TOKEN_BOOL_OR) {
+            // TODO: what if lhs is not resolved? (depends on a type var)
+            if (lhs.kind === TERM_BINARY || lhs.kind === TERM_VAR || lhs.kind === TERM_SELECT) return term_binary(ctx, TOKEN_BOOL_OR, lhs_id, term.rhs)
+
             if (lhs_id !== TERM_ID_FALSE) return lhs_id
-            return rhs_id
+            return task_wait_on_term(ctx, term.rhs, task.scope)
         }
+
+        let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
+        if (rhs_id == null) return null
+
+        rhs = term_by_id_assert(ctx, rhs_id)
 
         // Integer operations and comparisons
         if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
@@ -2407,7 +2437,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             }
         }
 
-        return task.term // unresolved
+        return term_binary(ctx, term.op, lhs_id, rhs_id) // unresolved
     }
 
     default:
@@ -2446,36 +2476,51 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
             term_string(ctx, term.rhs, seen_scope)
         )
     case TERM_SCOPE: {
-        if (seen_scope.has(term.id)) {
-            return '{...}'
-        }
-        seen_scope.add(term.id)
+
+        let out = ''
 
         let scope = scope_get(ctx, term.id)
 
-        let out = '{'
+        if (scope.type != null) {
+            out += term_string(ctx, scope.type, seen_scope)
+        }
+
+        if (seen_scope.has(term.id)) {
+            out += '{...}'
+            return out
+        }
+        seen_scope.add(term.id)
+
+        out += '{'
         let first = true
         for (let [key, field] of scope.fields) {
 
             if (!first) {out += ', '}
             first = false
 
-            // key: type = value
-            out += ident_string(ctx, key)
-
-            if (field.type != null) {
-                let task = task_get_assert(ctx, field.type)
-                if (task_value_is_done(task.value)) {
-                    out += `: ${term_string(ctx, task.value, seen_scope)}`
-                }
-            }
-
+            let field_term: Term_Id
+            // key = value
             if (field.value != null) {
                 let task = task_get_assert(ctx, field.value)
                 if (task_value_is_done(task.value)) {
-                    out += ` = ${term_string(ctx, task.value, seen_scope)}`
+                    field_term = term_binary(ctx, TOKEN_BIND, term_var(ctx, key), task.value)
+                } else {
+                    field_term = task.term
                 }
             }
+            // key: type
+            else if (field.type != null) {
+                let task = task_get_assert(ctx, field.type)
+                if (task_value_is_done(task.value)) {
+                    field_term = term_binary(ctx, TOKEN_COLON, term_var(ctx, key), task.value)
+                } else {
+                    field_term = task.term
+                }
+            } else {
+                continue
+            }
+
+            out += term_string(ctx, field_term, seen_scope)
         }
         out += '}'
         return out
