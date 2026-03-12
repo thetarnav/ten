@@ -1907,19 +1907,29 @@ const lower_var = (ctx: Context, ident_expr: Expr, prefix: Token_Kind, expr: Exp
     let ident = ident_expr_id_or_error(ctx, ident_expr, src)
     if (ident == null) return TERM_ID_NEVER
 
-    let found = binding_lookup(ctx, scope_id, ident, prefix)
+    /* Lookup policy:
+    |   - .foo  —  current scope only
+    |   - ^foo  —  parent chain only
+    |   -  foo  —  parent-first, then current
+    */
+    if (prefix !== TOKEN_DOT) {
+        for (let s: Scope_Id | null = scope_id;;) {
+            s = scope_get(ctx, s).parent
+            if (s == null) break
 
-    if (found == null) {
-        error_semantic(ctx, expr, src, "Failed to resolve binding")
-        return TERM_ID_NEVER
+            if (scope_get(ctx, s).fields.has(ident)) {
+                return term_var(ctx, s, ident)
+            }
+        }
+        if (prefix === TOKEN_POW) {
+            error_semantic(ctx, expr, src, "Failed to resolve binding")
+            return TERM_ID_NEVER
+        }
     }
 
-    if (found === false) {
-        error_semantic(ctx, expr, src, "Failed to resolve binding")
-        return TERM_ID_NEVER
-    }
-
-    return term_var(ctx, found.scope, ident)
+    // Default to scope_id if not found upwards
+    // * this means not all var terms are "valid" *
+    return term_var(ctx, scope_id, ident)
 }
 
 const lower_expr = (ctx: Context, expr: Expr, src: string, scope_id: Scope_Id): Term_Id => {
@@ -2050,25 +2060,6 @@ const binding_lookup_current = (ctx: Context, scope_id: Scope_Id, ident: Ident_I
     }
 
     return false
-}
-const binding_lookup = (ctx: Context, scope_id: Scope_Id, ident: Ident_Id, prefix: Token_Kind): Binding_Lookup | false | null => {
-    /* Lookup policy:
-    |   - .foo  —  current scope only
-    |   - ^foo  —  parent chain only
-    |   -  foo  —  parent-first, then current
-    */
-    if (prefix !== TOKEN_DOT) {
-        for (let s: Scope_Id | null = scope_id;;) {
-            s = scope_get(ctx, s).parent
-            if (s == null) break
-
-            let found = binding_lookup_current(ctx, s, ident)
-            if (found !== false) return found
-        }
-        if (prefix === TOKEN_POW) return false
-    }
-
-    return binding_lookup_current(ctx, scope_id, ident)
 }
 
 const scope_is_instance_of = (ctx: Context, scope_id: Scope_Id, base_scope_id: Scope_Id): boolean | null => {
