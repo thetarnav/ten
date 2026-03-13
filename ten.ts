@@ -2055,7 +2055,7 @@ const binding_lookup = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
 const scope_is_instance_of = (ctx: Context, scope_id: Scope_Id, base_scope_id: Scope_Id): boolean | null => {
     if (scope_id === base_scope_id) return true
 
-    while (true) {
+    for (;;) {
         let scope = scope_get(ctx, scope_id)
         if (scope.type == null || scope.parent == null) return false
 
@@ -2605,6 +2605,151 @@ const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_
         term satisfies never
         return '!()'
     }
+}
+
+const _debug_term_label = (ctx: Context, term_id: Term_Id, term: Term): string => {
+    let out = ''
+
+    out += term_kind_name(term.kind)
+    out += ` #${term_id}`
+
+    switch (term.kind) {
+    case TERM_VAR:
+        out += ` (scope = #${term.scope}, ident = ${ident_string(ctx, term.ident)})`
+        return out
+    case TERM_SELECT:
+        out += ` (ident = .${ident_string(ctx, term.rhs)})`
+        return out
+    case TERM_SCOPE: {
+        let scope = scope_get(ctx, term.id)
+        out += ` (scope = #${term.id}`
+        if (scope.parent != null) {
+            out += `, parent = #${scope.parent}`
+        } else {
+            out += `, parent = null`
+        }
+        if (scope.type != null) {
+            out += `, type = #${scope.type}`
+        } else {
+            out += `, type = null`
+        }
+        out += ')'
+        return out
+    }
+    case TERM_BINARY:
+        out += ` (op = ${token_kind_string(term.op) ?? token_kind_name(term.op)})`
+        return out
+    case TERM_NEG:
+        out += ` (rhs = #${term.rhs})`
+        return out
+    case TERM_BOOL:
+        out += ` (${term.value})`
+        return out
+    case TERM_INT:
+        out += ` (${term.value})`
+        return out
+    case TERM_WORLD:
+    case TERM_ANY:
+    case TERM_NEVER:
+    case TERM_NIL:
+    case TERM_TYPE_BOOL:
+    case TERM_TYPE_INT:
+        return out
+    default:
+        term satisfies never
+        return out
+    }
+}
+
+const _debug_term_children = (ctx: Context, term: Term, out: Term_Id[] = []): Term_Id[] => {
+
+    switch (term.kind) {
+    case TERM_NEG:
+        out.push(term.rhs)
+        return out
+
+    case TERM_BINARY:
+        out.push(term.lhs)
+        out.push(term.rhs)
+        return out
+
+    case TERM_SELECT:
+        out.push(term.lhs)
+        return out
+
+    case TERM_SCOPE: {
+        let scope = scope_get(ctx, term.id)
+
+        if (scope.type != null) {
+            out.push(scope.type)
+        }
+
+        for (let [, field] of scope.fields) {
+            if (field.type != null) {
+                let task = task_get_assert(ctx, field.type)
+                out.push(task.term)
+            }
+            if (field.value != null) {
+                let task = task_get_assert(ctx, field.value)
+                out.push(task.term)
+            }
+        }
+
+        return out
+    }
+    }
+
+    return out
+}
+
+const _debug_display_term_tree = (
+    ctx: Context,
+    term_id: Term_Id,
+    prefix: string,
+    is_last: boolean,
+    lines: string[],
+    displayed: Set<Term_Id>,
+    is_root: boolean,
+): void => {
+    let line_prefix = is_root ? '' : prefix + (is_last ? '`- ' : '|- ')
+    let term = term_by_id(ctx, term_id)
+
+    if (term == null) {
+        lines.push(`${line_prefix}<term = null> #${term_id}`)
+        return
+    }
+
+    if (displayed.has(term_id)) {
+        lines.push(`${line_prefix}... #${term_id}`)
+        return
+    }
+
+    lines.push(line_prefix + _debug_term_label(ctx, term_id, term))
+    displayed.add(term_id)
+
+    let children = _debug_term_children(ctx, term)
+    let child_prefix = is_root ? prefix : prefix + (is_last ? '   ' : '|  ')
+
+    for (let i = 0; i < children.length; i++) {
+        _debug_display_term_tree(
+            ctx,
+            children[i],
+            child_prefix,
+            i === children.length - 1,
+            lines,
+            displayed,
+            false,
+        )
+    }
+}
+
+export function debug_display_term(ctx: Context, term_id: Term_Id): string {
+    let lines: string[] = []
+    let displayed: Set<Term_Id> = new Set
+
+    _debug_display_term_tree(ctx, term_id, '', true, lines, displayed, true)
+
+    return lines.join('\n')
 }
 
 export function add_expr(ctx: Context, expr: Expr, src: string) {
