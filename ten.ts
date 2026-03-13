@@ -2615,29 +2615,29 @@ const _debug_term_label = (ctx: Context, term_id: Term_Id, term: Term): string =
 
     switch (term.kind) {
     case TERM_VAR:
-        out += ` (scope = #${term.scope}, ident = ${ident_string(ctx, term.ident)})`
+        out += ` (scope = S${term.scope}, ident = '${ident_string(ctx, term.ident)}')`
         return out
     case TERM_SELECT:
-        out += ` (ident = .${ident_string(ctx, term.rhs)})`
+        out += ` (ident = '.${ident_string(ctx, term.rhs)}')`
         return out
     case TERM_SCOPE: {
         let scope = scope_get(ctx, term.id)
         out += ` (scope = #${term.id}`
         if (scope.parent != null) {
-            out += `, parent = #${scope.parent}`
+            out += `, parent = S${scope.parent}`
         } else {
-            out += `, parent = null`
+            out += `, parent = nil`
         }
         if (scope.type != null) {
             out += `, type = #${scope.type}`
         } else {
-            out += `, type = null`
+            out += `, type = nil`
         }
         out += ')'
         return out
     }
     case TERM_BINARY:
-        out += ` (op = ${token_kind_string(term.op) ?? token_kind_name(term.op)})`
+        out += ` (op = '${token_kind_string(term.op) ?? token_kind_name(term.op)}')`
         return out
     case TERM_NEG:
         out += ` (rhs = #${term.rhs})`
@@ -2711,7 +2711,7 @@ const _debug_display_term_tree = (
     displayed: Set<Term_Id>,
     is_root: boolean,
 ): void => {
-    let line_prefix = is_root ? '' : prefix + (is_last ? '`- ' : '|- ')
+    let line_prefix = is_root ? '' : prefix + (is_last ? '└- ' : '|- ')
     let term = term_by_id(ctx, term_id)
 
     if (term == null) {
@@ -2720,7 +2720,7 @@ const _debug_display_term_tree = (
     }
 
     if (displayed.has(term_id)) {
-        lines.push(`${line_prefix}... #${term_id}`)
+        lines.push(`${line_prefix}… #${term_id}`)
         return
     }
 
