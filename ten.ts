@@ -2680,16 +2680,15 @@ const _debug_term_label = (ctx: Context, term_id: Term_Id, term: Term): string =
         return out
     case TERM_SCOPE: {
         let scope = scope_get(ctx, term.id)
-        out += ` (scope = #${term.id}`
+        out += ` (scope = S${term.id}`
         if (scope.parent != null) {
             out += `, parent = S${scope.parent}`
-        } else {
-            out += `, parent = nil`
+        }
+        if (scope.template != null) {
+            out += `, template = S${scope.template}`
         }
         if (scope.type != null) {
             out += `, type = #${scope.type}`
-        } else {
-            out += `, type = nil`
         }
         out += ')'
         return out
@@ -2769,7 +2768,7 @@ const _debug_display_term_tree = (
     displayed: Set<Term_Id>,
     is_root: boolean,
 ): void => {
-    let line_prefix = is_root ? '' : prefix + (is_last ? '└- ' : '|- ')
+    let line_prefix = is_root ? '' : prefix + (is_last ? '└ ' : '├ ')
     let term = term_by_id(ctx, term_id)
 
     if (term == null) {
@@ -2786,7 +2785,7 @@ const _debug_display_term_tree = (
     displayed.add(term_id)
 
     let children = _debug_term_children(ctx, term)
-    let child_prefix = is_root ? prefix : prefix + (is_last ? '   ' : '|  ')
+    let child_prefix = is_root ? prefix : prefix + (is_last ? '  ' : '| ')
 
     for (let i = 0; i < children.length; i++) {
         _debug_display_term_tree(
