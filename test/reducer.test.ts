@@ -309,6 +309,11 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
     `, `10`)
 
     test_reducer(`
+        Node = {n: int, inner = {v = n}}
+        output = Node{n = 20}.inner.v
+    `, `20`)
+
+    test_reducer(`
         src = {
             n = 20
             Node = {v = n}
@@ -325,6 +330,11 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
         output = {n = 10, v = Node{n = 20}.v}.v
     `, `20`)
 
+    test_reducer(`
+        Node = {n: int, v = n}
+        m = 7
+        output = Node{n = m}.v
+    `, `7`)
 })
 
 test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
