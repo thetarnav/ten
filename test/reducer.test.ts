@@ -312,6 +312,19 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
         Node = {n: int, inner = {v = n}}
         output = Node{n = 20}.inner.v
     `, `20`)
+    test_reducer(`
+        output = {n: int, inner = {v = n}}{n = 20}.inner.v
+    `, `20`)
+
+    test_reducer(`
+        Node = {n: int, foo = {bar = {v = n}}}
+        output = Node{n = 20}.foo.bar.v
+    `, `20`)
+
+    test_reducer(`
+        Node = {n: int, foo = {n = 10, bar = {v = n}}}
+        output = Node{n = 20}.foo.bar.v
+    `, `10`)
 
     test_reducer(`
         src = {
@@ -335,6 +348,14 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
         m = 7
         output = Node{n = m}.v
     `, `7`)
+
+    test_reducer(`
+        Node = {
+            n: bool
+            v = n ? Node{n=false}.v + 1 : 1
+        }
+        output = Node{n=true}.v
+    `, `2`)
 })
 
 test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
