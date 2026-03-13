@@ -1250,11 +1250,11 @@ class Term_Type_Int {
 }
 
 class Scope {
-    id:     Scope_Id               = SCOPE_ID_BUILTIN
-    parent: Scope_Id | null        = null
-    type:   Term_Id | null         = null
-    template: Scope_Id | null      = null
-    fields: Map<Ident_Id, Binding> = new Map
+    id:       Scope_Id               = SCOPE_ID_BUILTIN
+    parent:   Scope_Id | null        = null
+    template: Scope_Id | null        = null
+    type:     Term_Id  | null        = null
+    fields:   Map<Ident_Id, Binding> = new Map
 }
 
 class Binding {
@@ -1356,16 +1356,22 @@ const scope_get = (ctx: Context, scope_id: Scope_Id): Scope => {
 const scope_instance_key = (template: Scope_Id, parent: Scope_Id): number => {
     return template + parent * MAX_HIGH_ID
 }
+// template + parent => stable instance scope
+// Node@S5 + parent=S10 -> S42 (reused on next lookup)
 const scope_instantiate = (ctx: Context, template: Scope_Id, parent: Scope_Id): Scope_Id => {
+
     let key = scope_instance_key(template, parent)
-    let cached = ctx.scope_instance_map.get(key)
-    if (cached != null) return cached
 
-    let scope = scope_make(ctx, parent)
-    scope.template = template
+    let scope_id = ctx.scope_instance_map.get(key)
+    if (scope_id == null) {
+        let scope = scope_make(ctx, parent)
+        scope.template = template
 
-    ctx.scope_instance_map.set(key, scope.id)
-    return scope.id
+        scope_id = scope.id
+        ctx.scope_instance_map.set(key, scope_id)
+    }
+
+    return scope_id
 }
 
 const ident_id = (ctx: Context, name: string): Ident_Id => {
@@ -2073,6 +2079,8 @@ const binding_lookup = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     return false
 }
 
+// Check whether `scope_id` is derived from `base_scope_id`.
+// Walk chain: instance.template -> type scope -> type scope -> ...
 const scope_matches_template = (ctx: Context, scope_id: Scope_Id, base_scope_id: Scope_Id): boolean | null => {
     if (scope_id === base_scope_id) return true
 
@@ -2097,7 +2105,11 @@ const scope_matches_template = (ctx: Context, scope_id: Scope_Id, base_scope_id:
         scope_id = type_term.id
     }
 }
+// Rebase lexical scope into current runtime chain.
+// Walk up runtime parents and return first matching instance scope.
+// If none match, keep lexical scope (definition-site capture).
 const scope_project = (ctx: Context, runtime_scope_id: Scope_Id, base_scope_id: Scope_Id): Scope_Id | null => {
+
     for (let s: Scope_Id | null = runtime_scope_id; s != null; s = scope_get(ctx, s).parent) {
         let match = scope_matches_template(ctx, s, base_scope_id)
         if (match == null) return null
