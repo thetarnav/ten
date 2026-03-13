@@ -1253,6 +1253,7 @@ class Scope {
     id:     Scope_Id               = SCOPE_ID_BUILTIN
     parent: Scope_Id | null        = null
     type:   Term_Id | null         = null
+    template: Scope_Id | null      = null
     fields: Map<Ident_Id, Binding> = new Map
 }
 
@@ -1273,6 +1274,7 @@ class Task {
 
 class Context {
     scope_arr:  Scope[]                   = []
+    scope_instance_map: Map<number, Scope_Id> = new Map
 
     term_arr:   Term[]                    = []
     term_map:   Map<Term_Key, Term_Id>    = new Map
@@ -1350,6 +1352,20 @@ const scope_make = (ctx: Context, parent: Scope_Id | null): Scope => {
 }
 const scope_get = (ctx: Context, scope_id: Scope_Id): Scope => {
     return ctx.scope_arr[scope_id]
+}
+const scope_instance_key = (template: Scope_Id, parent: Scope_Id): number => {
+    return template + parent * MAX_HIGH_ID
+}
+const scope_instantiate = (ctx: Context, template: Scope_Id, parent: Scope_Id): Scope_Id => {
+    let key = scope_instance_key(template, parent)
+    let cached = ctx.scope_instance_map.get(key)
+    if (cached != null) return cached
+
+    let scope = scope_make(ctx, parent)
+    scope.template = template
+
+    ctx.scope_instance_map.set(key, scope.id)
+    return scope.id
 }
 
 const ident_id = (ctx: Context, name: string): Ident_Id => {
@@ -2038,6 +2054,11 @@ const binding_lookup = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     let binding = scope.fields.get(ident)
     if (binding != null) return binding
 
+    // Instantiated scope template lookup
+    if (scope.template != null) {
+        return binding_lookup(ctx, ident, scope.template)
+    }
+
     // {foo = …}{…}.foo
     if (scope.type != null && scope.parent != null) {
         let type_id = task_wait_on_term(ctx, scope.type, scope.parent)
@@ -2052,11 +2073,18 @@ const binding_lookup = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     return false
 }
 
-const scope_is_instance_of = (ctx: Context, scope_id: Scope_Id, base_scope_id: Scope_Id): boolean | null => {
+const scope_matches_template = (ctx: Context, scope_id: Scope_Id, base_scope_id: Scope_Id): boolean | null => {
     if (scope_id === base_scope_id) return true
 
     for (;;) {
         let scope = scope_get(ctx, scope_id)
+
+        if (scope.template != null) {
+            scope_id = scope.template
+            if (scope_id === base_scope_id) return true
+            continue
+        }
+
         if (scope.type == null || scope.parent == null) return false
 
         let type = task_wait_on_term(ctx, scope.type, scope.parent)
@@ -2068,6 +2096,15 @@ const scope_is_instance_of = (ctx: Context, scope_id: Scope_Id, base_scope_id: S
 
         scope_id = type_term.id
     }
+}
+const scope_project = (ctx: Context, runtime_scope_id: Scope_Id, base_scope_id: Scope_Id): Scope_Id | null => {
+    for (let s: Scope_Id | null = runtime_scope_id; s != null; s = scope_get(ctx, s).parent) {
+        let match = scope_matches_template(ctx, s, base_scope_id)
+        if (match == null) return null
+        if (match) return s
+    }
+
+    return base_scope_id
 }
 
 const index_scope_binary_collect = (
@@ -2304,15 +2341,24 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
     case TERM_INT:
     case TERM_TYPE_BOOL:
     case TERM_TYPE_INT:
-    case TERM_SCOPE:
     case TERM_WORLD:
         return task.term
 
+    case TERM_SCOPE: {
+        let scope = scope_get(ctx, term.id)
+        if (scope.parent == null) return task.term
+
+        let projected_parent = scope_project(ctx, task.scope, scope.parent)
+        if (projected_parent == null) return null
+        if (projected_parent === scope.parent) return task.term
+
+        let scope_id = scope_instantiate(ctx, term.id, projected_parent)
+        return term_scope(ctx, scope_id)
+    }
+
     case TERM_VAR: {
-        let lookup_scope = term.scope
-        let in_instance = scope_is_instance_of(ctx, task.scope, term.scope)
-        if (in_instance == null) return null
-        if (in_instance) lookup_scope = task.scope
+        let lookup_scope = scope_project(ctx, task.scope, term.scope)
+        if (lookup_scope == null) return null
 
         let binding = binding_lookup(ctx, term.ident, lookup_scope)
         if (binding == null) return null // wait on binding lookup
