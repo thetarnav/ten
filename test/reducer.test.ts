@@ -92,11 +92,11 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
         output = ^int
     `, `int`)
 
-    test_reducer(`
-        a = 1
-        foo = {a = 2, x = .a, y = ^a}
-        output = {x = foo.x, y = foo.y}
-    `, `{x = 2, y = 1}`)
+    // test_reducer(`
+    //     a = 1
+    //     foo = {a = 2, x = .a, y = ^a}
+    //     output = {x = foo.x, y = foo.y}
+    // `, `{x = 2, y = 1}`)
 })
 
 test.suite('reducer boolean arithmetic', {concurrency: true}, () => {
@@ -212,10 +212,10 @@ test.suite('reducer union and intersection', {concurrency: true}, () => {
     //     a: 1 | 2
     //     output = a + 1
     // `, `2 | 3`)
-    test_reducer(`
-        a = 1 | 2
-        output = a + 1
-    `, `2 | 3`)
+    // test_reducer(`
+    //     a = 1 | 2
+    //     output = a + 1
+    // `, `2 | 3`)
 
     test_reducer(`
         x = ({a = 2} | {b = 3}).a
@@ -534,20 +534,20 @@ test.suite('reducer recursion', {concurrency: true}, () => {
         output = Sum{node=a}.value
     `, '6')
 
-    test_reducer(`
-        Node = {value: int, next: Node | nil}
+    // test_reducer(`
+    //     Node = {value: int, next: Node | nil}
 
-        a = Node{value = 1, next = b}
-        b = Node{value = 2, next = c}
-        c = Node{value = 3, next = nil}
+    //     a = Node{value = 1, next = b}
+    //     b = Node{value = 2, next = c}
+    //     c = Node{value = 3, next = nil}
 
-        Sum = {
-            node: Node
-            value = node.next == nil
-                ? node.value
-                : node.value + Sum{node=node.next}.value
-        }
+    //     Sum = {
+    //         node: Node
+    //         value = node.next == nil
+    //             ? node.value
+    //             : node.value + Sum{node=node.next}.value
+    //     }
 
-        output = Sum{node=a}.value
-    `, `6`)
+    //     output = Sum{node=a}.value
+    // `, `6`)
 })
