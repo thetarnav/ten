@@ -2052,23 +2052,20 @@ const binding_ensure = (ctx: Context, ident: Ident_Id, scope_id: Scope_Id): Bind
     return field
 }
 
-type Binding_Lookup = {
-    binding: Binding
-    cursor:  Scope_Id
-}
-
-const binding_lookup = (ctx: Context,
-    ident:       Ident_Id,
+const var_lookup = (ctx: Context,
+    var_term:    Term_Id,
+    var_ident:   Ident_Id,
     scope_id:    Scope_Id,
-    cursor_id:   Scope_Id        = scope_id,
+    cursor_id:   Scope_Id        = scope_id, // scope to evaluate the value in
     instance_id: Scope_Id | null = null,
-): Binding_Lookup | false | null => {
+): Term_Id | false | null => {
 
     let scope = scope_get(ctx, scope_id)
 
     // {foo = …}.foo
-    let binding = scope.fields.get(ident)
+    let binding = scope.fields.get(var_ident)
     if (binding != null) {
+
         // For projected template lookups:
         // - typed template fields (Node{foo = …}.foo) evaluate in parent cursor scope
         // - untyped template fields ({foo = …}.foo) evaluate in projected instance scope
@@ -2076,18 +2073,25 @@ const binding_lookup = (ctx: Context,
             cursor_id = instance_id
         }
 
-        return {binding, cursor: cursor_id}
+        // var has no value (foo: bar)
+        if (binding.value == null) return var_term
+
+        // wait on binding
+        let value = task_wait_on(ctx, binding.value)
+        if (value == null) return null
+
+        // wait on value reduce
+        return task_wait_on_term(ctx, value, cursor_id)
     }
 
     // Instantiated scope template lookup
     if (scope.template != null) {
-        let lookup = binding_lookup(ctx,
-            ident,
-            scope.template,
-            scope_get(ctx, cursor_id).parent ?? cursor_id,
-            cursor_id)
+        let lookup = var_lookup(ctx, var_term, var_ident,
+            /* scope    */ scope.template,
+            /* cursor   */ scope.parent ?? cursor_id,
+            /* instance */ cursor_id)
 
-        if (lookup !== false) return lookup
+        if (lookup !== false) return lookup // found in template
     }
 
     // {foo = …}{…}.foo
@@ -2097,11 +2101,11 @@ const binding_lookup = (ctx: Context,
 
         let type = term_by_id_assert(ctx, type_id)
         if (type.kind === TERM_SCOPE) {
-            return binding_lookup(ctx, ident, type.id, instance_id ?? cursor_id)
+            return var_lookup(ctx, var_term, var_ident, type.id, cursor_id, instance_id)
         }
     }
 
-    return false
+    return false // not found
 }
 
 // Check whether `scope_id` is derived from `base_scope_id`.
@@ -2397,25 +2401,16 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         let lookup_scope = scope_project(ctx, task.scope, term.scope)
         if (lookup_scope == null) return null
 
-        let lookup = binding_lookup(ctx, term.ident, lookup_scope, lookup_scope)
-        if (lookup == null) return null // wait on binding lookup
+        let value = var_lookup(ctx, task.term, term.ident, lookup_scope)
 
         // no binding for this var
-        if (lookup === false) {
+        if (value === false) {
             let name = ident_string(ctx, term.ident)
             task_error_semantic(ctx, task, `Undefined binding: ${name}`)
             return TERM_ID_NEVER
         }
 
-        // var has no value (foo: bar)
-        if (lookup.binding.value == null) return task.term
-
-        // wait on binding
-        let value = task_wait_on(ctx, lookup.binding.value)
-        if (value == null) return null
-
-        // wait on value reduce
-        return task_wait_on_term(ctx, value, lookup.cursor)
+        return value
     }
 
     case TERM_SELECT: {
