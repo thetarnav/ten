@@ -408,6 +408,35 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
     `, `10`)
 
     test_reducer(`
+        Node = {n: int, inner = {n = 1, v = .n}}
+        output = Node{n = 20}.inner.v
+    `, `1`)
+
+    test_reducer(`
+        Node = {n: int, inner = {n = 1, v = ^n}}
+        output = Node{n = 20}.inner.v
+    `, `20`)
+
+    test_reducer(`
+        Leaf = {v: int}
+        Node = {n: int, box = Leaf{v = n}}
+        output = Node{n = 20}.box.v
+    `, `20`)
+
+    test_reducer(`
+        Node = {n: int, inner = {v = n}, pick = {w = inner.v}}
+        output = Node{n = 20}.pick.w
+    `, `20`)
+
+    test_reducer(`
+        Node = {
+            n: int
+            next = {v = n == 0 ? 0 : Node{n = n - 1}.next.v + 1}
+        }
+        output = Node{n = 4}.next.v
+    `, `4`)
+
+    test_reducer(`
         src = {
             n = 20
             Node = {v = n}
