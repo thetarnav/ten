@@ -1868,6 +1868,7 @@ const task_wait_on = (ctx: Context, key: Task_Key): Term_Id | null => {
 
             let result = task_exec_term(ctx, task)
             if (result == null) {
+                panic("Currently this means a circular dependency") // TODO: handle better
                 task.value = TASK_STATE_QUEUE
             } else {
                 task.value = result
