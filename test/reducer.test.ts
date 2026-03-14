@@ -243,6 +243,87 @@ test.suite('reducer union and intersection', {concurrency: true}, () => {
     `, `nil`)
 })
 
+test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
+
+    test_reducer(`
+        output = 1 == 1 ? 5 : 7
+    `, `5`)
+    test_reducer(`
+        output = 1 == 2 ? 5 : 7
+    `, `7`)
+
+    test_reducer(`
+        output = ((1 == 1) && 5) || (!(1 == 1) && 7)
+    `, `5`)
+    test_reducer(`
+        output = ((1 == 2) && 5) || (!(1 == 2) && 7)
+    `, `7`)
+
+    // test_reducer(`
+    //     foo = {
+    //         a = int
+    //         b = a == 1 ? 2 : 3
+    //     }
+    //     output = foo & (foo.a == 1)
+    // `, `{a = 1, b = 2}`)
+
+    // test_reducer(`
+    //     foo = {
+    //         a = int
+    //         b = a == 1 ? 2 : 3
+    //     }
+    //     output = foo.b & (foo.a == 1)
+    // `, `2`)
+    // test_reducer(`
+    //     foo = {
+    //         a = int
+    //         b = a == 1 ? 2 : 3
+    //     }
+    //     output = (foo.a == 1) & foo.b
+    // `, `2`)
+
+    // test_reducer(`
+    //     foo = {
+    //         a = int
+    //         b = a == 1 ? 2 : 3
+    //     }
+    //     output = (foo.a == 1) & (foo.b == 2) ? 1 : 0
+    // `, `1`)
+
+    // test_reducer(`
+    //     foo = int
+    //     output = foo == 1 ? foo + 1 : !()
+    // `, `int == 1 ? foo + 1 : !()`)
+
+    // test_reducer(`
+    //     foo = int
+    //     output = (foo == 1) & (foo + 1)
+    // `, `2`)
+    // test_reducer(`
+    //     foo = int
+    //     output = (foo + 1) & (foo == 1)
+    // `, `2`)
+
+    // test_reducer(`
+    //     foo = int
+    //     bar = foo + 1
+    //     output = (foo == 1) & bar
+    // `, `2`)
+    // test_reducer(`
+    //     foo = int
+    //     bar = foo + 1
+    //     output = bar & (foo == 1)
+    // `, `2`)
+
+    // test_reducer(`
+    //     foo = {
+    //         a = int
+    //         b = a == 1 ? 2 : 3
+    //     }
+    //     output = foo.b
+    // `, `int == 1 ? 2 : 3`)
+})
+
 test.suite('reducer scope instantiation', {concurrency: true}, () => {
 
     test_reducer(`
@@ -356,87 +437,14 @@ test.suite('reducer scope instantiation', {concurrency: true}, () => {
         }
         output = Node{n=true}.v
     `, `2`)
-})
-
-test.suite('reducer ternary and conditionals', {concurrency: true}, () => {
 
     test_reducer(`
-        output = 1 == 1 ? 5 : 7
-    `, `5`)
-    test_reducer(`
-        output = 1 == 2 ? 5 : 7
-    `, `7`)
-
-    test_reducer(`
-        output = ((1 == 1) && 5) || (!(1 == 1) && 7)
-    `, `5`)
-    test_reducer(`
-        output = ((1 == 2) && 5) || (!(1 == 2) && 7)
-    `, `7`)
-
-    // test_reducer(`
-    //     foo = {
-    //         a = int
-    //         b = a == 1 ? 2 : 3
-    //     }
-    //     output = foo & (foo.a == 1)
-    // `, `{a = 1, b = 2}`)
-
-    // test_reducer(`
-    //     foo = {
-    //         a = int
-    //         b = a == 1 ? 2 : 3
-    //     }
-    //     output = foo.b & (foo.a == 1)
-    // `, `2`)
-    // test_reducer(`
-    //     foo = {
-    //         a = int
-    //         b = a == 1 ? 2 : 3
-    //     }
-    //     output = (foo.a == 1) & foo.b
-    // `, `2`)
-
-    // test_reducer(`
-    //     foo = {
-    //         a = int
-    //         b = a == 1 ? 2 : 3
-    //     }
-    //     output = (foo.a == 1) & (foo.b == 2) ? 1 : 0
-    // `, `1`)
-
-    // test_reducer(`
-    //     foo = int
-    //     output = foo == 1 ? foo + 1 : !()
-    // `, `int == 1 ? foo + 1 : !()`)
-
-    // test_reducer(`
-    //     foo = int
-    //     output = (foo == 1) & (foo + 1)
-    // `, `2`)
-    // test_reducer(`
-    //     foo = int
-    //     output = (foo + 1) & (foo == 1)
-    // `, `2`)
-
-    // test_reducer(`
-    //     foo = int
-    //     bar = foo + 1
-    //     output = (foo == 1) & bar
-    // `, `2`)
-    // test_reducer(`
-    //     foo = int
-    //     bar = foo + 1
-    //     output = bar & (foo == 1)
-    // `, `2`)
-
-    // test_reducer(`
-    //     foo = {
-    //         a = int
-    //         b = a == 1 ? 2 : 3
-    //     }
-    //     output = foo.b
-    // `, `int == 1 ? 2 : 3`)
+        Node = {
+            n: bool
+            v = n ? Node{n=!n}.v + 1 : 1
+        }
+        output = Node{n=true}.v
+    `, `2`)
 })
 
 // test.suite('reducer diagnostics', {concurrency: true}, () => {
