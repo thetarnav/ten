@@ -2062,16 +2062,17 @@ const var_lookup = (ctx: Context,
 
     let scope = scope_get(ctx, scope_id)
 
+    // Instantiated scope template lookup
+    if (scope.template != null) {
+        return var_lookup(ctx, var_term, var_ident,
+            /* scope    */ scope.template,
+            /* cursor   */ scope.parent ?? cursor_id,
+            /* instance */ cursor_id)
+    }
+
     // {foo = …}.foo
     let binding = scope.fields.get(var_ident)
     if (binding != null) {
-
-        // For projected template lookups:
-        // - typed template fields (Node{foo = …}.foo) evaluate in parent cursor scope
-        // - untyped template fields ({foo = …}.foo) evaluate in projected instance scope
-        if (instance_id != null && scope.type == null) {
-            cursor_id = instance_id
-        }
 
         // var has no value (foo: bar)
         if (binding.value == null) return var_term
@@ -2080,22 +2081,20 @@ const var_lookup = (ctx: Context,
         let value = task_wait_on(ctx, binding.value)
         if (value == null) return null
 
+        // For projected template lookups:
+        // - typed template fields (Node{foo = …}.foo) evaluate in parent cursor scope
+        // - untyped template fields ({foo = …}.foo) evaluate in projected instance scope
+        if (instance_id != null && scope.type == null) {
+            cursor_id = instance_id
+        }
+
         // wait on value reduce
         return task_wait_on_term(ctx, value, cursor_id)
     }
 
-    // Instantiated scope template lookup
-    if (scope.template != null) {
-        let lookup = var_lookup(ctx, var_term, var_ident,
-            /* scope    */ scope.template,
-            /* cursor   */ scope.parent ?? cursor_id,
-            /* instance */ cursor_id)
-
-        if (lookup !== false) return lookup // found in template
-    }
-
     // {foo = …}{…}.foo
     if (scope.type != null && scope.parent != null) {
+
         let type_id = task_wait_on_term(ctx, scope.type, scope.parent)
         if (type_id == null) return null
 
