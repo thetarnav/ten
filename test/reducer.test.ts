@@ -660,9 +660,9 @@ test.suite('reducer recursion', {concurrency: true}, () => {
 
         Sum = {
             node: Node
-            value = node.next == nil
-                ? node.value
-                : node.value + Sum{node=node.next}.value
+            value = node.next != nil
+                ? node.value + Sum{node=node.next}.value
+                : node.value
         }
 
         output = Sum{node=a}.value
