@@ -2572,26 +2572,18 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
 
         rhs = term_get_assert(ctx, rhs_id)
 
-        if (term.op === TOKEN_EQ) {
+        // even if unresolved, same terms are equal
+        if (term.op === TOKEN_EQ && lhs_id === rhs_id) return TERM_ID_TRUE
 
-            if (lhs_id === rhs_id) return TERM_ID_TRUE
-
-            if (!term_is_resolved(ctx, lhs_id) ||
-                !term_is_resolved(ctx, rhs_id)) {
-                return term_binary(ctx, term.op, lhs_id, rhs_id)
-            }
-
-            return term_bool(lhs_id === rhs_id)
+        // Below all checks work on only resolved terms
+        if (!term_is_resolved(ctx, lhs_id) ||
+            !term_is_resolved(ctx, rhs_id)) {
+            return term_binary(ctx, term.op, lhs_id, rhs_id)
         }
 
-        if (term.op === TOKEN_NOT_EQ) {
-
-            if (!term_is_resolved(ctx, lhs_id) ||
-                !term_is_resolved(ctx, rhs_id)) {
-                return term_binary(ctx, term.op, lhs_id, rhs_id)
-            }
-
-            return term_bool(lhs_id !== rhs_id)
+        switch (term.op) {
+        case TOKEN_EQ:     return term_bool(lhs_id === rhs_id)
+        case TOKEN_NOT_EQ: return term_bool(lhs_id !== rhs_id)
         }
 
         // Integer operations and comparisons
@@ -2605,8 +2597,6 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             case TOKEN_MUL:        return term_int(ctx, Math.imul(li, ri))
             // ? How to handle division by zero?
             case TOKEN_DIV:        return ri === 0 ? TERM_ID_NEVER : term_int(ctx, (Math.trunc(li / ri)) | 0)
-            // case TOKEN_EQ:         return term_bool(li === ri)
-            // case TOKEN_NOT_EQ:     return term_bool(li !== ri)
             case TOKEN_LESS:       return term_bool(li < ri)
             case TOKEN_LESS_EQ:    return term_bool(li <= ri)
             case TOKEN_GREATER:    return term_bool(li > ri)
@@ -2614,7 +2604,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             }
         }
 
-        return term_binary(ctx, term.op, lhs_id, rhs_id) // unresolved
+        return TERM_ID_NEVER // incorrect binary use
     }
 
     default:
