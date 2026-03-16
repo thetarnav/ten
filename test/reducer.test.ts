@@ -99,6 +99,94 @@ test.suite('reducer bindings and scope evaluation', {concurrency: true}, () => {
     // `, `{x = 2, y = 1}`)
 })
 
+test.suite('reducer simple equality', {concurrency: true}, () => {
+
+    test_reducer(`
+        output = () == ()
+    `, `true`)
+    test_reducer(`
+        output = () == !()
+    `, `false`)
+    test_reducer(`
+        output = !() == !()
+    `, `true`)
+
+    test_reducer(`
+        output = true == true
+    `, `true`)
+    test_reducer(`
+        output = true == false
+    `, `false`)
+    test_reducer(`
+        output = false == false
+    `, `true`)
+
+    test_reducer(`
+        output = nil == nil
+    `, `true`)
+    test_reducer(`
+        output = nil == ()
+    `, `false`)
+    test_reducer(`
+        output = nil == !()
+    `, `false`)
+
+    test_reducer(`
+        output = 1 == nil
+    `, `false`)
+    test_reducer(`
+        output = 1 == 1
+    `, `true`)
+    test_reducer(`
+        output = 1 == 2
+    `, `false`)
+
+})
+
+test.suite('reducer simple not-equality', {concurrency: true}, () => {
+
+    test_reducer(`
+        output = () != ()
+    `, `false`)
+    test_reducer(`
+        output = () != !()
+    `, `true`)
+    test_reducer(`
+        output = !() != !()
+    `, `false`)
+
+    test_reducer(`
+        output = true != true
+    `, `false`)
+    test_reducer(`
+        output = true != false
+    `, `true`)
+    test_reducer(`
+        output = false != false
+    `, `false`)
+
+    test_reducer(`
+        output = nil != nil
+    `, `false`)
+    test_reducer(`
+        output = nil != ()
+    `, `true`)
+    test_reducer(`
+        output = nil != !()
+    `, `true`)
+
+    test_reducer(`
+        output = 1 != nil
+    `, `true`)
+    test_reducer(`
+        output = 1 != 1
+    `, `false`)
+    test_reducer(`
+        output = 1 != 2
+    `, `true`)
+
+})
+
 test.suite('reducer boolean arithmetic', {concurrency: true}, () => {
 
     test_reducer(`
