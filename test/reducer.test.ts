@@ -563,20 +563,20 @@ test.suite('reducer recursion', {concurrency: true}, () => {
         output = Sum{node=a}.value
     `, '6')
 
-    // test_reducer(`
-    //     Node = {value: int, next: Node | nil}
+    test_reducer(`
+        Node = {value: int, next: Node | nil}
 
-    //     a = Node{value = 1, next = b}
-    //     b = Node{value = 2, next = c}
-    //     c = Node{value = 3, next = nil}
+        a = Node{value = 1, next = b}
+        b = Node{value = 2, next = c}
+        c = Node{value = 3, next = nil}
 
-    //     Sum = {
-    //         node: Node
-    //         value = node.next == nil
-    //             ? node.value
-    //             : node.value + Sum{node=node.next}.value
-    //     }
+        Sum = {
+            node: Node
+            value = node.next == nil
+                ? node.value
+                : node.value + Sum{node=node.next}.value
+        }
 
-    //     output = Sum{node=a}.value
-    // `, `6`)
+        output = Sum{node=a}.value
+    `, `6`)
 })
