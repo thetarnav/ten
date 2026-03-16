@@ -2277,7 +2277,13 @@ function index_scope_body_lower(ctx: Context, expr: Expr, src: string, scope_id:
 // and have to be preserved in current form
 const term_is_resolved = (ctx: Context, id: Term_Id): boolean => {
     let term = term_get_assert(ctx, id)
-    if (term.kind === TERM_BINARY || term.kind === TERM_VAR || term.kind === TERM_SELECT) return false
+    switch (term.kind) {
+    case TERM_BINARY:
+    case TERM_NEG:
+    case TERM_VAR:
+    case TERM_SELECT:
+        return false
+    }
     return true
 }
 
@@ -2578,6 +2584,16 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return term_bool(lhs_id === rhs_id)
         }
 
+        if (term.op === TOKEN_NOT_EQ) {
+
+            if (!term_is_resolved(ctx, lhs_id) ||
+                !term_is_resolved(ctx, rhs_id)) {
+                return term_binary(ctx, term.op, lhs_id, rhs_id)
+            }
+
+            return term_bool(lhs_id !== rhs_id)
+        }
+
         // Integer operations and comparisons
         if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
             let li = lhs.value
@@ -2590,7 +2606,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             // ? How to handle division by zero?
             case TOKEN_DIV:        return ri === 0 ? TERM_ID_NEVER : term_int(ctx, (Math.trunc(li / ri)) | 0)
             // case TOKEN_EQ:         return term_bool(li === ri)
-            case TOKEN_NOT_EQ:     return term_bool(li !== ri)
+            // case TOKEN_NOT_EQ:     return term_bool(li !== ri)
             case TOKEN_LESS:       return term_bool(li < ri)
             case TOKEN_LESS_EQ:    return term_bool(li <= ri)
             case TOKEN_GREATER:    return term_bool(li > ri)
