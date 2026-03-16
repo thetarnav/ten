@@ -1575,10 +1575,10 @@ export const term_from_key = (ctx: Context, key: Term_Key): Term_Id => {
     return id
 }
 
-export const term_by_id = (ctx: Context, term_id: Term_Id): Term | null => {
+export const term_get = (ctx: Context, term_id: Term_Id): Term | null => {
     return ctx.term_arr[term_id]
 }
-export const term_by_id_assert = (ctx: Context, term_id: Term_Id): Term => {
+export const term_get_assert = (ctx: Context, term_id: Term_Id): Term => {
     let node = ctx.term_arr[term_id]
     assert(node != null, 'Accessed node id does not exist')
     return node
@@ -1604,7 +1604,7 @@ function term_chain_pick_best(lhs: Term_Id, rhs: Term_Id): Term_Id {
 }
 function term_chain_get(ctx: Context, op: Token_Kind, term_id: Term_Id): Term_Binary | null {
     // Treap node access for this chain kind
-    let term = term_by_id(ctx, term_id)
+    let term = term_get(ctx, term_id)
     if (term != null && term.kind === TERM_BINARY && term.op === op) {
         return term
     }
@@ -1729,7 +1729,7 @@ const term_int = (ctx: Context, value: number): Term_Id => {
 }
 
 const term_neg = (ctx: Context, rhs: Term_Id): Term_Id => {
-    let rhs_node = term_by_id(ctx, rhs)
+    let rhs_node = term_get(ctx, rhs)
     if (rhs_node != null && rhs_node.kind === TERM_NEG) {
         return rhs_node.rhs /*  !!x  ->  x  */
     }
@@ -1805,7 +1805,7 @@ const term_scope = (ctx: Context, id: Scope_Id): Term_Id => {
 // }
 
 const term_world = (ctx: Context, body_id: Term_Id): Term_Id => {
-    let node = term_by_id_assert(ctx, body_id)
+    let node = term_get_assert(ctx, body_id)
     if (node.kind === TERM_WORLD) {
         return body_id // Avoid nesting world in world
     }
@@ -2099,7 +2099,7 @@ const var_lookup = (ctx: Context,
         let type_id = task_wait_on_term(ctx, scope.type, scope.parent)
         if (type_id == null) return null
 
-        let type = term_by_id_assert(ctx, type_id)
+        let type = term_get_assert(ctx, type_id)
         if (type.kind === TERM_SCOPE) {
             return var_lookup(ctx, var_term, var_ident, type.id, cursor_id, instance_id)
         }
@@ -2127,7 +2127,7 @@ const scope_matches_template = (ctx: Context, scope_id: Scope_Id, base_scope_id:
         let type = task_wait_on_term(ctx, scope.type, scope.parent)
         if (type == null) return null
 
-        let type_term = term_by_id_assert(ctx, type)
+        let type_term = term_get_assert(ctx, type)
         if (type_term.kind !== TERM_SCOPE) return false
         if (type_term.id === base_scope_id) return true
 
@@ -2273,10 +2273,18 @@ function index_scope_body_lower(ctx: Context, expr: Expr, src: string, scope_id:
     index_scope_binary_lower(ctx, expr.op.kind, expr.lhs, expr.rhs, expr, src, scope_id)
 }
 
+// when terms depend on types {foo: bar}.foo they don't have a value
+// and have to be preserved in current form
+const term_is_resolved = (ctx: Context, id: Term_Id): boolean => {
+    let term = term_get_assert(ctx, id)
+    if (term.kind === TERM_BINARY || term.kind === TERM_VAR || term.kind === TERM_SELECT) return false
+    return true
+}
+
 const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Scope_Id): Term_Id | null => {
 
-    let a = term_by_id_assert(ctx, a_id)
-    let b = term_by_id_assert(ctx, b_id)
+    let a = term_get_assert(ctx, a_id)
+    let b = term_get_assert(ctx, b_id)
 
     // Reducing here would require narrowing constraints in the current world
 
@@ -2372,7 +2380,7 @@ const term_intersect = (ctx: Context, a_id: Term_Id, b_id: Term_Id, scope_id: Sc
 }
 
 const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
-    let term = term_by_id_assert(ctx, task.term)
+    let term = term_get_assert(ctx, task.term)
 
     switch (term.kind) {
     case TERM_ANY:
@@ -2422,7 +2430,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         let scope_reduce = task_wait_on_term(ctx, scope_lookup, task.scope)
         if (scope_reduce == null) return null
 
-        let scope_term = term_by_id_assert(ctx, scope_reduce)
+        let scope_term = term_get_assert(ctx, scope_reduce)
 
         // ({a=1} | {a=2}).a  ->  1 | 2
         if (scope_term.kind === TERM_BINARY && scope_term.op === TOKEN_OR) {
@@ -2444,11 +2452,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         let rhs = task_wait_on_term(ctx, term.rhs, task.scope)
         if (rhs == null) return null
 
-        {
-            // TODO: what if lhs is not resolved? (depends on a type var)
-            let term = term_by_id_assert(ctx, rhs)
-            if (term.kind === TERM_BINARY || term.kind === TERM_VAR || term.kind === TERM_SELECT) return task.term
-        }
+        if (!term_is_resolved(ctx, rhs)) return term_neg(ctx, rhs)
 
         /*
         |   !true  ->  false
@@ -2511,8 +2515,8 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
         // let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
         // if (rhs_id == null) return null
 
-        let lhs = term_by_id_assert(ctx, term.lhs)
-        let rhs = term_by_id_assert(ctx, term.rhs)
+        let lhs = term_get_assert(ctx, term.lhs)
+        let rhs = term_get_assert(ctx, term.rhs)
 
         // Distribute over OR chains:  (a | b) + c  ->  (a + c) | (b + c)
         if (lhs.kind === TERM_BINARY && lhs.op === TOKEN_OR) {
@@ -2530,10 +2534,11 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return task_wait_on_term(ctx, new_term, task.scope)
         }
 
-        if (term.op === TOKEN_AND) {
+        /* Reduce LHS */
+        let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
+        if (lhs_id == null) return null
 
-            let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
-            if (lhs_id == null) return null
+        if (term.op === TOKEN_AND) {
 
             let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
             if (rhs_id == null) return null
@@ -2541,33 +2546,37 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             return term_intersect(ctx, lhs_id, rhs_id, task.scope)
         }
 
-        let lhs_id = task_wait_on_term(ctx, term.lhs, task.scope)
-        if (lhs_id == null) return null
+        lhs = term_get_assert(ctx, lhs_id)
 
-        lhs = term_by_id_assert(ctx, lhs_id)
-
-        // TODO: rhs shouldn't be reduced early
         // A && B  ->  A if A is false, else B
-        if (term.op === TOKEN_BOOL_AND) {
-            // TODO: what if lhs is not resolved? (depends on a type var)
-            if (lhs.kind === TERM_BINARY || lhs.kind === TERM_VAR || lhs.kind === TERM_SELECT) return term_binary(ctx, TOKEN_BOOL_AND, lhs_id, term.rhs)
-
-            if (lhs_id === TERM_ID_FALSE) return lhs_id
-            return task_wait_on_term(ctx, term.rhs, task.scope)
-        }
         // A || B  ->  A if A isn't false, else B
-        if (term.op === TOKEN_BOOL_OR) {
-            // TODO: what if lhs is not resolved? (depends on a type var)
-            if (lhs.kind === TERM_BINARY || lhs.kind === TERM_VAR || lhs.kind === TERM_SELECT) return term_binary(ctx, TOKEN_BOOL_OR, lhs_id, term.rhs)
+        if (term.op === TOKEN_BOOL_AND || term.op === TOKEN_BOOL_OR) {
 
-            if (lhs_id !== TERM_ID_FALSE) return lhs_id
+            if (!term_is_resolved(ctx, lhs_id)) return term_binary(ctx, term.op, lhs_id, term.rhs)
+
+            if ((lhs_id === TERM_ID_FALSE) === (term.op === TOKEN_BOOL_AND)) return lhs_id
+
+            // RHS is reduced only after LHS is "discarded"
             return task_wait_on_term(ctx, term.rhs, task.scope)
         }
 
+        /* Reduce RHS */
         let rhs_id = task_wait_on_term(ctx, term.rhs, task.scope)
         if (rhs_id == null) return null
 
-        rhs = term_by_id_assert(ctx, rhs_id)
+        rhs = term_get_assert(ctx, rhs_id)
+
+        if (term.op === TOKEN_EQ) {
+
+            if (lhs_id === rhs_id) return TERM_ID_TRUE
+
+            if (!term_is_resolved(ctx, lhs_id) ||
+                !term_is_resolved(ctx, rhs_id)) {
+                return term_binary(ctx, term.op, lhs_id, rhs_id)
+            }
+
+            return term_bool(lhs_id === rhs_id)
+        }
 
         // Integer operations and comparisons
         if (lhs.kind === TERM_INT && rhs.kind === TERM_INT) {
@@ -2580,7 +2589,7 @@ const task_exec_term = (ctx: Context, task: Task): Term_Id | null => {
             case TOKEN_MUL:        return term_int(ctx, Math.imul(li, ri))
             // ? How to handle division by zero?
             case TOKEN_DIV:        return ri === 0 ? TERM_ID_NEVER : term_int(ctx, (Math.trunc(li / ri)) | 0)
-            case TOKEN_EQ:         return term_bool(li === ri)
+            // case TOKEN_EQ:         return term_bool(li === ri)
             case TOKEN_NOT_EQ:     return term_bool(li !== ri)
             case TOKEN_LESS:       return term_bool(li < ri)
             case TOKEN_LESS_EQ:    return term_bool(li <= ri)
@@ -2605,7 +2614,7 @@ const term_match_type = (ctx: Context, term_id: Term_Id, type_id: Term_Id): bool
 
 const term_string = (ctx: Context, term_id: Term_Id, seen_scope = new Set<Scope_Id>()): string => {
 
-    let term = term_by_id_assert(ctx, term_id)
+    let term = term_get_assert(ctx, term_id)
     switch (term.kind) {
     case TERM_WORLD:     return '<world>'
     case TERM_ANY:       return '()'
@@ -2789,7 +2798,7 @@ const _debug_display_term_tree = (
     is_root: boolean,
 ): void => {
     let line_prefix = is_root ? '' : prefix + (is_last ? '└ ' : '├ ')
-    let term = term_by_id(ctx, term_id)
+    let term = term_get(ctx, term_id)
 
     if (term == null) {
         lines.push(`${line_prefix}<term = null> #${term_id}`)
